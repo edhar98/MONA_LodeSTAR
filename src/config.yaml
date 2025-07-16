@@ -1,0 +1,43 @@
+wandb:
+  project: LodeSTAR
+  entity: harutyunianedgar-universit-t-leipzig
+  tags: ["LodeSTAR", "MONA"]
+  notes: "Training LodeSTAR model"
+
+data_dir: ../data/
+
+
+sample: Janus
+# dataset
+add_min: -0.1
+add_max: 0.1
+mul_min: 0.9
+mul_max: 1.1
+
+length: 400
+
+# training
+seed: 37
+n_transforms: 4
+max_epochs: 200
+devices: 1
+num_workers: 8  # lowest relative time
+batch_size: 8  # 2000  # 4608  # 2048  # 515  # 1030  # 3072  # 4096  #  
+
+# optimizer 
+lr: 0.0001
+
+# detection
+alpha: 0.2 # metric of object similarity: higher alpha higher object difference
+beta: 0.8 #1 - alpha
+cutoff: 0.2 # detection threshold 
+mode: constant
+
+lightning:
+  accelerator: 'cpu'
+  precision: '16-mixed'  # Use mixed precision training
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  log_every_n_steps: 50
+  val_check_interval: 1.0
+  check_val_every_n_epoch: 1
