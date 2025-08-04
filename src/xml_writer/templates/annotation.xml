@@ -11,6 +11,7 @@
         <depth>{{ depth }}</depth>
     </size>
     <segmented>{{ segmented }}</segmented>
+{% if snr is not none %}    <snr>{{ snr }}</snr>{% endif %}
 {% for object in objects %}    <object>
         <name>{{ object.name }}</name>
         <orientation>{{ object.orientation }}</orientation>

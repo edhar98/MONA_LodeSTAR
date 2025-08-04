@@ -17,7 +17,8 @@ class Writer:
             'depth': depth,
             'database': database,
             'segmented': segmented,
-            'objects': []
+            'objects': [],
+            'snr': None
         }
 
     def addObject(self, name, xmin, ymin, xmax, ymax, orientation=0):
@@ -29,6 +30,9 @@ class Writer:
             'ymax': ymax,
             'orientation': orientation,
         })
+
+    def setSNR(self, snr):
+        self.template_parameters['snr'] = snr
 
     def save(self, annotation_path):
         with open(annotation_path, 'w') as file:

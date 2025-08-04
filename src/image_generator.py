@@ -38,7 +38,7 @@ def generateImage(objects, image_w, image_h, snr_range, i_range=[1,1]):
             image = image + i*np.exp(-((X-x)**2+(Y-y)**2)/(2*s**2))
             bx = 2*s
             by = 2*s
-            bboxes.append(np.array([[x-bx,y-by],[x+bx,y+by]]))
+            bboxes.append([[x-bx,y-by],[x+bx,y+by]])
             labels.append(obj.label)
         if obj.label == 'Ring':                
             i_list, r_list, s_list = np.array(obj.parameters)
@@ -48,7 +48,7 @@ def generateImage(objects, image_w, image_h, snr_range, i_range=[1,1]):
             image = image + i*np.exp(-(np.sqrt((X-x)**2+(Y-y)**2)-r)**2/(2*s**2))
             bx = 2*s + r
             by = 2*s + r
-            bboxes.append(np.array([[x-bx,y-by],[x+bx,y+by]]))
+            bboxes.append([[x-bx,y-by],[x+bx,y+by]])
             labels.append(obj.label)
         if obj.label == 'Janus':
             i_list, r_list, s_list = np.array(obj.parameters)
@@ -82,7 +82,7 @@ def generateImage(objects, image_w, image_h, snr_range, i_range=[1,1]):
             image = image + i*np.exp(-(a*(X-x)**2 + 2*b*(X-x)*(Y-y) + c*(Y-y)**2))
             bx = 2*sx # !!!
             by = 2*sy # !!!
-            bboxes.append(np.array([[x-bx,y-by],[x+bx,y+by], theta/(2*pi)])) # !!!
+            bboxes.append([[x-bx,y-by],[x+bx,y+by], theta/(2*pi)]) # !!!
             labels.append(obj.label)
         if obj.label == 'Rod':
             i_list, l_list, w_list, s_list = np.array(obj.parameters)
@@ -103,7 +103,7 @@ def generateImage(objects, image_w, image_h, snr_range, i_range=[1,1]):
             image = image + i*im
             bx = l/2 + 2*s
             by = w/2 + 2*s
-            bboxes.append(np.array([[x-bx,y-by],[x+bx,y+by], theta/(2*pi)]))
+            bboxes.append([[x-bx,y-by],[x+bx,y+by], theta/(2*pi)])
             labels.append(obj.label)
 
     # Set the SNR  
@@ -115,7 +115,7 @@ def generateImage(objects, image_w, image_h, snr_range, i_range=[1,1]):
     else:
         snr = snr_range
     image = snr*image + noise                    
-    return (bboxes, labels, image) 
+    return (bboxes, labels, image, snr)
 
 def getRandom(frames, n_list, image_w, image_h, distance, offset, label_list, parameters_list):
  
@@ -138,9 +138,15 @@ def getRandom(frames, n_list, image_w, image_h, distance, offset, label_list, pa
                 min_distance = np.sqrt(np.sum(d*d, axis=1)).min()
             positions = np.append(positions, new_pos)
         #if isinstance(labels, list):
+        repeated_labels = []
+        repeated_parameters = []
+        for i, n in enumerate(n_list):
+            repeated_labels.extend([label_list[i]] * n)
+            repeated_parameters.extend([parameters_list[i]] * n)
+        
         objects.append([Object(x,y, label, parameters) for (x, y), label, parameters in zip(positions.reshape(np.sum(n_list), 2), 
-                                                                                            np.repeat(label_list, n_list).tolist(), 
-                                                                                            np.repeat(np.array(parameters_list), n_list, axis=0).tolist())])
+                                                                                            repeated_labels, 
+                                                                                            repeated_parameters)])
         #else:
         #    objects_list.append([Object(x,y, labels) for x, y in positions.reshape(n, 2)])      
     return np.array(objects)
@@ -165,9 +171,15 @@ def getTrajectories(T, dt, D_list, scale, n_list, image_w, image_h, label_list, 
     for _ in range(frames):
         for n, n_cs, D in zip(n_list, np.cumsum(n_list), D_list):
             positions[n_cs-n:n_cs] += np.sqrt(2*D*dt)*np.random.normal(size=(n,2))/scale
+        repeated_labels = []
+        repeated_parameters = []
+        for i, n in enumerate(n_list):
+            repeated_labels.extend([label_list[i]] * n)
+            repeated_parameters.extend([parameters_list[i]] * n)
+        
         objects.append([Object(x,y, label, parameters) for (x, y), label, parameters in zip(positions, 
-                                                                                            np.repeat(label_list, n_list).tolist(), 
-                                                                                            np.repeat(np.array(parameters_list), n_list, axis=0).tolist())])
+                                                                                            repeated_labels, 
+                                                                                            repeated_parameters)])
     return np.array(objects)
 
 
@@ -198,69 +210,193 @@ def rotate(origin, point, angle):
     y2 = y0 - np.sin(angle)*(x1 - x0) - np.cos(angle)*(y1 - y0)
     return x2, y2
 
+def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
+    label_list = ['Janus']
+    parameters_list = [[[1], [15], [3]]]
+    n_list = [1, 5]
+    
+    dataset_name = 'same_shape_same_size'
+    dataset_dir = f'{subdir}/{dataset_name}'
+    
+    if not os.path.exists(dataset_dir):
+        os.mkdir(dataset_dir)
+    
+    i_dir = f'{dataset_dir}/images/'
+    if not os.path.exists(i_dir):
+        os.mkdir(i_dir)
+    a_dir = f'{dataset_dir}/annotations/'
+    if not os.path.exists(a_dir):
+        os.mkdir(a_dir)
+    
+    for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
+        objects = getRandom(1, np.random.randint(n_list[0], n_list[1] + 1), image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
+        
+        fname = f'{i_dir}image_{i:04d}.jpg'
+        plt.imsave(fname, image, cmap='gray')
+        
+        writer = Writer(fname, image_w, image_h)
+        writer.setSNR(snr)
+        for bbox, label in zip(bboxes, labels):
+            xmin, ymin = bbox[0]
+            xmax, ymax = bbox[1]
+            theta = bbox[2] if len(bbox) > 2 else 0
+            writer.addObject(label, xmin, ymin, xmax, ymax, theta)
+        
+        xmlname = f'{a_dir}image_{i:04d}.xml'
+        writer.save(xmlname)
+    
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+
+def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
+    label_list = ['Janus', 'Janus', 'Janus', 'Janus', 'Janus']
+    parameters_list = [[[1], [15], [3]], [[1], [9], [2]], [[1], [12], [2.5]], [[1], [18], [4]], [[1], [6], [1.5]]]
+    n_list = [x for x in np.random.randint(1, 10, 5)]
+    
+    # Ensure all lists have the same length
+    min_length = min(len(label_list), len(parameters_list), len(n_list))
+    label_list = label_list[:min_length]
+    parameters_list = parameters_list[:min_length]
+    n_list = n_list[:min_length]
+    
+    dataset_name = 'same_shape_different_size'
+    dataset_dir = f'{subdir}/{dataset_name}'
+    
+    if not os.path.exists(dataset_dir):
+        os.mkdir(dataset_dir)
+    
+    i_dir = f'{dataset_dir}/images/'
+    if not os.path.exists(i_dir):
+        os.mkdir(i_dir)
+    a_dir = f'{dataset_dir}/annotations/'
+    if not os.path.exists(a_dir):
+        os.mkdir(a_dir)
+    
+    for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
+        objects = getRandom(1, n_list, image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
+        
+        fname = f'{i_dir}image_{i:04d}.jpg'
+        plt.imsave(fname, image, cmap='gray')
+        
+        writer = Writer(fname, image_w, image_h)
+        writer.setSNR(snr)
+        for bbox, label in zip(bboxes, labels):
+            xmin, ymin = bbox[0]
+            xmax, ymax = bbox[1]
+            theta = bbox[2] if len(bbox) > 2 else 0
+            writer.addObject(label, xmin, ymin, xmax, ymax, theta)
+        
+        xmlname = f'{a_dir}image_{i:04d}.xml'
+        writer.save(xmlname)
+    
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+
+def generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
+    label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    parameters_list = [[[1], [10], [2.5]], [[1], [10], [2.5]], [[1], [2.5]], [[1], [10], [10]], [[1], [15], [5], [2]]]
+    n_list = [x for x in np.random.randint(1, 10, 5)]
+    
+    dataset_name = 'different_shape_same_size'
+    dataset_dir = f'{subdir}/{dataset_name}'
+    
+    if not os.path.exists(dataset_dir):
+        os.mkdir(dataset_dir)
+    
+    i_dir = f'{dataset_dir}/images/'
+    if not os.path.exists(i_dir):
+        os.mkdir(i_dir)
+    a_dir = f'{dataset_dir}/annotations/'
+    if not os.path.exists(a_dir):
+        os.mkdir(a_dir)
+    
+    for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
+        objects = getRandom(1, n_list, image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
+        
+        fname = f'{i_dir}image_{i:04d}.jpg'
+        plt.imsave(fname, image, cmap='gray')
+        
+        writer = Writer(fname, image_w, image_h)
+        writer.setSNR(snr)
+        for bbox, label in zip(bboxes, labels):
+            xmin, ymin = bbox[0]
+            xmax, ymax = bbox[1]
+            theta = bbox[2] if len(bbox) > 2 else 0
+            writer.addObject(label, xmin, ymin, xmax, ymax, theta)
+        
+        xmlname = f'{a_dir}image_{i:04d}.xml'
+        writer.save(xmlname)
+    
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+
+def generate_different_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
+    label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    parameters_list = [[[1,1,1], [15, 10, 5], [3, 2, 1]], [[1,1,1], [10, 5, 2.5], [2.5, 1.5, 1]], [[1,1,1], [2.5, 1.5, 1]], [[1,1,1], [10, 5, 2.5], [10, 5, 2.5]], [[1,1,1], [20, 15, 10], [8, 5, 3], [3, 2, 1]]]
+    n_list = [x for x in np.random.randint(1,10,5)]
+    
+    dataset_name = 'different_shape_different_size'
+    dataset_dir = f'{subdir}/{dataset_name}'
+    
+    if not os.path.exists(dataset_dir):
+        os.mkdir(dataset_dir)
+    
+    i_dir = f'{dataset_dir}/images/'
+    if not os.path.exists(i_dir):
+        os.mkdir(i_dir)
+    a_dir = f'{dataset_dir}/annotations/'
+    if not os.path.exists(a_dir):
+        os.mkdir(a_dir)
+    
+    for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
+        objects = getRandom(1, n_list, image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
+        
+        fname = f'{i_dir}image_{i:04d}.jpg'
+        plt.imsave(fname, image, cmap='gray')
+        
+        writer = Writer(fname, image_w, image_h)
+        writer.setSNR(snr)
+        for bbox, label in zip(bboxes, labels):
+            xmin, ymin = bbox[0]
+            xmax, ymax = bbox[1]
+            theta = bbox[2] if len(bbox) > 2 else 0
+            writer.addObject(label, xmin, ymin, xmax, ymax, theta)
+        
+        xmlname = f'{a_dir}image_{i:04d}.xml'
+        writer.save(xmlname)
+    
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+
 def main():
     image_w = 416
     image_h = 416
-    n_list = [1, 15]
-    label_list = ['Janus', 'Ring', 'Rod', 'Spot', 'Ellipse'] 
-    color_list = ['lime']
-    parameters_list= [[[1], [15], [3]]] 
     snr_range = [1, 30]
     i_range = [0.1, 1]
     distance = 15
     offset = 15
+    nimages = 100
 
-    objects = getRandom(1, np.random.randint(n_list[0], n_list[1] + 1), image_w, image_h, distance, offset, label_list, parameters_list)[0]
-
-    bboxes, labels, image = generateImage(objects, image_w, image_h, snr_range, i_range)
-
-    fig, ax = plt.subplots(1, 1, figsize=(8,8))
-    ax.imshow(image, cmap='gray')
-    for bbox, label in zip(bboxes, labels):
-        xmin, ymin = bbox[0]
-        xmax, ymax = bbox[1]
-        w, h = xmax - xmin, ymax - ymin 
-        x0, y0 =  xmin + w/2, ymin + h/2
-        angle = 2*pi*bbox[2]
-        ax.add_patch(patches.Polygon([rotate((x0, y0), (xmin, ymin), angle), rotate((x0, y0), (xmax, ymin), angle), rotate((x0, y0), (xmax, ymax), angle), rotate((x0, y0), (xmin, ymax), angle)], linewidth=1, edgecolor=color_list[0], facecolor='none'))
-        ax.plot([x0, x0 + 0.5*w*np.cos(angle)], [y0, y0 - 0.5*w*np.sin(angle)], '-', c=color_list[0])
-        
-    ax.set_xlim(0, image_w)
-    ax.set_ylim(image_h, 0)
-    plt.show()
-
-
-    subdir = '../data/Testing' 
-    nimages = [100]
-    folders = label_list
-
+    subdir = 'data/Testing'
+    
     if not os.path.exists(subdir):
         os.mkdir(subdir)
-        
-    for i, prefix in enumerate(folders):
-        
-        i_dir = subdir + '/' + prefix + '_images/'
-        if not os.path.exists(i_dir):
-            os.mkdir(i_dir)
-        a_dir = subdir + '/' + prefix + '_annotations/'
-        if not os.path.exists(a_dir):
-            os.mkdir(a_dir)
-        
-        for i in tqdm(range(nimages[i])):    
-            objects = ig.getRandom(1, np.random.randint(n_list[0], n_list[1] + 1), image_w, image_h, distance, offset, label_list, parameters_list)[0]
-            bboxes, labels, image = ig.generateImage(objects, image_w, image_h, snr_range, i_range) 
-            fname = i_dir + 'image_{:04d}.jpg'.format(i,2)
-            plt.imsave(fname, image, cmap='gray')
-            writer = Writer(fname, image_w, image_h)
-            for bbox, label in zip(bboxes, labels):
-                xmin, ymin = bbox[0]
-                xmax, ymax = bbox[1]
-                theta = bbox[2]
-                writer.addObject(label, xmin, ymin, xmax, ymax, theta)
-            xmlname = a_dir + 'image_{:04d}.xml'.format(i,2)    
-            writer.save(xmlname)
-            
-    exportConfig(subdir + 'info.txt', nimages, label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+    
+    print("Generating datasets with different shape and size combinations...")
+    
+    generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
+    generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
+    generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
+    generate_different_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
+    
+    print("All datasets generated successfully!")
+    print(f"Datasets saved in: {subdir}")
+    print("Generated datasets:")
+    print("- same_shape_same_size: Janus particles with [1, 15, 3] parameters")
+    print("- same_shape_different_size: Janus particles with 5 different size parameters [1, 15, 3], [1, 9, 2], [1, 12, 2.5], [1, 18, 4], [1, 6, 1.5]")
+    print("- different_shape_same_size: 5 different shapes (Janus, Ring, Spot, Ellipse, Rod) with same size parameters")
+    print("- different_shape_different_size: 5 different shapes (Janus, Ring, Spot, Ellipse, Rod) with different size parameters")
+    print("Note: SNR values are stored in XML annotations for each image.")
 
 if __name__ == '__main__':
     main()
