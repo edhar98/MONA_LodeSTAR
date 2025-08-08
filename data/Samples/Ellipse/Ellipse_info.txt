@@ -1,0 +1,6 @@
+Particle Type: Ellipse
+Description: Elliptical particle with clear shape
+Parameters: [[1], [8], [4]]
+Image Size: 50x50
+SNR: 10.00
+Bounding Box: [[np.int64(9), np.int64(17)], [np.int64(41), np.int64(33)], 0.012252449418152178]

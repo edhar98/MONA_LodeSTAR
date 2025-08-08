@@ -211,8 +211,8 @@ def rotate(origin, point, angle):
     return x2, y2
 
 def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
-    label_list = ['Janus']
-    parameters_list = [[[1], [15], [3]]]
+    label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    parameters = [[[1], [15], [3]], [[1], [10], [2.5]], [[1], [2.5]], [[1], [8], [10]], [[1], [15], [5], [2]]]
     n_list = [1, 5]
     
     dataset_name = 'same_shape_same_size'
@@ -229,7 +229,10 @@ def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, dis
         os.mkdir(a_dir)
     
     for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
-        objects = getRandom(1, np.random.randint(n_list[0], n_list[1] + 1), image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        ind = np.random.randint(0, len(label_list))
+        current_label_list = [label_list[ind]]
+        current_parameters = [parameters[ind]]
+        objects = getRandom(1, np.random.randint(n_list[0], n_list[1] + 1), image_w, image_h, distance, offset, current_label_list, current_parameters)[0]
         bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
         
         fname = f'{i_dir}image_{i:04d}.jpg'
@@ -246,19 +249,19 @@ def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, dis
         xmlname = f'{a_dir}image_{i:04d}.xml'
         writer.save(xmlname)
     
-    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters, n_list, snr_range, i_range, distance, offset)
 
 def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
-    label_list = ['Janus', 'Janus', 'Janus', 'Janus', 'Janus']
-    parameters_list = [[[1], [15], [3]], [[1], [9], [2]], [[1], [12], [2.5]], [[1], [18], [4]], [[1], [6], [1.5]]]
-    n_list = [x for x in np.random.randint(1, 10, 5)]
     
-    # Ensure all lists have the same length
-    min_length = min(len(label_list), len(parameters_list), len(n_list))
-    label_list = label_list[:min_length]
-    parameters_list = parameters_list[:min_length]
-    n_list = n_list[:min_length]
+    configs = {'Janus':[[[1], [15], [3]], [[1], [9], [2]], [[1], [12], [2.5]], [[1], [18], [4]], [[1], [6], [1.5]]],
+                'Ring':[[[1], [10], [2.5]], [[1], [5], [1.5]], [[1], [8], [3]], [[1], [12], [4]], [[1], [4], [1]]],
+                'Spot':[[[1], [2.5]], [[1], [1.5]], [[1], [3]], [[1], [4]], [[1], [1]]],
+                'Ellipse':[[[1], [8], [10]], [[1], [5], [5]], [[1], [12], [15]], [[1], [10], [20]], [[1], [3], [5]]],
+                'Rod':[[[1], [15], [5], [2]], [[1], [10], [3], [1.5]], [[1], [20], [10], [3]], [[1], [12], [8], [2.5]], [[1], [8], [3], [1]]]}
     
+    label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    n_list = [x for x in np.random.randint(1, 4, 5)]
+  
     dataset_name = 'same_shape_different_size'
     dataset_dir = f'{subdir}/{dataset_name}'
     
@@ -273,7 +276,11 @@ def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h
         os.mkdir(a_dir)
     
     for i in tqdm(range(nimages), desc=f'Generating {dataset_name}'):
-        objects = getRandom(1, n_list, image_w, image_h, distance, offset, label_list, parameters_list)[0]
+        ind = np.random.randint(0, len(label_list))
+        label = label_list[ind]
+        parameters_list = configs[label]
+        current_label_list = [label] * len(parameters_list)
+        objects = getRandom(1, n_list, image_w, image_h, distance, offset, current_label_list, parameters_list)[0]
         bboxes, labels, image, snr = generateImage(objects, image_w, image_h, snr_range, i_range)
         
         fname = f'{i_dir}image_{i:04d}.jpg'
@@ -290,7 +297,7 @@ def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h
         xmlname = f'{a_dir}image_{i:04d}.xml'
         writer.save(xmlname)
     
-    exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
+    exportConfig(f'{dataset_dir}/info.txt', [nimages], configs.keys(), configs.values(), n_list, snr_range, i_range, distance, offset)
 
 def generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
     label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
@@ -371,13 +378,13 @@ def generate_different_shape_different_size_dataset(subdir, nimages, image_w, im
 def main():
     image_w = 416
     image_h = 416
-    snr_range = [1, 30]
+    snr_range = [5, 30]
     i_range = [0.1, 1]
     distance = 15
     offset = 15
-    nimages = 100
+    nimages = 10
 
-    subdir = 'data/Testing'
+    subdir = 'data/SmallTesting'
     
     if not os.path.exists(subdir):
         os.mkdir(subdir)
@@ -391,12 +398,6 @@ def main():
     
     print("All datasets generated successfully!")
     print(f"Datasets saved in: {subdir}")
-    print("Generated datasets:")
-    print("- same_shape_same_size: Janus particles with [1, 15, 3] parameters")
-    print("- same_shape_different_size: Janus particles with 5 different size parameters [1, 15, 3], [1, 9, 2], [1, 12, 2.5], [1, 18, 4], [1, 6, 1.5]")
-    print("- different_shape_same_size: 5 different shapes (Janus, Ring, Spot, Ellipse, Rod) with same size parameters")
-    print("- different_shape_different_size: 5 different shapes (Janus, Ring, Spot, Ellipse, Rod) with different size parameters")
-    print("Note: SNR values are stored in XML annotations for each image.")
-
+    
 if __name__ == '__main__':
     main()
