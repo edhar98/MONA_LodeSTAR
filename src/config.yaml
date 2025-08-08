@@ -2,39 +2,47 @@ wandb:
   project: LodeSTAR
   entity: harutyunianedgar-universit-t-leipzig
   tags: ["LodeSTAR", "MONA"]
-  notes: "Training LodeSTAR model"
+  notes: "Training LodeSTAR model for single particle detection"
 
-data_dir: ../data/
+data_dir: data/
 
+# Sample configuration - can be single particle or multiple
+sample: Janus  # Can be: Janus, Ring, Spot, Ellipse, Rod
+# For multi-particle training, use: samples: [Janus, Ring, Spot, Ellipse, Rod]
 
-sample: Janus
-# dataset
+# Training dataset augmentation
 add_min: -0.1
 add_max: 0.1
 mul_min: 0.9
 mul_max: 1.1
 
-length: 400
+# Validation dataset augmentation (gentler for better generalization testing)
+val_add_min: -0.05
+val_add_max: 0.05
+val_mul_min: 0.95
+val_mul_max: 1.05
+
+length: 400  # Training samples per epoch
 
 # training
 seed: 37
-n_transforms: 4
-max_epochs: 200
+n_transforms: 4  # LodeSTAR paper recommendation: 4-8 transforms
+max_epochs: 200  # Good for convergence
 devices: 1
-num_workers: 8  # lowest relative time
-batch_size: 8  # 2000  # 4608  # 2048  # 515  # 1030  # 3072  # 4096  #  
+num_workers: 8  # Optimal for data loading
+batch_size: 8  # Balanced for memory and training stability
 
 # optimizer 
-lr: 0.0001
+lr: 0.0001  # Standard learning rate for LodeSTAR
 
 # detection
-alpha: 0.2 # metric of object similarity: higher alpha higher object difference
-beta: 0.8 #1 - alpha
-cutoff: 0.2 # detection threshold 
+alpha: 0.2  # Object similarity metric (0.1-0.3 range)
+beta: 0.8   # 1 - alpha
+cutoff: 0.2  # Detection threshold (0.1-0.3 range)
 mode: constant
 
 lightning:
-  accelerator: 'cpu'
+  accelerator: 'gpu'
   precision: '16-mixed'  # Use mixed precision training
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1

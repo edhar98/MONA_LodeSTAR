@@ -1,0 +1,6 @@
+Particle Type: Rod
+Description: Rod particle with clear rectangular shape
+Parameters: [[1], [12], [4], [1.5]]
+Image Size: 50x50
+SNR: 10.00
+Bounding Box: [[np.float64(16.0), np.float64(20.0)], [np.float64(34.0), np.float64(30.0)], 0.9288128645760436]
