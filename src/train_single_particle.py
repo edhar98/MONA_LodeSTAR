@@ -15,6 +15,9 @@ import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
+# Import PaperLodeSTAR from separate file
+from custom_lodestar import customLodeSTAR
+
 # Setup logger
 logger = utils.setup_logger('train_single_particle')
 
@@ -255,10 +258,16 @@ def train_single_particle_model(particle_type, config):
     logger.info(f"Validation batches: {len(val_dataloader)}")
     
     # Create LodeSTAR model
-    lodestar = dl.LodeSTAR(
-        n_transforms=config['n_transforms'], 
-        optimizer=dl.Adam(lr=config['lr'])
-    ).build()
+    if config['lodestar_version'] == 'default':
+        lodestar = dl.LodeSTAR(
+            n_transforms=config['n_transforms'], 
+            optimizer=dl.Adam(lr=config['lr'])
+        ).build()
+    else:
+        lodestar = customLodeSTAR(
+            n_transforms=config['n_transforms'], 
+            optimizer=dl.Adam(lr=config['lr'])
+        ).build()
     
     # Setup trainer
     trainer = dl.Trainer(
@@ -363,26 +372,63 @@ def main():
     config = utils.load_yaml('src/config.yaml')
     
     # Define particle types
-    particle_types = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    #particle_types = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    particle_types = ['Spot']
+    
+    # Load existing training summary if it exists
+    summary_path = 'trained_models_summary.yaml'
+    existing_models = {}
+    if os.path.exists(summary_path):
+        try:
+            existing_models = utils.load_yaml(summary_path)
+            logger.info(f"Loaded existing training summary from {summary_path}")
+        except Exception as e:
+            logger.warning(f"Could not load existing training summary: {e}")
+            existing_models = {}
     
     # Train models for each particle type
-    trained_models = {}
+    trained_models = existing_models.copy()  # Start with existing models
     
     for particle_type in particle_types:
         try:
             final_model_path, checkpoint_path = train_single_particle_model(particle_type, config)
-            trained_models[particle_type] = {
+            
+            # Create new model entry
+            new_model_entry = {
                 'model_path': final_model_path,  # This is now the path in models directory
                 'checkpoint_path': checkpoint_path,
                 'models_dir': os.path.dirname(final_model_path)  # Add the models directory path
             }
+            
+            # Check if this particle type already exists
+            if particle_type in trained_models:
+                # Move existing entry to additional_models if it doesn't exist
+                if 'additional_models' not in trained_models[particle_type]:
+                    trained_models[particle_type]['additional_models'] = []
+                
+                # Move the current entry to additional_models
+                existing_entry = {
+                    'model_path': trained_models[particle_type]['model_path'],
+                    'checkpoint_path': trained_models[particle_type]['checkpoint_path'],
+                    'models_dir': trained_models[particle_type]['models_dir']
+                }
+                trained_models[particle_type]['additional_models'].insert(0, existing_entry)
+                
+                # Update with new entry
+                trained_models[particle_type].update(new_model_entry)
+                
+                logger.info(f"Updated {particle_type} model - moved previous entry to additional_models")
+            else:
+                # New particle type, just add it
+                trained_models[particle_type] = new_model_entry
+                logger.info(f"Added new {particle_type} model")
+            
             logger.info(f"Successfully trained {particle_type} model")
         except Exception as e:
             logger.error(f"Failed to train {particle_type} model: {e}")
             continue
     
     # Save training summary
-    summary_path = 'trained_models_summary.yaml'
     utils.save_yaml(trained_models, summary_path)
     logger.info(f"\nTraining summary saved to {summary_path}")
     
@@ -391,6 +437,8 @@ def main():
     for particle_type, paths in trained_models.items():
         logger.info(f"  - {particle_type}: {paths['model_path']}")
         logger.info(f"    Models directory: {paths['models_dir']}")
+        if 'additional_models' in paths:
+            logger.info(f"    Additional models: {len(paths['additional_models'])}")
 
 
 if __name__ == '__main__':

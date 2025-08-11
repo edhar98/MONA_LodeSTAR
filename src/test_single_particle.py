@@ -1,5 +1,4 @@
 import os
-import sys
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,6 +16,9 @@ from scipy.spatial.distance import cdist
 from scipy.ndimage import maximum_filter, generate_binary_structure
 from scipy import ndimage
 
+# Import customLodeSTAR from separate file
+from custom_lodestar import customLodeSTAR
+
 # Setup logger
 logger = utils.setup_logger('test_single_particle')
 
@@ -25,10 +27,16 @@ def load_trained_model(model_path, config):
     """Load trained LodeSTAR model"""
     
     # Create LodeSTAR model
-    lodestar = dl.LodeSTAR(
-        n_transforms=config['n_transforms'], 
-        optimizer=dl.Adam(lr=config['lr'])
-    ).build()
+    if config['lodestar_version'] == 'default':
+        lodestar = dl.LodeSTAR(
+            n_transforms=config['n_transforms'], 
+            optimizer=dl.Adam(lr=config['lr'])
+        ).build()
+    else:
+        lodestar = customLodeSTAR(
+            n_transforms=config['n_transforms'], 
+            optimizer=dl.Adam(lr=config['lr'])
+        ).build()
     
     # Load trained weights
     if os.path.exists(model_path):
@@ -502,13 +510,14 @@ def test_single_particle_model(particle_type, model_path, config):
     dataset_types = ['same_shape_same_size', 'same_shape_different_size', 
                     'different_shape_same_size', 'different_shape_different_size']
     #dataset_types = ['same_shape_same_size']
-    results_dir = f'detection_results/{testing_type}'
+    model_id = model_path.split("/")[-2]
+    results_dir = f'detection_results/{testing_type}/{particle_type}_{model_id}'
     os.makedirs(results_dir,exist_ok=True)
     all_results = {}
     
     for dataset_type in dataset_types:
         dataset_dir = os.path.join(testing_dir, dataset_type)
-        save_dir = os.path.join(results_dir, f'{particle_type}_{dataset_type}')
+        save_dir = os.path.join(results_dir, f'{dataset_type}')
         os.makedirs(save_dir,exist_ok=True)
         if os.path.exists(dataset_dir):
             logger.info(f"\n--- Testing on {dataset_type} dataset ---")
@@ -564,6 +573,8 @@ def main():
     test_results = {}
     
     for particle_type, model_info in trained_models.items():
+        if particle_type != 'Spot':
+            continue
         model_path = model_info['model_path']
         
         if os.path.exists(model_path):

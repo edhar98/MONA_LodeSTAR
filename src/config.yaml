@@ -6,6 +6,8 @@ wandb:
 
 data_dir: data/
 
+lodestar_version: default
+
 # Sample configuration - can be single particle or multiple
 sample: Janus  # Can be: Janus, Ring, Spot, Ellipse, Rod
 # For multi-particle training, use: samples: [Janus, Ring, Spot, Ellipse, Rod]
@@ -22,7 +24,8 @@ val_add_max: 0.05
 val_mul_min: 0.95
 val_mul_max: 1.05
 
-length: 400  # Training samples per epoch
+# Paper specifications: 5000 mini-batches of 8 samples = 40,000 total samples
+length: 40000  # Training samples per epoch (paper: 5000 mini-batches × 8 samples = 40,000 total)
 
 # training
 seed: 37
