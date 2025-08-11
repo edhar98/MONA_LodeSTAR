@@ -8,7 +8,7 @@ import matplotlib.patches as patches
 
 from tqdm import tqdm # Progress bar
 
-from xml_writer import Writer # Writes XML files in the Pascal VOC format 
+from utils import Writer # Writes XML files in the Pascal VOC format 
 import configparser
 from skimage.draw import rectangle
 from scipy import ndimage
@@ -382,9 +382,9 @@ def main():
     i_range = [0.1, 1]
     distance = 15
     offset = 15
-    nimages = 10
+    nimages = 100
 
-    subdir = 'data/SmallTesting'
+    subdir = 'data/Testing'
     
     if not os.path.exists(subdir):
         os.mkdir(subdir)

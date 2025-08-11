@@ -2,6 +2,7 @@ import os
 import yaml
 import logging
 from datetime import datetime
+from jinja2 import Environment, BaseLoader
 
 
 def load_yaml(path_file):
@@ -25,48 +26,101 @@ def save_yaml(dictionary, path_file):
         yaml.dump(dictionary, f, default_flow_style=False)
 
 
-def setup_logger(name='default', log_file=None):
-    """
-    Setup logger configuration.
+def setup_logger(name, log_file=None, level=logging.INFO):
+    """Set up logger with console and optional file handler"""
     
-    Args:
-        name (str): Logger name
-        log_file (str): Optional log filename. If None, creates timestamped filename.
-    
-    Returns:
-        logging.Logger: Configured logger instance
-    """
-    # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
-    
-    # Create timestamped log filename if not provided
-    if log_file is None:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = f'{name}_{timestamp}.log'
-    
-    # Create logger
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
     
-    # Remove existing handlers to avoid duplicates
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-    
-    # Create file handler
-    file_handler = logging.FileHandler(f'logs/{log_file}', mode='w')
-    file_handler.setLevel(logging.INFO)
-    
-    # Create console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    # Clear existing handlers
+    logger.handlers.clear()
     
     # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
-    # Add handlers to logger
-    logger.addHandler(file_handler)
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     
+    # File handler (optional)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
     return logger
+
+class XMLWriter:
+    """XML annotation writer for Pascal VOC format"""
+    
+    def __init__(self, path, width, height, depth=3, database='Unknown', segmented=0):
+        # XML template for Pascal VOC format
+        self.xml_template = """<annotation>
+    <folder>{{ folder }}</folder>
+    <filename>{{ filename }}</filename>
+    <path>{{ path }}</path>
+    <source>
+        <database>{{ database }}</database>
+    </source>
+    <size>
+        <width>{{ width }}</width>
+        <height>{{ height }}</height>
+        <depth>{{ depth }}</depth>
+    </size>
+    <segmented>{{ segmented }}</segmented>
+{% if snr is not none %}    <snr>{{ snr }}</snr>{% endif %}
+{% for object in objects %}    <object>
+        <name>{{ object.name }}</name>
+        <orientation>{{ object.orientation }}</orientation>
+        <bndbox>
+            <xmin>{{ object.xmin }}</xmin>
+            <ymin>{{ object.ymin }}</ymin>
+            <xmax>{{ object.xmax }}</xmax>
+            <ymax>{{ object.ymax }}</ymax>
+        </bndbox>
+    </object>{% endfor %}
+</annotation>"""
+        
+        # Create Jinja2 environment
+        self.environment = Environment(loader=BaseLoader())
+        self.template = self.environment.from_string(self.xml_template)
+        
+        abspath = os.path.abspath(path)
+        
+        self.template_parameters = {
+            'path': abspath,
+            'filename': os.path.basename(abspath),
+            'folder': os.path.basename(os.path.dirname(abspath)),
+            'width': width,
+            'height': height,
+            'depth': depth,
+            'database': database,
+            'segmented': segmented,
+            'objects': [],
+            'snr': None
+        }
+    
+    def addObject(self, name, xmin, ymin, xmax, ymax, orientation=0):
+        """Add an object annotation to the XML"""
+        self.template_parameters['objects'].append({
+            'name': name,
+            'xmin': xmin,
+            'ymin': ymin,
+            'xmax': xmax,
+            'ymax': ymax,
+            'orientation': orientation,
+        })
+    
+    def setSNR(self, snr):
+        """Set the SNR value for the annotation"""
+        self.template_parameters['snr'] = snr
+    
+    def save(self, annotation_path):
+        """Save the XML annotation to file"""
+        with open(annotation_path, 'w') as file:
+            content = self.template.render(**self.template_parameters)
+            file.write(content)
+
+# Alias for backward compatibility
+Writer = XMLWriter

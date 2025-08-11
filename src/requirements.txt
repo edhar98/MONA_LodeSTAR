@@ -1,0 +1,48 @@
+# Core scientific computing
+numpy
+scipy
+scikit-image
+
+# Deep learning and ML
+torch
+torchvision
+lightning
+wandb
+deeplay
+git+https://github.com/DeepTrackAI/DeepTrack2.git@develop
+
+# Data processing and visualization
+matplotlib
+pandas
+tqdm
+
+# Image processing
+opencv-python
+Pillow
+
+# Machine learning utilities
+scikit-learn
+
+# Template engine for XML generation
+Jinja2
+
+# Configuration and utilities
+PyYAML
+configparser
+
+# API and web
+elabapi-python
+urllib3
+
+# Additional utilities
+more-itertools
+pint
+lazy-import
+rich
+gdown
+array-api-compat
+array-api-strict
+
+# Development and testing (optional)
+ipywidgets
+IPython

@@ -1,6 +1,0 @@
-Particle Type: Ring
-Description: Ring particle with clear circular structure
-Parameters: [[1], [8], [2]]
-Image Size: 50x50
-SNR: 10.00
-Bounding Box: [[np.int64(13), np.int64(13)], [np.int64(37), np.int64(37)]]
