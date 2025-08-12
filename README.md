@@ -1,6 +1,6 @@
 # MONA LodeSTAR - Single Particle Detection
 
-A comprehensive implementation of LodeSTAR (Localization of Deformable Shapes using Transform-Augmented Regression) for single particle detection and analysis in microscopy images.
+A comprehensive implementation of LodeSTAR (Localisation and detection from Symmetries, Translations And Rotations) for single particle detection and analysis in microscopy images.
 
 ## Overview
 
