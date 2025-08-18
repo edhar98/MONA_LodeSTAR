@@ -1,5 +1,7 @@
 import os
 import torch
+import argparse
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -19,8 +21,12 @@ from scipy import ndimage
 # Import customLodeSTAR from separate file
 from custom_lodestar import customLodeSTAR
 
-# Setup logger
-logger = utils.setup_logger('test_single_particle')
+# Setup logger with file output
+log_dir = 'logs'
+os.makedirs(log_dir, exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = os.path.join(log_dir, f'test_single_particle_{timestamp}.log')
+logger = utils.setup_logger('test_single_particle', log_file=log_file)
 
 
 def load_trained_model(model_path, config):
@@ -84,7 +90,7 @@ def parse_xml_annotations(xml_path):
     return np.array(bboxes), labels, snr
 
 
-def detect_particles(model, image, threshold=0.2, particle_type=None):
+def detect_particles(model, image, config, particle_type=None):
     """Detect particles using trained LodeSTAR model"""
     
     # Convert image to numpy array if it's not already
@@ -143,7 +149,7 @@ def detect_particles(model, image, threshold=0.2, particle_type=None):
     
     # Get detections using model's detect method
     try:
-        detections = model.detect(image_tensor, alpha=0.2, beta=0.8, mode="constant", cutoff=threshold)[0]
+        detections = model.detect(image_tensor, alpha=config.get('alpha', 0.2), beta=config.get('beta', 0.8), mode=config.get('mode', "constant"), cutoff=config.get('cutoff', 0.2))[0]
         
         if len(detections) > 0:
             # Swap coordinates: [y, x] -> [x, y] and cluster
@@ -326,7 +332,7 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config):
                 gt_labels = []
         
         # Detect particles
-        detections, prediction, detection_labels, model_output = detect_particles(model, image, threshold=config.get('detection_threshold', 0.2), particle_type=particle_type)
+        detections, prediction, detection_labels, model_output = detect_particles(model, image, config, particle_type=particle_type)
         
         # Calculate metrics
         metrics = calculate_detection_metrics(gt_bboxes, detections, gt_labels=gt_labels, detection_labels=detection_labels)
@@ -493,7 +499,7 @@ def visualize_detection_results(image, gt_bboxes, detections, prediction, title=
     plt.close()
 
 
-def test_single_particle_model(particle_type, model_path, config):
+def test_single_particle_model(particle_type, model_path, config, visualize=False):
     """Test a single particle model on generated images"""
     
     logger.info(f"\n=== Testing {particle_type} model ===")
@@ -528,37 +534,55 @@ def test_single_particle_model(particle_type, model_path, config):
                     'metrics': metrics
                 }
                 
-                # Visualize all results from this dataset
-                for i, result in enumerate(results):
-                    image_path = os.path.join(dataset_dir, 'images', result['image_file'])
-                    image = np.array(dt.LoadImage(image_path).resolve())
-                    
-                    # Create title with metrics
-                    metrics_title = f"{particle_type}_{dataset_type}_sample_{i+1}"
-                    
-                    visualize_detection_results(
-                        image, 
-                        result['gt_bboxes'], 
-                        result['detections'], 
-                        result['prediction'],
-                        metrics_title,
-                        save_dir,
-                        result['snr'],
-                        result['gt_labels'],
-                        result['detection_labels'],
-                        result['metrics'],  # Pass individual metrics for display
-                        result['model_output'], # Pass model_output for weighted prediction
-                        model # Pass the model instance
-                    )
+                if visualize:
+                    # Visualize all results from this dataset
+                    for i, result in enumerate(results):
+                        image_path = os.path.join(dataset_dir, 'images', result['image_file'])
+                        image = np.array(dt.LoadImage(image_path).resolve())
+                        
+                        # Create title with metrics
+                        metrics_title = f"{particle_type}_{dataset_type}_sample_{i+1}"
+                        
+                        visualize_detection_results(
+                            image, 
+                            result['gt_bboxes'], 
+                            result['detections'], 
+                            result['prediction'],
+                            metrics_title,
+                            save_dir,
+                            result['snr'],
+                            result['gt_labels'],
+                            result['detection_labels'],
+                            result['metrics'],  # Pass individual metrics for display
+                            result['model_output'], # Pass model_output for weighted prediction
+                            model # Pass the model instance
+                        )
     
     return all_results
 
 
 def main():
-    """Test all trained models on their respective datasets"""
+    """Test trained models on their respective datasets"""
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Test LodeSTAR model for particle detection')
+    parser.add_argument('--particle', type=str, help='Specific particle type to test (e.g., Janus, Ring, Spot, Ellipse, Rod)')
+    parser.add_argument('--model', type=str, help='Path to specific model file to test')
+    parser.add_argument('--config', type=str, default='src/config.yaml', help='Path to configuration file')
+    args = parser.parse_args()
     
     # Load configuration
-    config = utils.load_yaml('src/config.yaml')
+    config = utils.load_yaml(args.config)
+    
+    # Log detection configuration parameters
+    detection_config = {
+        'alpha': config.get('alpha', 0.2),
+        'beta': config.get('beta', 0.8),
+        'cutoff': config.get('cutoff', 0.2),
+        'mode': config.get('mode', 'constant')
+    }
+    logger.info(f"=== LodeSTAR Testing Started ===")
+    logger.info(f"Detection configuration: alpha={detection_config['alpha']}, beta={detection_config['beta']}, cutoff={detection_config['cutoff']}, mode={detection_config['mode']}")
     
     # Load training summary
     summary_path = 'trained_models_summary.yaml'
@@ -569,23 +593,94 @@ def main():
     
     trained_models = utils.load_yaml(summary_path)
     
-    # Test each model
-    test_results = {}
-    
-    for particle_type, model_info in trained_models.items():
-        if particle_type != 'Spot':
-            continue
+    # Determine which models to test
+    if args.particle and args.model:
+        # Test specific particle type with specific model
+        if args.particle not in trained_models:
+            logger.error(f"Particle type '{args.particle}' not found in training summary")
+            return
+        
+        if not os.path.exists(args.model):
+            logger.error(f"Model file not found: {args.model}")
+            return
+        
+        logger.info(f"Testing {args.particle} with specific model: {args.model}")
+        test_results = {}
+        metrics = test_single_particle_model(args.particle, args.model, config)
+        if metrics:
+            test_results[args.particle] = metrics
+            logger.info(f"Successfully tested {args.particle} model")
+        else:
+            logger.warning(f"Failed to test {args.particle} model")
+            return
+        
+    elif args.particle:
+        # Test specific particle type using model from training summary
+        if args.particle not in trained_models:
+            logger.error(f"Particle type '{args.particle}' not found in training summary")
+            return
+        
+        logger.info(f"Testing {args.particle} model from training summary")
+        test_results = {}
+        model_info = trained_models[args.particle]
         model_path = model_info['model_path']
         
         if os.path.exists(model_path):
-            metrics = test_single_particle_model(particle_type, model_path, config)
+            metrics = test_single_particle_model(args.particle, model_path, config, visualize=config.get('visualize', False))
             if metrics:
-                test_results[particle_type] = metrics
-                logger.info(f"Successfully tested {particle_type} model")
+                test_results[args.particle] = metrics
+                logger.info(f"Successfully tested {args.particle} model")
             else:
-                logger.warning(f"Failed to test {particle_type} model")
+                logger.warning(f"Failed to test {args.particle} model")
+                return
         else:
-            logger.warning(f"Model not found: {model_path}")
+            logger.error(f"Model not found: {model_path}")
+            return
+    
+    elif args.model:
+        # Test specific model file (need to determine particle type)
+        if not os.path.exists(args.model):
+            logger.error(f"Model file not found: {args.model}")
+            return
+        
+        # Try to determine particle type from model path or ask user
+        particle_type = None
+        for pt in trained_models.keys():
+            if pt.lower() in args.model.lower():
+                particle_type = pt
+                break
+        
+        if not particle_type:
+            logger.error("Could not determine particle type from model path. Please specify --particle")
+            return
+        
+        logger.info(f"Testing {particle_type} with model: {args.model}")
+        test_results = {}
+        metrics = test_single_particle_model(particle_type, args.model, config, visualize=config.get('visualize', False))
+        if metrics:
+            test_results[particle_type] = metrics
+            logger.info(f"Successfully tested {particle_type} model")
+        else:
+            logger.warning(f"Failed to test {particle_type} model")
+            return
+    
+    else:
+        # Test all models (default behavior)
+        logger.info("Testing all trained models")
+        test_results = {}
+        
+        for particle_type, model_info in trained_models.items():
+            model_path = model_info['model_path']
+            
+            if os.path.exists(model_path):
+                metrics = test_single_particle_model(particle_type, model_path, config, visualize=config.get('visualize', False))
+                if metrics:
+                    test_results[particle_type] = metrics
+                    logger.info(f"Successfully tested {particle_type} model")
+                else:
+                    logger.warning(f"Failed to test {particle_type} model")
+            else:
+                logger.warning(f"Model not found: {model_path}")
     
     # Save test results
     if test_results:

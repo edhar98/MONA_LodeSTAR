@@ -6,11 +6,10 @@ wandb:
 
 data_dir: data/
 
-lodestar_version: default
+lodestar_version: custom
 
 # Sample configuration - can be single particle or multiple
-sample: Janus  # Can be: Janus, Ring, Spot, Ellipse, Rod
-# For multi-particle training, use: samples: [Janus, Ring, Spot, Ellipse, Rod]
+samples: [Janus, Ring, Spot, Ellipse, Rod]  # Can be: Janus, Ring, Spot, Ellipse, Rod
 
 # Training dataset augmentation
 add_min: -0.1
@@ -31,9 +30,10 @@ length: 40000  # Training samples per epoch (paper: 5000 mini-batches × 8 sampl
 seed: 37
 n_transforms: 4  # LodeSTAR paper recommendation: 4-8 transforms
 max_epochs: 200  # Good for convergence
-devices: 1
+devices: 2  # Use both GPUs
+strategy: "ddp"  # Distributed Data Parallel strategy
 num_workers: 8  # Optimal for data loading
-batch_size: 8  # Balanced for memory and training stability
+batch_size: 16  # Increased batch size for 2 GPUs
 
 # optimizer 
 lr: 0.0001  # Standard learning rate for LodeSTAR
