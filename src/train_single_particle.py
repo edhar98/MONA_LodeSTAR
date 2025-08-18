@@ -1,6 +1,8 @@
 import os
 import sys
 import shutil
+import argparse
+from datetime import datetime
 from deeplay import LodeSTAR
 import deeptrack.deeplay as dl
 import deeptrack as dt
@@ -18,8 +20,12 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 # Import PaperLodeSTAR from separate file
 from custom_lodestar import customLodeSTAR
 
-# Setup logger
-logger = utils.setup_logger('train_single_particle')
+# Setup logger with file output
+log_dir = 'logs'
+os.makedirs(log_dir, exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = os.path.join(log_dir, f'train_single_particle_{timestamp}.log')
+logger = utils.setup_logger('train_single_particle', log_file=log_file)
 
 
 class LodeSTARMetricsCallback(Callback):
@@ -269,11 +275,25 @@ def train_single_particle_model(particle_type, config):
             optimizer=dl.Adam(lr=config['lr'])
         ).build()
     
+    # Initialize model parameters with a dummy forward pass to fix DDP issues
+    logger.info("Initializing model parameters with dummy forward pass...")
+    try:
+        with torch.no_grad():
+            # Create a dummy input tensor
+            dummy_input = torch.randn(1, 1, 64, 64)  # (batch, channels, height, width)
+            # Run forward pass to initialize parameters
+            _ = lodestar(dummy_input)
+        logger.info("Model parameters initialized successfully")
+    except Exception as e:
+        logger.warning(f"Warning: Dummy forward pass failed: {e}")
+        logger.info("Continuing with training...")
+    
     # Setup trainer
     trainer = dl.Trainer(
         max_epochs=config['max_epochs'],
         accelerator=config['lightning']['accelerator'],
         devices=config['devices'],
+        strategy=config.get('strategy', 'auto'),  # Add strategy parameter
         precision=config['lightning']['precision'],
         gradient_clip_val=config['lightning']['gradient_clip_val'],
         accumulate_grad_batches=config['lightning']['accumulate_grad_batches'],
@@ -366,14 +386,29 @@ def train_single_particle_model(particle_type, config):
 
 
 def main():
-    """Train separate models for each particle type"""
+    """Train separate models for each particle type or a specific particle type"""
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train LodeSTAR model for particle detection')
+    parser.add_argument('--particle', type=str, help='Specific particle type to train (e.g., Janus, Ring, Spot, Ellipse, Rod)')
+    parser.add_argument('--config', type=str, default='src/config.yaml', help='Path to configuration file')
+    args = parser.parse_args()
     
     # Load configuration
-    config = utils.load_yaml('src/config.yaml')
+    config = utils.load_yaml(args.config)
     
     # Define particle types
-    #particle_types = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
-    particle_types = ['Spot']
+    if args.particle:
+        # Train only the specified particle type
+        if args.particle not in config['samples']:
+            logger.error(f"Particle type '{args.particle}' not found in config. Available types: {config['samples']}")
+            return
+        particle_types = [args.particle]
+        logger.info(f"Training only {args.particle} model")
+    else:
+        # Train all particle types
+        particle_types = config['samples']
+        logger.info(f"Training all particle types: {particle_types}")
     
     # Load existing training summary if it exists
     summary_path = 'trained_models_summary.yaml'
@@ -414,8 +449,8 @@ def main():
                 }
                 trained_models[particle_type]['additional_models'].insert(0, existing_entry)
                 
-                # Update with new entry
-                trained_models[particle_type].update(new_model_entry)
+                # Update with new entry - replace the entire entry
+                trained_models[particle_type] = new_model_entry
                 
                 logger.info(f"Updated {particle_type} model - moved previous entry to additional_models")
             else:

@@ -7,15 +7,19 @@ Trains separate models for each particle type and evaluates them
 import os
 import sys
 import argparse
-import subprocess
 import time
+from datetime import datetime
 from train_single_particle import main as train_main
 from test_single_particle import main as test_main
 import yaml
 import utils
 
-# Setup logger
-logger = utils.setup_logger('run_single_particle_pipeline')
+# Setup logger with file output
+log_dir = 'logs'
+os.makedirs(log_dir, exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = os.path.join(log_dir, f'run_single_particle_pipeline_{timestamp}.log')
+logger = utils.setup_logger('run_single_particle_pipeline', log_file=log_file)
 
 
 def run_training():
