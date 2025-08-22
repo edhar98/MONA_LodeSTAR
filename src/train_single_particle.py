@@ -117,6 +117,12 @@ def create_single_particle_pipeline(config, particle_type):
     
     training_pipeline = (
         dt.Value(training_image)
+        >> dt.AveragePooling(ksize=(1, 1, 3))
+        >> dt.Affine(scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
+            rotation=lambda: 2*np.pi*np.random.uniform(config['rotation_range'][0], config['rotation_range'][1]),
+            translation=lambda: np.random.uniform(config['translation_range'][0], config['translation_range'][1], 2),
+            mode='constant'
+        )
         >> dt.Multiply(lambda: np.random.uniform(config['mul_min'], config['mul_max']))
         >> dt.Add(lambda: np.random.uniform(config['add_min'], config['add_max']))
         >> dt.MoveAxis(-1, 0)  # Move channel to first dimension
@@ -151,8 +157,18 @@ def create_validation_pipeline(config, particle_type):
     val_add_min = config.get('val_add_min', config['add_min'])
     val_add_max = config.get('val_add_max', config['add_max'])
     
+    # Get validation augmentation ranges from config
+    val_rotation_range = config.get('val_rotation_range', config['rotation_range'])
+    val_translation_range = config.get('val_translation_range', config['translation_range'])
+    
     validation_pipeline = (
         dt.Value(validation_image)
+        >> dt.AveragePooling(ksize=(1, 1, 3))
+        >> dt.Affine(scale=lambda: np.random.uniform(config['val_scale_min'], config['val_scale_max']),
+            rotation=lambda: 2*np.pi*np.random.uniform(val_rotation_range[0], val_rotation_range[1]),
+            translation=lambda: np.random.uniform(val_translation_range[0], val_translation_range[1], 2),
+            mode='constant'
+        )
         >> dt.Multiply(lambda: np.random.uniform(val_mul_min, val_mul_max))
         >> dt.Add(lambda: np.random.uniform(val_add_min, val_add_max))
         >> dt.MoveAxis(-1, 0)  # Move channel to first dimension
@@ -423,6 +439,7 @@ def main():
     
     # Train models for each particle type
     trained_models = existing_models.copy()  # Start with existing models
+    successful_training = {}  # Track which training runs actually succeeded
     
     for particle_type in particle_types:
         try:
@@ -435,45 +452,65 @@ def main():
                 'models_dir': os.path.dirname(final_model_path)  # Add the models directory path
             }
             
-            # Check if this particle type already exists
-            if particle_type in trained_models:
-                # Move existing entry to additional_models if it doesn't exist
-                if 'additional_models' not in trained_models[particle_type]:
-                    trained_models[particle_type]['additional_models'] = []
-                
-                # Move the current entry to additional_models
-                existing_entry = {
-                    'model_path': trained_models[particle_type]['model_path'],
-                    'checkpoint_path': trained_models[particle_type]['checkpoint_path'],
-                    'models_dir': trained_models[particle_type]['models_dir']
-                }
-                trained_models[particle_type]['additional_models'].insert(0, existing_entry)
-                
-                # Update with new entry - replace the entire entry
-                trained_models[particle_type] = new_model_entry
-                
-                logger.info(f"Updated {particle_type} model - moved previous entry to additional_models")
-            else:
-                # New particle type, just add it
-                trained_models[particle_type] = new_model_entry
-                logger.info(f"Added new {particle_type} model")
-            
+            # Mark this training as successful
+            successful_training[particle_type] = new_model_entry
             logger.info(f"Successfully trained {particle_type} model")
+            
         except Exception as e:
             logger.error(f"Failed to train {particle_type} model: {e}")
             continue
     
-    # Save training summary
-    utils.save_yaml(trained_models, summary_path)
-    logger.info(f"\nTraining summary saved to {summary_path}")
+    # Only update YAML for successfully trained models
+    for particle_type, new_model_entry in successful_training.items():
+        # Check if this particle type already exists
+        if particle_type in trained_models:
+            
+            # Move existing entry to additional_models if it doesn't exist
+            if 'additional_models' not in trained_models[particle_type]:
+                trained_models[particle_type]['additional_models'] = []
+            
+            # Move the current entry to additional_models
+            existing_entry = {
+                'model_path': trained_models[particle_type]['model_path'],
+                'checkpoint_path': trained_models[particle_type]['checkpoint_path'],
+                'models_dir': trained_models[particle_type]['models_dir']
+            }
+            trained_models[particle_type]['additional_models'].insert(0, existing_entry)
+            
+            # Update with new entry - preserve additional_models
+            trained_models[particle_type].update(new_model_entry)
+            
+            logger.info(f"Updated {particle_type} model - moved previous entry to additional_models")
+        else:
+            # New particle type, just add it
+            trained_models[particle_type] = new_model_entry
+            logger.info(f"Added new {particle_type} model")
+    
+    # Save training summary only if we have successful training runs
+    if successful_training:
+        try:
+            utils.save_yaml(trained_models, summary_path)
+            logger.info(f"Training summary successfully saved to {summary_path}")
+                            
+        except Exception as e:
+            logger.error(f"Failed to save training summary: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        logger.info(f"\nTraining summary saved to {summary_path}")
+    else:
+        logger.warning("No models were successfully trained. YAML file not updated.")
     
     logger.info(f"\n=== Training Complete ===")
-    logger.info(f"Successfully trained {len(trained_models)} models:")
-    for particle_type, paths in trained_models.items():
-        logger.info(f"  - {particle_type}: {paths['model_path']}")
-        logger.info(f"    Models directory: {paths['models_dir']}")
-        if 'additional_models' in paths:
-            logger.info(f"    Additional models: {len(paths['additional_models'])}")
+    if successful_training:
+        logger.info(f"Successfully trained {len(successful_training)} models:")
+        for particle_type, paths in successful_training.items():
+            logger.info(f"  - {particle_type}: {paths['model_path']}")
+            logger.info(f"    Models directory: {paths['models_dir']}")
+            if particle_type in trained_models and 'additional_models' in trained_models[particle_type]:
+                logger.info(f"    Additional models: {len(trained_models[particle_type]['additional_models'])}")
+    else:
+        logger.info("No models were successfully trained.")
 
 
 if __name__ == '__main__':

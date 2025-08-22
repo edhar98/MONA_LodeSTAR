@@ -1,46 +1,37 @@
 import torch
 import torch.nn as nn
 import deeptrack.deeplay as dl
+from deeplay.components import ConvolutionalNeuralNetwork
 
 
 class customLodeSTAR(dl.LodeSTAR):
     """LodeSTAR implementation that matches the paper's architecture exactly"""
     
     def __init__(self, n_transforms, optimizer, **kwargs):
-        # Create the paper-specified model architecture
-        paper_model = nn.Sequential(
-            # Layer 0-2: 3x Conv2D (3x3, 32) + ReLU
-            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            
-            # Layer 3: MaxPool2D (2x2)
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # Layer 4-11: 8x Conv2D (3x3, 32) + ReLU
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            
-            # Layer 12: Conv2D (1x1, 3) - outputs: Δx, Δy, ρ
-            nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0)
+        # Create the paper-specified model architecture using ConvolutionalNeuralNetwork
+        paper_model = ConvolutionalNeuralNetwork(
+            in_channels=None,  # Will be inferred from data 
+            hidden_channels=[32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],  # 12 hidden layers
+            out_channels=3,  # Δx, Δy, ρ
+            **kwargs
         )
+        
+        # Customize the architecture to match paper specifications
+        # Layer 0-2: 3x Conv2D (3x3, 32) + ReLU
+        paper_model.blocks[0].layer.kernel_size = (3, 3)
+        paper_model.blocks[0].layer.padding = (1, 1)
+        
+        # Layer 3: MaxPool2D (2x2) - add after block 2
+        paper_model.blocks[2].pooled()
+        
+        # Layer 4-11: 8x Conv2D (3x3, 32) + ReLU
+        for i in range(3, 11):
+            paper_model.blocks[i].layer.kernel_size = (3, 3)
+            paper_model.blocks[i].layer.padding = (1, 1)
+        
+        # Layer 12: Conv2D (1x1, 3) - final layer
+        paper_model.blocks[12].layer.kernel_size = (1, 1)
+        paper_model.blocks[12].layer.padding = (0, 0)
         
         # Initialize weights
         self._initialize_weights(paper_model)
