@@ -17,11 +17,19 @@ add_max: 0.1
 mul_min: 0.9
 mul_max: 1.1
 
+# Geometric transforms for LodeSTAR training
+rotation_range: [-30, 30]  # Rotation range in degrees
+translation_range: [-10, 10]  # Translation range in pixels
+
 # Validation dataset augmentation (gentler for better generalization testing)
 val_add_min: -0.05
 val_add_max: 0.05
 val_mul_min: 0.95
 val_mul_max: 1.05
+
+# Geometric transforms for validation (gentler)
+val_rotation_range: [-15, 15]  # Smaller rotation range for validation
+val_translation_range: [-5, 5]  # Smaller translation range for validation
 
 # Paper specifications: 5000 mini-batches of 8 samples = 40,000 total samples
 length: 40000  # Training samples per epoch (paper: 5000 mini-batches × 8 samples = 40,000 total)

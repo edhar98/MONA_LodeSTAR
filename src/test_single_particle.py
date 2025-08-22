@@ -297,6 +297,7 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config):
     
     # Get all image files
     image_files = [f for f in os.listdir(images_dir) if f.endswith('.jpg')]
+    image_files.sort()
     
     all_metrics = []
     detection_results = []  # Store results for all images (for visualization)
@@ -514,7 +515,7 @@ def test_single_particle_model(particle_type, model_path, config, visualize=Fals
     testing_dir = os.path.join(config['data_dir'], testing_type)
     #dataset_types = ['same_shape_same_size', 'different_shape_same_size']
     dataset_types = ['same_shape_same_size', 'same_shape_different_size', 
-                    'different_shape_same_size', 'different_shape_different_size']
+                     'different_shape_same_size', 'different_shape_different_size']
     #dataset_types = ['same_shape_same_size']
     model_id = model_path.split("/")[-2]
     results_dir = f'detection_results/{testing_type}/{particle_type}_{model_id}'
@@ -540,8 +541,9 @@ def test_single_particle_model(particle_type, model_path, config, visualize=Fals
                         image_path = os.path.join(dataset_dir, 'images', result['image_file'])
                         image = np.array(dt.LoadImage(image_path).resolve())
                         
-                        # Create title with metrics
-                        metrics_title = f"{particle_type}_{dataset_type}_sample_{i+1}"
+                        # Create title with metrics - use the actual image filename for consistency
+                        base_filename = os.path.splitext(result['image_file'])[0]
+                        metrics_title = f"{particle_type}_{dataset_type}_{base_filename}"
                         
                         visualize_detection_results(
                             image, 
