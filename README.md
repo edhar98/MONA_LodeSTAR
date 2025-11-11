@@ -9,6 +9,7 @@ This repository implements the LodeSTAR algorithm as described in the research p
 ## Features
 
 - **Multi-Particle Support**: Detection of Janus, Ring, Spot, Ellipse, and Rod particles
+- **Composite Model**: Multi-class detection and classification using ensemble of specialized models
 - **Synthetic Data Generation**: Configurable image generation with realistic particle properties
 - **Deep Learning Training**: PyTorch-based training pipeline with Lightning framework
 - **Comprehensive Testing**: Multiple dataset types for robust model evaluation
@@ -23,12 +24,17 @@ MONA_LodeSTAR/
 │   ├── image_generator.py         # Synthetic image generation
 │   ├── train_single_particle.py   # Training pipeline
 │   ├── test_single_particle.py    # Testing and evaluation
+│   ├── composite_model.py         # Composite model for multi-class detection
+│   ├── test_composite_model.py    # Testing composite model
+│   ├── compare_models.py          # Compare single vs composite models
+│   ├── run_composite_pipeline.py  # Composite model example
 │   ├── custom_lodestar.py         # Paper-accurate LodeSTAR implementation
 │   ├── run_single_particle_pipeline.py  # Complete pipeline runner
 │   ├── config.yaml                # Configuration file
 │   ├── utils.py                   # Utility functions
 │   ├── generate_samples.py        # Sample generation script
 |   └── requirements.txt           # Dependencies
+├── COMPOSITE_MODEL_README.md      # Detailed composite model documentation
 ```
 
 ## Installation
@@ -70,8 +76,19 @@ python src/image_generator.py
 
 ### 4. Test Models
 
+Test individual models:
 ```bash
 python src/test_single_particle.py
+```
+
+Test composite model (multi-class detection):
+```bash
+python src/test_composite_model.py
+```
+
+Compare single vs composite model performance:
+```bash
+python src/compare_models.py
 ```
 
 ## Configuration
@@ -159,6 +176,40 @@ The system generates four types of test datasets:
 - **Localization Error**: Mean squared error in position
 - **Orientation Accuracy**: Angular error for oriented particles
 - **Processing Speed**: Frames per second
+
+## Composite Model Approach
+
+The composite model enables **multi-class particle detection and classification** by combining multiple specialized single-particle models.
+
+### Key Features
+
+- **Ensemble Detection**: Runs all particle-specific models in parallel on the same image
+- **Weight-Based Classification**: Assigns particle class based on highest confidence (weight) value
+- **Detection Merging**: Combines detections from all models using spatial clustering
+- **Interpretable Results**: Provides weight maps for each particle type
+
+### How It Works
+
+1. **Parallel Inference**: Each trained model (Janus, Ring, Spot, Ellipse, Rod) processes the input image
+2. **Weight Map Extraction**: Extract confidence maps from each model's output
+3. **Detection Merging**: Cluster nearby detections (distance threshold = 20 pixels)
+4. **Classification**: For each detection, compare weight values across all models
+5. **Label Assignment**: Assign the particle type with highest weight at detection location
+
+### Usage Example
+
+```python
+from composite_model import CompositeLodeSTAR
+import utils
+
+config = utils.load_yaml('src/config.yaml')
+trained_models = utils.load_yaml('trained_models_summary.yaml')
+
+composite = CompositeLodeSTAR(config, trained_models)
+detections, labels, weight_maps, outputs = composite.detect_and_classify(image)
+```
+
+See `COMPOSITE_MODEL_README.md` for detailed documentation.
 
 ## Model Architecture
 

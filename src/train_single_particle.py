@@ -17,7 +17,7 @@ import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-# Import PaperLodeSTAR from separate file
+# Import custom LodeSTAR implementation
 from custom_lodestar import customLodeSTAR
 
 # Setup logger with file output
@@ -37,20 +37,15 @@ class LodeSTARMetricsCallback(Callback):
         self.parameters_logged = False
         
     def on_train_epoch_start(self, trainer, pl_module):
-        """Log epoch start metrics"""
-        wandb.log({
-            f"{self.particle_type}/epoch": trainer.current_epoch,
-            f"{self.particle_type}/learning_rate": trainer.optimizers[0].param_groups[0]['lr'],
-        })
-        
-        # Log model parameters after first epoch (when model is initialized)
+        """Log model parameters only once after first epoch"""
+        # Log model parameters once after initialization
         if not self.parameters_logged and trainer.current_epoch == 0:
             try:
                 total_params = sum(p.numel() for p in pl_module.parameters())
                 trainable_params = sum(p.numel() for p in pl_module.parameters() if p.requires_grad)
                 wandb.log({
-                    f"{self.particle_type}/model/total_params": total_params,
-                    f"{self.particle_type}/model/trainable_params": trainable_params,
+                    "model_params": total_params,
+                    "trainable_params": trainable_params
                 })
                 logger.info(f"Model parameters: {total_params:,} total, {trainable_params:,} trainable")
                 self.parameters_logged = True
@@ -58,41 +53,46 @@ class LodeSTARMetricsCallback(Callback):
                 logger.warning(f"Warning: Could not count model parameters: {e}")
     
     def on_train_epoch_end(self, trainer, pl_module):
-        """Log epoch end metrics"""
-        # Get training metrics
+        """Log essential training metrics only"""
+        # Extract key training metrics
         train_metrics = trainer.callback_metrics
         
-        # Log key metrics
-        metrics_to_log = {}
-        for key, value in train_metrics.items():
-            if isinstance(value, torch.Tensor):
-                metrics_to_log[f"{self.particle_type}/train/{key}"] = value.item()
-            else:
-                metrics_to_log[f"{self.particle_type}/train/{key}"] = value
+        # Log essential metrics to WandB
+        essential_metrics = {}
+        for key in ['train_within_image_disagreement', 'train_between_image_disagreement']:
+            if key in train_metrics:
+                value = train_metrics[key]
+                if isinstance(value, torch.Tensor):
+                    essential_metrics[key] = value.item()
+                else:
+                    essential_metrics[key] = value
         
-        wandb.log(metrics_to_log)
+        if essential_metrics:
+            wandb.log(essential_metrics)
     
     def on_validation_epoch_end(self, trainer, pl_module):
         """Log validation metrics"""
-        # Get validation metrics
         val_metrics = trainer.callback_metrics
         
-        # Log key metrics
-        metrics_to_log = {}
-        for key, value in val_metrics.items():
-            if isinstance(value, torch.Tensor):
-                metrics_to_log[f"{self.particle_type}/val/{key}"] = value.item()
-            else:
-                metrics_to_log[f"{self.particle_type}/val/{key}"] = value
+        # Log validation metrics to WandB
+        val_essential_metrics = {}
+        for key in ['val_within_image_disagreement', 'val_between_image_disagreement']:
+            if key in val_metrics:
+                value = val_metrics[key]
+                if isinstance(value, torch.Tensor):
+                    val_essential_metrics[key] = value.item()
+                else:
+                    val_essential_metrics[key] = value
         
-        wandb.log(metrics_to_log)
+        if val_essential_metrics:
+            wandb.log(val_essential_metrics)
     
+
     def on_train_end(self, trainer, pl_module):
         """Log final training metrics"""
         wandb.log({
-            f"{self.particle_type}/final_train_loss": trainer.callback_metrics.get('train_loss', 0),
-            f"{self.particle_type}/final_val_loss": trainer.callback_metrics.get('val_loss', 0),
-            f"{self.particle_type}/training_complete": True,
+            "training_complete": True,
+            "final_epoch": trainer.current_epoch
         })
 
 
@@ -117,15 +117,16 @@ def create_single_particle_pipeline(config, particle_type):
     
     training_pipeline = (
         dt.Value(training_image)
-        >> dt.AveragePooling(ksize=(1, 1, 3))
-        >> dt.Affine(scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
-            rotation=lambda: 2*np.pi*np.random.uniform(config['rotation_range'][0], config['rotation_range'][1]),
-            translation=lambda: np.random.uniform(config['translation_range'][0], config['translation_range'][1], 2),
-            mode='constant'
-        )
+        #>> dt.AveragePooling(ksize=(1, 1, 3))
+        #>> dt.Affine(
+        #    scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
+        #    rotate=lambda: 2*np.pi*np.random.uniform(config['rotation_range'][0], config['rotation_range'][1]),
+        #    translate=lambda: np.random.uniform(config['translation_range'][0], config['translation_range'][1], 2),
+        #    mode='constant'
+        #)
         >> dt.Multiply(lambda: np.random.uniform(config['mul_min'], config['mul_max']))
         >> dt.Add(lambda: np.random.uniform(config['add_min'], config['add_max']))
-        >> dt.MoveAxis(-1, 0)  # Move channel to first dimension
+        >> dt.MoveAxis(-1, 0)
         >> dt.pytorch.ToTensor(dtype=torch.float32)
     )
     
@@ -156,41 +157,42 @@ def create_validation_pipeline(config, particle_type):
     val_mul_max = config.get('val_mul_max', config['mul_max'])
     val_add_min = config.get('val_add_min', config['add_min'])
     val_add_max = config.get('val_add_max', config['add_max'])
-    
-    # Get validation augmentation ranges from config
+    val_scale_min = config.get('val_scale_min', config['scale_min'])
+    val_scale_max = config.get('val_scale_max', config['scale_max'])
     val_rotation_range = config.get('val_rotation_range', config['rotation_range'])
     val_translation_range = config.get('val_translation_range', config['translation_range'])
     
     validation_pipeline = (
         dt.Value(validation_image)
-        >> dt.AveragePooling(ksize=(1, 1, 3))
-        >> dt.Affine(scale=lambda: np.random.uniform(config['val_scale_min'], config['val_scale_max']),
-            rotation=lambda: 2*np.pi*np.random.uniform(val_rotation_range[0], val_rotation_range[1]),
-            translation=lambda: np.random.uniform(val_translation_range[0], val_translation_range[1], 2),
-            mode='constant'
-        )
+        #>> dt.AveragePooling(ksize=(1, 1, 3))
+        #>> dt.Affine(
+        #    scale=lambda: np.random.uniform(val_scale_min, val_scale_max),
+        #    rotate=lambda: 2*np.pi*np.random.uniform(val_rotation_range[0], val_rotation_range[1]),
+        #    translate=lambda: np.random.uniform(val_translation_range[0], val_translation_range[1], 2),
+        #    mode='constant'
+        #)
         >> dt.Multiply(lambda: np.random.uniform(val_mul_min, val_mul_max))
         >> dt.Add(lambda: np.random.uniform(val_add_min, val_add_max))
-        >> dt.MoveAxis(-1, 0)  # Move channel to first dimension
+        >> dt.MoveAxis(-1, 0)
         >> dt.pytorch.ToTensor(dtype=torch.float32)
     )
     
     return validation_pipeline
 
 
-def train_single_particle_model(particle_type, config):
+def train_single_particle_model(particle_type, config, checkpoint_path=None):
     """Train a LodeSTAR model for a specific particle type"""
     
     logger.info(f"\n=== Training LodeSTAR for {particle_type} particles ===")
     
-    # Update wandb project name for this particle type
+    # Configure WandB project name
     config['wandb']['project'] = f"LodeSTAR_{particle_type}"
     config['wandb']['notes'] = f"Training LodeSTAR model for {particle_type} particle detection"
     
     # Set random seed
     L.seed_everything(config['seed'])
     
-    # Initialize wandb
+    # Initialize WandB experiment tracking
     wandb.init(
         project=config['wandb']['project'],
         entity=config['wandb']['entity'],
@@ -200,7 +202,7 @@ def train_single_particle_model(particle_type, config):
         dir=config.get('wandb_log_dir', 'wandb_logs')
     )
     
-    # Setup wandb logger
+    # Setup WandB logger for PyTorch Lightning
     wandb_logger = WandbLogger(
         project=config['wandb']['project'],
         entity=config['wandb']['entity'],
@@ -209,19 +211,19 @@ def train_single_particle_model(particle_type, config):
         dir=config.get('wandb_log_dir', 'wandb_logs')
     )
     
-    # Setup checkpoint directory
+    # Create checkpoint directory
     dir_export = config.get('dir_export', 'lightning_logs')
     dir_checkpoint = os.path.join(dir_export, wandb.run.id, 'checkpoints')
     os.makedirs(dir_checkpoint, exist_ok=True)
     
-    # Setup models directory for final models
+    # Create models directory for final outputs
     models_dir = 'models'
     os.makedirs(models_dir, exist_ok=True)
     
     # Setup callbacks
     callbacks = [
         ModelCheckpoint(
-            monitor='train_within_image_disagreement',
+            monitor='val_within_image_disagreement',
             mode='min',
             filename=f'{particle_type}-{{epoch}}-{{step}}-{{val_loss:.2f}}',
             save_top_k=3,
@@ -232,7 +234,7 @@ def train_single_particle_model(particle_type, config):
         LodeSTARMetricsCallback(particle_type),
     ]
     
-    # Create training and validation pipelines
+    # Create data generation pipeline
     training_pipeline = create_single_particle_pipeline(config, particle_type)
     validation_pipeline = create_validation_pipeline(config, particle_type)
     
@@ -243,23 +245,18 @@ def train_single_particle_model(particle_type, config):
         replace=False
     )
     
-    validation_length = config.get('validation_length', config['length'] // 4)
     validation_dataset = dt.pytorch.Dataset(
         validation_pipeline, 
-        length=validation_length,
+        length=config['length'] // 4,  # Smaller validation set
         replace=False
     )
     
     logger.info(f"Created training dataset with {config['length']} samples")
-    logger.info(f"Created validation dataset with {validation_length} samples")
+    logger.info(f"Created validation dataset with {config['length'] // 4} samples")
     
     # Log augmentation parameters
     logger.info(f"Training augmentation: mul({config['mul_min']:.2f}, {config['mul_max']:.2f}), add({config['add_min']:.2f}, {config['add_max']:.2f})")
-    val_mul_min = config.get('val_mul_min', config['mul_min'])
-    val_mul_max = config.get('val_mul_max', config['mul_max'])
-    val_add_min = config.get('val_add_min', config['add_min'])
-    val_add_max = config.get('val_add_max', config['add_max'])
-    logger.info(f"Validation augmentation: mul({val_mul_min:.2f}, {val_mul_max:.2f}), add({val_add_min:.2f}, {val_add_max:.2f})")
+    logger.info(f"Validation augmentation: mul({config.get('val_mul_min', config['mul_min']):.2f}, {config.get('val_mul_max', config['mul_max']):.2f}), add({config.get('val_add_min', config['add_min']):.2f}, {config.get('val_add_max', config['add_max']):.2f})")
     
     # Create dataloaders
     train_dataloader = dl.DataLoader(
@@ -277,11 +274,16 @@ def train_single_particle_model(particle_type, config):
     )
     
     logger.info(f"Training batches: {len(train_dataloader)}")
-    logger.info(f"Validation batches: {len(val_dataloader)}")
     
-    # Create LodeSTAR model
+    # Initialize LodeSTAR model based on configuration
     if config['lodestar_version'] == 'default':
         lodestar = dl.LodeSTAR(
+            n_transforms=config['n_transforms'], 
+            optimizer=dl.Adam(lr=config['lr'])
+        ).build()
+    elif config['lodestar_version'] == 'skip_connections':
+        from lodestar_with_skip_connections import LodeSTARWithSkipConnections
+        lodestar = LodeSTARWithSkipConnections(
             n_transforms=config['n_transforms'], 
             optimizer=dl.Adam(lr=config['lr'])
         ).build()
@@ -291,12 +293,14 @@ def train_single_particle_model(particle_type, config):
             optimizer=dl.Adam(lr=config['lr'])
         ).build()
     
-    # Initialize model parameters with a dummy forward pass to fix DDP issues
+
+    
+    # Initialize model parameters for distributed training
     logger.info("Initializing model parameters with dummy forward pass...")
     try:
         with torch.no_grad():
             # Create a dummy input tensor
-            dummy_input = torch.randn(1, 1, 64, 64)  # (batch, channels, height, width)
+            dummy_input = torch.randn(1, 1, 64, 64)
             # Run forward pass to initialize parameters
             _ = lodestar(dummy_input)
         logger.info("Model parameters initialized successfully")
@@ -304,7 +308,7 @@ def train_single_particle_model(particle_type, config):
         logger.warning(f"Warning: Dummy forward pass failed: {e}")
         logger.info("Continuing with training...")
     
-    # Setup trainer
+    # Configure PyTorch Lightning trainer
     trainer = dl.Trainer(
         max_epochs=config['max_epochs'],
         accelerator=config['lightning']['accelerator'],
@@ -314,90 +318,76 @@ def train_single_particle_model(particle_type, config):
         gradient_clip_val=config['lightning']['gradient_clip_val'],
         accumulate_grad_batches=config['lightning']['accumulate_grad_batches'],
         log_every_n_steps=config['lightning']['log_every_n_steps'],
-        val_check_interval=config['lightning']['val_check_interval'],
-        check_val_every_n_epoch=config['lightning']['check_val_every_n_epoch'],
+        
+        # Configure validation
+        limit_val_batches=1.0,  # Use full validation set
+        check_val_every_n_epoch=1,  # Validate every epoch
+        
         logger=wandb_logger,
         callbacks=callbacks
     )
     
-    # Save configuration to checkpoint directory
+    # Save training configuration
     utils.save_yaml(config, os.path.join(dir_checkpoint, 'config.yaml'))
     
-    # Log particle type
+    # Log training configuration
     logger.info(f"Training on particle type: {particle_type}")
-    wandb.log({"particle_type": particle_type})
     
-    # Log training configuration (without parameter counting for now)
-    config_metrics = {
-        "config/n_transforms": config['n_transforms'],
-        "config/max_epochs": config['max_epochs'],
-        "config/batch_size": config['batch_size'],
-        "config/lr": config['lr'],
-        "config/alpha": config['alpha'],
-        "config/beta": config['beta'],
-        "config/cutoff": config['cutoff'],
-        "config/length": config['length'],
-        "config/validation_length": validation_length,
-        "config/training_augmentation/mul_min": config['mul_min'],
-        "config/training_augmentation/mul_max": config['mul_max'],
-        "config/training_augmentation/add_min": config['add_min'],
-        "config/training_augmentation/add_max": config['add_max'],
-        "config/validation_augmentation/mul_min": config.get('val_mul_min', config['mul_min']),
-        "config/validation_augmentation/mul_max": config.get('val_mul_max', config['mul_max']),
-        "config/validation_augmentation/add_min": config.get('val_add_min', config['add_min']),
-        "config/validation_augmentation/add_max": config.get('val_add_max', config['add_max']),
-        "training/batches_per_epoch": len(train_dataloader),
-        "training/validation_batches": len(val_dataloader),
-        "model/total_params": 0,  # Will be updated after training starts
-        "model/trainable_params": 0,  # Will be updated after training starts
-    }
+    # Log key configuration parameters
+    wandb.log({
+        "particle_type": particle_type,
+        "max_epochs": config['max_epochs'],
+        "batch_size": config['batch_size'],
+        "learning_rate": config['lr'],
+        "training_samples": config['length'],
+        "batches_per_epoch": len(train_dataloader)
+    })
     
-    wandb.log(config_metrics)
-    
-    # Run training
+    # Start training process
     logger.info(f"Starting LodeSTAR training for {particle_type}...")
-    trainer.fit(lodestar, train_dataloader, val_dataloader)
+    # Resume from checkpoint if provided
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        logger.info(f"Resuming training from checkpoint: {checkpoint_path}")
+        trainer.fit(lodestar, train_dataloader, val_dataloader, ckpt_path=checkpoint_path)
+    else:
+        trainer.fit(lodestar, train_dataloader, val_dataloader)
     
-    # Save model weights to checkpoint directory
+
+    
+    # Save trained model weights
     model_path = os.path.join(dir_checkpoint, f"{particle_type}_weights.pth")
     torch.save(lodestar.state_dict(), model_path)
     
-    # Save final checkpoint to checkpoint directory
+    # Save final training checkpoint
     final_checkpoint = os.path.join(dir_checkpoint, f'{particle_type}_final_epoch.ckpt')
     trainer.save_checkpoint(final_checkpoint)
     
-    # Create models directory with run ID name
+    # Create organized model storage
     run_models_dir = os.path.join(models_dir, wandb.run.id)
     os.makedirs(run_models_dir, exist_ok=True)
     
-    # Copy final model and config to models directory
+    # Archive final model and configuration
     final_model_path = os.path.join(run_models_dir, f"{particle_type}_weights.pth")
     final_config_path = os.path.join(run_models_dir, 'config.yaml')
     
-    # Copy model weights
+    # Archive model weights
     shutil.copy2(model_path, final_model_path)
     
-    # Copy config
+    # Archive configuration
     shutil.copy2(os.path.join(dir_checkpoint, 'config.yaml'), final_config_path)
     
     logger.info(f"Training complete! Model saved to {model_path}")
     logger.info(f"Final model copied to {final_model_path}")
     logger.info(f"Config copied to {final_config_path}")
     
-    # Log final training summary
+    # Log training completion metrics
     wandb.log({
-        f"{particle_type}/training_summary/model_path": model_path,
-        f"{particle_type}/training_summary/checkpoint_path": final_checkpoint,
-        f"{particle_type}/training_summary/final_model_path": final_model_path,
-        f"{particle_type}/training_summary/final_config_path": final_config_path,
-        f"{particle_type}/training_summary/total_epochs": config['max_epochs'],
-        f"{particle_type}/training_summary/training_samples": config['length'],
-        f"{particle_type}/training_summary/validation_samples": validation_length,
-        f"{particle_type}/training_summary/model_size_mb": os.path.getsize(model_path) / (1024 * 1024),
+        "model_size_mb": os.path.getsize(model_path) / (1024 * 1024),
+        "final_model_path": final_model_path
     })
     
+    # Finish WandB and return results
     wandb.finish()
-    
     return final_model_path, final_checkpoint
 
 
@@ -408,9 +398,10 @@ def main():
     parser = argparse.ArgumentParser(description='Train LodeSTAR model for particle detection')
     parser.add_argument('--particle', type=str, help='Specific particle type to train (e.g., Janus, Ring, Spot, Ellipse, Rod)')
     parser.add_argument('--config', type=str, default='src/config.yaml', help='Path to configuration file')
+    parser.add_argument('--checkpoint', type=str, help='Path to checkpoint file to resume training from')
     args = parser.parse_args()
     
-    # Load configuration
+    # Load training configuration
     config = utils.load_yaml(args.config)
     
     # Define particle types
@@ -426,7 +417,7 @@ def main():
         particle_types = config['samples']
         logger.info(f"Training all particle types: {particle_types}")
     
-    # Load existing training summary if it exists
+    # Load previous training results
     summary_path = 'trained_models_summary.yaml'
     existing_models = {}
     if os.path.exists(summary_path):
@@ -437,22 +428,22 @@ def main():
             logger.warning(f"Could not load existing training summary: {e}")
             existing_models = {}
     
-    # Train models for each particle type
-    trained_models = existing_models.copy()  # Start with existing models
-    successful_training = {}  # Track which training runs actually succeeded
+    # Train models for specified particle types
+    trained_models = existing_models.copy()
+    successful_training = {}
     
     for particle_type in particle_types:
         try:
-            final_model_path, checkpoint_path = train_single_particle_model(particle_type, config)
+            final_model_path, checkpoint_path = train_single_particle_model(particle_type, config, args.checkpoint)
             
-            # Create new model entry
+            # Record successful training
             new_model_entry = {
-                'model_path': final_model_path,  # This is now the path in models directory
+                'model_path': final_model_path,
                 'checkpoint_path': checkpoint_path,
-                'models_dir': os.path.dirname(final_model_path)  # Add the models directory path
+                'models_dir': os.path.dirname(final_model_path)
             }
             
-            # Mark this training as successful
+            # Record training success
             successful_training[particle_type] = new_model_entry
             logger.info(f"Successfully trained {particle_type} model")
             
@@ -460,16 +451,16 @@ def main():
             logger.error(f"Failed to train {particle_type} model: {e}")
             continue
     
-    # Only update YAML for successfully trained models
+    # Update training summary for successful runs
     for particle_type, new_model_entry in successful_training.items():
         # Check if this particle type already exists
         if particle_type in trained_models:
             
-            # Move existing entry to additional_models if it doesn't exist
+            # Preserve previous model versions
             if 'additional_models' not in trained_models[particle_type]:
                 trained_models[particle_type]['additional_models'] = []
             
-            # Move the current entry to additional_models
+            # Archive previous model
             existing_entry = {
                 'model_path': trained_models[particle_type]['model_path'],
                 'checkpoint_path': trained_models[particle_type]['checkpoint_path'],
@@ -477,7 +468,7 @@ def main():
             }
             trained_models[particle_type]['additional_models'].insert(0, existing_entry)
             
-            # Update with new entry - preserve additional_models
+            # Update with new model entry
             trained_models[particle_type].update(new_model_entry)
             
             logger.info(f"Updated {particle_type} model - moved previous entry to additional_models")
@@ -486,7 +477,7 @@ def main():
             trained_models[particle_type] = new_model_entry
             logger.info(f"Added new {particle_type} model")
     
-    # Save training summary only if we have successful training runs
+    # Save updated training summary
     if successful_training:
         try:
             utils.save_yaml(trained_models, summary_path)

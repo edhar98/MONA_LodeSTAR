@@ -4,19 +4,11 @@ import argparse
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from deeplay import LodeSTAR
 import deeptrack.deeplay as dl
 import deeptrack as dt
 import utils
-from image_generator import generateImage, Object
-import xml.etree.ElementTree as ET
-from sklearn.metrics import precision_recall_curve, average_precision_score
 import cv2
 from scipy.spatial.distance import cdist
-from scipy.ndimage import maximum_filter, generate_binary_structure
-from scipy import ndimage
 
 # Import customLodeSTAR from separate file
 from custom_lodestar import customLodeSTAR
@@ -27,7 +19,6 @@ os.makedirs(log_dir, exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 log_file = os.path.join(log_dir, f'test_single_particle_{timestamp}.log')
 logger = utils.setup_logger('test_single_particle', log_file=log_file)
-
 
 def load_trained_model(model_path, config):
     """Load trained LodeSTAR model"""
@@ -54,41 +45,6 @@ def load_trained_model(model_path, config):
     
     lodestar.eval()
     return lodestar
-
-
-def parse_xml_annotations(xml_path):
-    """Parse XML annotations to get ground truth bounding boxes and SNR"""
-    
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    
-    bboxes = []
-    labels = []
-    snr = None
-    
-    # Extract SNR if available
-    snr_elem = root.find('snr')
-    if snr_elem is not None:
-        snr = float(snr_elem.text)
-    
-    for obj in root.findall('object'):
-        label = obj.find('name').text
-        bbox = obj.find('bndbox')
-        
-        xmin = float(bbox.find('xmin').text)
-        ymin = float(bbox.find('ymin').text)
-        xmax = float(bbox.find('xmax').text)
-        ymax = float(bbox.find('ymax').text)
-        
-        # Convert to center coordinates
-        center_x = (xmin + xmax) / 2
-        center_y = (ymin + ymax) / 2
-        
-        bboxes.append([center_x, center_y])
-        labels.append(label)
-    
-    return np.array(bboxes), labels, snr
-
 
 def detect_particles(model, image, config, particle_type=None):
     """Detect particles using trained LodeSTAR model"""
@@ -316,7 +272,7 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config):
             continue
         
         # Parse annotations
-        gt_bboxes, gt_labels, snr = parse_xml_annotations(annotation_path)
+        gt_bboxes, gt_labels, snr = utils.parse_xml_annotations(annotation_path)
         
         # Filter ground truth to only include objects of the same type as the model
         if len(gt_bboxes) > 0 and gt_labels:
@@ -395,41 +351,6 @@ def visualize_detection_results(image, gt_bboxes, detections, prediction, title=
             label = gt_labels[i] if gt_labels and i < len(gt_labels) else 'Unknown'
             axes[0].plot(x, y, 'go', markersize=5, markeredgecolor='white', markeredgewidth=1, label=f'GT: {label}' if i == 0 else "")
     
-    # Add sample training image if available
-    # particle_type = title.split('_')[0]  # Use the first label as particle type
-    # sample_path = os.path.join('data', 'Samples', particle_type, f'{particle_type}.jpg')
-    # if os.path.exists(sample_path):
-    #     try:
-    #         # Load sample training image using matplotlib instead of deeptrack
-    #         sample_image = mpimg.imread(sample_path)
-            
-    #         # Convert to grayscale if needed
-    #         if len(sample_image.shape) == 3 and sample_image.shape[-1] == 3:
-    #             sample_image = np.dot(sample_image[..., :3], [0.299, 0.587, 0.114])
-    #         elif len(sample_image.shape) == 3 and sample_image.shape[-1] == 4:
-    #             # RGBA image
-    #             sample_image = np.dot(sample_image[..., :3], [0.299, 0.587, 0.114])
-            
-    #         # Ensure the image is in the correct range [0, 1]
-    #         if sample_image.max() > 1.0:
-    #             sample_image = sample_image / 255.0
-            
-    #         # Create inset axes for sample image
-    #         axins = inset_axes(axes[0], width=f"{sample_image.shape[1]/image.shape[1] * 100}%", height=f"{sample_image.shape[0]/image.shape[0] * 100}%", loc='lower left', borderpad=0.2)
-    #         axins.imshow(sample_image, cmap='gray', aspect='equal')
-    #         #axins.set_title(f'Trained \n{particle_type}', fontsize=8)
-    #         axins.axis('off')
-            
-    #         # Add a border to the inset by setting the spine color
-    #         for spine in axins.spines.values():
-    #             spine.set_color('red')
-    #             spine.set_linewidth(1)
-            
-    #     except Exception as e:
-    #         logger.warning(f"Error loading sample training image: {e}")
-    #         import traceback
-    #         logger.warning(f"Traceback: {traceback.format_exc()}")
-
     axes[0].set_title(f"Ground Truth: {len(gt_bboxes)} particles")
     axes[0].axis('off')
     
@@ -511,7 +432,7 @@ def test_single_particle_model(particle_type, model_path, config, visualize=Fals
         return None
     
     # Test on all available testing datasets
-    testing_type = 'Testing' # 'SmallTesting'
+    testing_type = 'Testing_snr_10-10' # 'Testing' # 'SmallTesting'
     testing_dir = os.path.join(config['data_dir'], testing_type)
     #dataset_types = ['same_shape_same_size', 'different_shape_same_size']
     dataset_types = ['same_shape_same_size', 'same_shape_different_size', 

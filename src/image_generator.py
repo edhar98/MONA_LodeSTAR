@@ -1,17 +1,43 @@
-# YOLOv2.1
 import numpy as np
 pi = np.pi
 import matplotlib.pyplot as plt
-
 import os
-import matplotlib.patches as patches
-
-from tqdm import tqdm # Progress bar
-
-from utils import Writer # Writes XML files in the Pascal VOC format 
+import argparse
+from tqdm import tqdm
+from utils import Writer, _load_config
 import configparser
-from skimage.draw import rectangle
 from scipy import ndimage
+
+CONFIG = _load_config()
+DATASET_DEFAULTS = CONFIG.get('dataset_defaults', {})
+
+def _extract_base_params(label):
+    return CONFIG['particles'][label]['parameters']
+
+def _generate_size_variations(base_params, n_variations=5):
+    variations = []
+    scales = [0.4, 0.6, 0.8, 1.2, 1.5]
+    for scale in scales[:n_variations]:
+        varied = []
+        for param in base_params:
+            if param[0] == 1:
+                varied.append(param)
+            else:
+                varied.append([int(param[0] * scale)] if len(param) == 1 else [round(param[0] * scale, 1)])
+        variations.append(varied)
+    return variations
+
+def _generate_param_ranges(base_params, scale_factors=[1.5, 1.0, 0.5]):
+    ranged = []
+    for param in base_params:
+        if param[0] == 1:
+            ranged.append([1, 1, 1])
+        else:
+            base_val = param[0]
+            ranged.append([int(base_val * scale_factors[0]), 
+                          int(base_val * scale_factors[1]), 
+                          int(base_val * scale_factors[2]) if base_val * scale_factors[2] >= 1 else 1])
+    return ranged
 
 class Object:
     def __init__(self, x, y, label, parameters, theta=None): 
@@ -212,7 +238,7 @@ def rotate(origin, point, angle):
 
 def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
     label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
-    parameters = [[[1], [15], [3]], [[1], [10], [2.5]], [[1], [2.5]], [[1], [8], [10]], [[1], [15], [5], [2]]]
+    parameters = [_extract_base_params(label) for label in label_list]
     n_list = [1, 5]
     
     dataset_name = 'same_shape_same_size'
@@ -252,14 +278,8 @@ def generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, dis
     exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters, n_list, snr_range, i_range, distance, offset)
 
 def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
-    
-    configs = {'Janus':[[[1], [15], [3]], [[1], [9], [2]], [[1], [12], [2.5]], [[1], [18], [4]], [[1], [6], [1.5]]],
-                'Ring':[[[1], [10], [2.5]], [[1], [5], [1.5]], [[1], [8], [3]], [[1], [12], [4]], [[1], [4], [1]]],
-                'Spot':[[[1], [2.5]], [[1], [1.5]], [[1], [3]], [[1], [4]], [[1], [1]]],
-                'Ellipse':[[[1], [8], [10]], [[1], [5], [5]], [[1], [12], [15]], [[1], [10], [20]], [[1], [3], [5]]],
-                'Rod':[[[1], [15], [5], [2]], [[1], [10], [3], [1.5]], [[1], [20], [10], [3]], [[1], [12], [8], [2.5]], [[1], [8], [3], [1]]]}
-    
     label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
+    configs = {label: _generate_size_variations(_extract_base_params(label), n_variations=5) for label in label_list}
     n_list = [x for x in np.random.randint(1, 4, 5)]
   
     dataset_name = 'same_shape_different_size'
@@ -301,7 +321,7 @@ def generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h
 
 def generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
     label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
-    parameters_list = [[[1], [10], [2.5]], [[1], [10], [2.5]], [[1], [2.5]], [[1], [10], [10]], [[1], [15], [5], [2]]]
+    parameters_list = [_extract_base_params(label) for label in label_list]
     n_list = [x for x in np.random.randint(1, 10, 5)]
     
     dataset_name = 'different_shape_same_size'
@@ -339,7 +359,7 @@ def generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h
 
 def generate_different_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range):
     label_list = ['Janus', 'Ring', 'Spot', 'Ellipse', 'Rod']
-    parameters_list = [[[1,1,1], [15, 10, 5], [3, 2, 1]], [[1,1,1], [10, 5, 2.5], [2.5, 1.5, 1]], [[1,1,1], [2.5, 1.5, 1]], [[1,1,1], [10, 5, 2.5], [10, 5, 2.5]], [[1,1,1], [20, 15, 10], [8, 5, 3], [3, 2, 1]]]
+    parameters_list = [_generate_param_ranges(_extract_base_params(label)) for label in label_list]
     n_list = [x for x in np.random.randint(1,10,5)]
     
     dataset_name = 'different_shape_different_size'
@@ -376,28 +396,101 @@ def generate_different_shape_different_size_dataset(subdir, nimages, image_w, im
     exportConfig(f'{dataset_dir}/info.txt', [nimages], label_list, parameters_list, n_list, snr_range, i_range, distance, offset)
 
 def main():
-    image_w = 416
-    image_h = 416
-    snr_range = [5, 30]
-    i_range = [0.1, 1]
-    distance = 15
-    offset = 15
-    nimages = 100
-
-    subdir = 'data/Testing'
+    """Main function with CLI support"""
+    parser = argparse.ArgumentParser(description='Generate testing datasets for LodeSTAR')
+    parser.add_argument('--image-width', type=int, default=DATASET_DEFAULTS['image_width'],
+                       help=f"Image width in pixels (default: {DATASET_DEFAULTS['image_width']})")
+    parser.add_argument('--image-height', type=int, default=DATASET_DEFAULTS['image_height'],
+                       help=f"Image height in pixels (default: {DATASET_DEFAULTS['image_height']})")
+    parser.add_argument('--snr-min', type=float, default=DATASET_DEFAULTS['snr_min'],
+                       help=f"Minimum SNR (default: {DATASET_DEFAULTS['snr_min']})")
+    parser.add_argument('--snr-max', type=float, default=DATASET_DEFAULTS['snr_max'],
+                       help=f"Maximum SNR (default: {DATASET_DEFAULTS['snr_max']})")
+    parser.add_argument('--intensity-min', type=float, default=DATASET_DEFAULTS['intensity_min'],
+                       help=f"Minimum intensity (default: {DATASET_DEFAULTS['intensity_min']})")
+    parser.add_argument('--intensity-max', type=float, default=DATASET_DEFAULTS['intensity_max'],
+                       help=f"Maximum intensity (default: {DATASET_DEFAULTS['intensity_max']})")
+    parser.add_argument('--distance', type=float, default=DATASET_DEFAULTS['distance'],
+                       help=f"Minimum distance between particles (default: {DATASET_DEFAULTS['distance']})")
+    parser.add_argument('--offset', type=float, default=DATASET_DEFAULTS['offset'],
+                       help=f"Offset from image edges (default: {DATASET_DEFAULTS['offset']})")
+    parser.add_argument('--nimages', type=int, default=DATASET_DEFAULTS['nimages'],
+                       help=f"Number of images per dataset (default: {DATASET_DEFAULTS['nimages']})")
+    parser.add_argument('--output-dir', type=str, default=None,
+                       help='Output directory (default: data/Testing_snr_MIN-MAX)')
+    parser.add_argument('--datasets', type=str, nargs='+', 
+                       choices=['same_shape_same_size', 'same_shape_different_size', 
+                               'different_shape_same_size', 'different_shape_different_size', 'all'],
+                       default=['all'],
+                       help='Which datasets to generate (default: all)')
+    
+    args = parser.parse_args()
+    
+    if args.snr_min > args.snr_max:
+        print(f"Error: SNR min ({args.snr_min}) must be less or equal to SNR max ({args.snr_max})")
+        return 1
+    
+    if args.intensity_min >= args.intensity_max:
+        print(f"Error: Intensity min ({args.intensity_min}) must be less than intensity max ({args.intensity_max})")
+        return 1
+    
+    snr_range = [args.snr_min, args.snr_max]
+    i_range = [args.intensity_min, args.intensity_max]
+    
+    if args.output_dir is None:
+        subdir = f'data/Testing_snr_{args.snr_min}-{args.snr_max}'
+    else:
+        subdir = args.output_dir
     
     if not os.path.exists(subdir):
-        os.mkdir(subdir)
+        os.makedirs(subdir)
     
-    print("Generating datasets with different shape and size combinations...")
+    print(f"=== LodeSTAR Dataset Generator ===")
+    print(f"Configuration:")
+    print(f"  Image size: {args.image_width}x{args.image_height}")
+    print(f"  SNR range: [{args.snr_min}, {args.snr_max}]")
+    print(f"  Intensity range: [{args.intensity_min}, {args.intensity_max}]")
+    print(f"  Distance: {args.distance}")
+    print(f"  Offset: {args.offset}")
+    print(f"  Images per dataset: {args.nimages}")
+    print(f"  Output directory: {subdir}")
+    print()
     
-    generate_same_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
-    generate_same_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
-    generate_different_shape_same_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
-    generate_different_shape_different_size_dataset(subdir, nimages, image_w, image_h, distance, offset, snr_range, i_range)
+    datasets_to_generate = args.datasets
+    if 'all' in datasets_to_generate:
+        datasets_to_generate = ['same_shape_same_size', 'same_shape_different_size', 
+                               'different_shape_same_size', 'different_shape_different_size']
     
-    print("All datasets generated successfully!")
-    print(f"Datasets saved in: {subdir}")
+    try:
+        print("Generating datasets...")
+        
+        if 'same_shape_same_size' in datasets_to_generate:
+            generate_same_shape_same_size_dataset(subdir, args.nimages, args.image_width, args.image_height, 
+                                                 args.distance, args.offset, snr_range, i_range)
+        
+        if 'same_shape_different_size' in datasets_to_generate:
+            generate_same_shape_different_size_dataset(subdir, args.nimages, args.image_width, args.image_height, 
+                                                      args.distance, args.offset, snr_range, i_range)
+        
+        if 'different_shape_same_size' in datasets_to_generate:
+            generate_different_shape_same_size_dataset(subdir, args.nimages, args.image_width, args.image_height, 
+                                                      args.distance, args.offset, snr_range, i_range)
+        
+        if 'different_shape_different_size' in datasets_to_generate:
+            generate_different_shape_different_size_dataset(subdir, args.nimages, args.image_width, args.image_height, 
+                                                           args.distance, args.offset, snr_range, i_range)
+        
+        print(f"\n=== Generation Complete ===")
+        print(f"All datasets generated successfully!")
+        print(f"Datasets saved in: {subdir}")
+        
+    except Exception as e:
+        print(f"Error during dataset generation: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
     
+    return 0
+
 if __name__ == '__main__':
-    main()
+    exit(main())

@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import deeptrack.deeplay as dl
 from deeplay.components import ConvolutionalNeuralNetwork
@@ -8,14 +7,12 @@ class customLodeSTAR(dl.LodeSTAR):
     """LodeSTAR implementation that matches the paper's architecture exactly"""
     
     def __init__(self, n_transforms, optimizer, **kwargs):
-        # Create the paper-specified model architecture using ConvolutionalNeuralNetwork
         paper_model = ConvolutionalNeuralNetwork(
             in_channels=None,  # Will be inferred from data 
             hidden_channels=[32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],  # 12 hidden layers
             out_channels=3,  # Δx, Δy, ρ
             **kwargs
         )
-        
         # Customize the architecture to match paper specifications
         # Layer 0-2: 3x Conv2D (3x3, 32) + ReLU
         paper_model.blocks[0].layer.kernel_size = (3, 3)

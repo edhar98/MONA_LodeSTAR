@@ -6,55 +6,58 @@ wandb:
 
 data_dir: data/
 
-lodestar_version: custom
+lodestar_version: default
 
 # Sample configuration - can be single particle or multiple
 samples: [Janus, Ring, Spot, Ellipse, Rod]  # Can be: Janus, Ring, Spot, Ellipse, Rod
+
+# Geometric transforms for LodeSTAR training
+rotation_range: [0, 0.5]  # Rotation range in radians
+translation_range: [-5, 5]  # Translation range in pixels
 
 # Training dataset augmentation
 add_min: -0.1
 add_max: 0.1
 mul_min: 0.9
 mul_max: 1.1
+scale_min: 0.5
+scale_max: 1.5
 
-# Geometric transforms for LodeSTAR training
-rotation_range: [-30, 30]  # Rotation range in degrees
-translation_range: [-10, 10]  # Translation range in pixels
-
-# Validation dataset augmentation (gentler for better generalization testing)
+# Validation dataset augmentation (more conservative)
 val_add_min: -0.05
 val_add_max: 0.05
 val_mul_min: 0.95
 val_mul_max: 1.05
-
-# Geometric transforms for validation (gentler)
-val_rotation_range: [-15, 15]  # Smaller rotation range for validation
-val_translation_range: [-5, 5]  # Smaller translation range for validation
+val_scale_min: 0.8
+val_scale_max: 1.2
+val_rotation_range: [0, 0.45]  # Less rotation for validation
+val_translation_range: [-2, 2]  # Less translation for validation
 
 # Paper specifications: 5000 mini-batches of 8 samples = 40,000 total samples
-length: 40000  # Training samples per epoch (paper: 5000 mini-batches × 8 samples = 40,000 total)
+length: 4000  # Training samples per epoch (paper: 5000 mini-batches × 8 samples = 40,000 total)
 
 # training
 seed: 37
-n_transforms: 4  # LodeSTAR paper recommendation: 4-8 transforms
-max_epochs: 200  # Good for convergence
-devices: 2  # Use both GPUs
-strategy: "ddp"  # Distributed Data Parallel strategy
-num_workers: 8  # Optimal for data loading
-batch_size: 16  # Increased batch size for 2 GPUs
+n_transforms: 4  
+max_epochs: 200
+devices: 1
+strategy: "ddp"
+num_workers: 8
+batch_size: 16
 
 # optimizer 
-lr: 0.0001  # Standard learning rate for LodeSTAR
+lr: 0.0001
 
 # detection
-alpha: 0.2  # Object similarity metric (0.1-0.3 range)
-beta: 0.8   # 1 - alpha
-cutoff: 0.2  # Detection threshold (0.1-0.3 range)
+alpha: 1  # Object similarity metric (0.1-0.3 range)
+beta: 0   # 1 - alpha
+cutoff: 0.8  # Detection threshold (0.1-0.3 range)
 mode: constant
+visualize: False
 
 lightning:
   accelerator: 'gpu'
-  precision: '16-mixed'  # Use mixed precision training
+  precision: '16-mixed'
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
   log_every_n_steps: 50
