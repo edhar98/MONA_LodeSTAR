@@ -9,6 +9,7 @@ Converts TDMS (Technical Data Management Streaming) files to PNG images with opt
 - Multi-core parallel processing
 - Pattern matching for batch processing
 - Automatic dtype normalization (uint8, uint16, float32)
+- Normalization control (`--normed` / `--no-normed`)
 - Skip existing files (resume capability)
 - TDMS structure inspection
 
@@ -56,6 +57,8 @@ python tools/tdms_to_png.py input.tdms -o output --to-mp4 --fps 30
 
 ### Data Type
 - `--dtype {uint8,uint16,float32}`: Output dtype (default: preserve input)
+- `--normed`: Normalize images to full dynamic range (default: enabled)
+- `--no-normed`: Preserve raw image values without normalization
 
 ### Processing
 - `--workers N`: Parallel workers (default: CPU count)
@@ -105,6 +108,15 @@ python tools/tdms_to_png.py "data/*.tdms" -o output      # skips existing
 python tools/tdms_to_png.py "data/*.tdms" -o output -f   # force overwrite
 ```
 
+### Normalization Control
+```bash
+# Normalize images to full dynamic range (default - images appear bright)
+python tools/tdms_to_png.py input.tdms -o output
+
+# Preserve raw values (images may appear dim if range is small)
+python tools/tdms_to_png.py input.tdms -o output --no-normed
+```
+
 ## Output Naming
 
 - PNG: `{base_name}_{index:03d}.png`
@@ -112,10 +124,20 @@ python tools/tdms_to_png.py "data/*.tdms" -o output -f   # force overwrite
 
 ## Dtype Conversion
 
-Automatic normalization when converting:
-- uint16 → uint8: 0-65535 to 0-255
-- uint8 → uint16: 0-255 to 0-65535
-- float → uint8/uint16: normalized to full range
+### Automatic Normalization (Default)
+
+When `--normed` is enabled (default):
+- **uint16 images**: Normalized to use full 0-65535 range → images appear bright
+- **uint16 → uint8**: Scales from 0-65535 to 0-255
+- **uint8 → uint16**: Scales from 0-255 to 0-65535
+- **float → uint8/uint16**: Normalized to full range
+
+### Preserve Raw Values
+
+When `--no-normed` is used:
+- **uint16 images**: Raw values preserved → images may appear dim if actual range is smaller
+- Useful for preserving absolute intensity values for scientific analysis
+- Note: ImageJ and other viewers may auto-scale for display, making them appear bright
 
 ## Troubleshooting
 

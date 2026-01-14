@@ -44,10 +44,14 @@ class InteractiveCrop:
         self.img_array = np.array(self.img)
         
         self.fig, self.ax = plt.subplots(figsize=(12, 10))
-        self.ax.imshow(self.img_array, cmap="gray" if len(self.img_array.shape) == 2 else None)
+        self.ax.imshow(self.img_array, cmap="gray" if len(self.img_array.shape) == 2 else None, origin='upper')
         self.ax.set_title("Draw a square box. Drag to move, scroll to resize, or click button to crop.")
         
         self.rect = None
+        self.width_text = None
+        self.diagonal1 = None
+        self.diagonal2 = None
+        self.center_circle = None
         self.start_x = None
         self.start_y = None
         self.is_drawing = False
@@ -86,6 +90,59 @@ class InteractiveCrop:
         rh = self.rect.get_height()
         return rx <= x <= rx + rw and ry <= y <= ry + rh
     
+    def update_width_text(self):
+        if self.rect is None:
+            if self.width_text:
+                self.width_text.remove()
+                self.width_text = None
+            return
+        
+        width = int(self.rect.get_width())
+        center_x = self.rect.get_x() + self.rect.get_width() / 2
+        top_y = self.rect.get_y()
+        
+        if self.width_text:
+            self.width_text.remove()
+        
+        self.width_text = self.ax.text(
+            center_x, top_y+5, f'{width}px',
+            ha='center', va='bottom',
+            color='yellow', fontsize=12, fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7, edgecolor='yellow', linewidth=1),
+            zorder=10
+        )
+    
+    def update_decorations(self):
+        if self.diagonal1:
+            self.diagonal1.remove()
+            self.diagonal1 = None
+        if self.diagonal2:
+            self.diagonal2.remove()
+            self.diagonal2 = None
+        if self.center_circle:
+            self.center_circle.remove()
+            self.center_circle = None
+        
+        if self.rect is None:
+            return
+        
+        x = self.rect.get_x()
+        y = self.rect.get_y()
+        w = self.rect.get_width()
+        h = self.rect.get_height()
+        
+        self.diagonal1, = self.ax.plot([x, x + w], [y, y + h], 'g-', linewidth=1, zorder=5)
+        self.diagonal2, = self.ax.plot([x + w, x], [y, y + h], 'g-', linewidth=1, zorder=5)
+        
+        center_x = x + w / 2
+        center_y = y + h / 2
+        circle_radius = min(w, h) / 20
+        self.center_circle = patches.Circle(
+            (center_x, center_y), circle_radius,
+            linewidth=2, edgecolor='cyan', facecolor='cyan', alpha=0.8, zorder=6
+        )
+        self.ax.add_patch(self.center_circle)
+    
     def on_press(self, event):
         if event.inaxes != self.ax:
             return
@@ -111,6 +168,8 @@ class InteractiveCrop:
             if self.rect:
                 self.rect.remove()
                 self.rect = None
+            self.update_width_text()
+            self.update_decorations()
     
     def on_release(self, event):
         if event.inaxes != self.ax:
@@ -138,6 +197,8 @@ class InteractiveCrop:
                 linewidth=2, edgecolor='r', facecolor='none'
             )
             self.ax.add_patch(self.rect)
+            self.update_width_text()
+            self.update_decorations()
             self.fig.canvas.draw()
         
         self.is_drawing = False
@@ -168,6 +229,7 @@ class InteractiveCrop:
                 linewidth=2, edgecolor='r', facecolor='none'
             )
             self.ax.add_patch(self.rect)
+            self.update_width_text()
             self.fig.canvas.draw()
         
         elif self.is_dragging and self.rect:
@@ -182,6 +244,8 @@ class InteractiveCrop:
             
             self.rect.set_x(new_x)
             self.rect.set_y(new_y)
+            self.update_width_text()
+            self.update_decorations()
             self.fig.canvas.draw()
     
     def on_scroll(self, event):
@@ -210,6 +274,8 @@ class InteractiveCrop:
         self.rect.set_y(new_y)
         self.rect.set_width(new_size)
         self.rect.set_height(new_size)
+        self.update_width_text()
+        self.update_decorations()
         self.fig.canvas.draw()
     
     def crop_and_save(self, event):

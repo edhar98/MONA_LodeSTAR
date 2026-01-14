@@ -9,16 +9,19 @@ import deeptrack as dt
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import wandb
 import lightning as L
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, Callback
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-# Import custom LodeSTAR implementation
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
+from wandb_logging import (
+    WANDB_AVAILABLE, get_logger, get_run_id, set_summary, finish_run, TrainingMetricsCallback
+)
+
 from custom_lodestar import customLodeSTAR
+from scipy.ndimage import gaussian_filter
 
 # Setup logger with file output
 log_dir = 'logs'
@@ -28,102 +31,57 @@ log_file = os.path.join(log_dir, f'train_single_particle_{timestamp}.log')
 logger = utils.setup_logger('train_single_particle', log_file=log_file)
 
 
-class LodeSTARMetricsCallback(Callback):
-    """Custom callback to track LodeSTAR-specific metrics"""
-    
-    def __init__(self, particle_type):
-        super().__init__()
-        self.particle_type = particle_type
-        self.parameters_logged = False
-        
-    def on_train_epoch_start(self, trainer, pl_module):
-        """Log model parameters only once after first epoch"""
-        # Log model parameters once after initialization
-        if not self.parameters_logged and trainer.current_epoch == 0:
-            try:
-                total_params = sum(p.numel() for p in pl_module.parameters())
-                trainable_params = sum(p.numel() for p in pl_module.parameters() if p.requires_grad)
-                wandb.log({
-                    "model_params": total_params,
-                    "trainable_params": trainable_params
-                })
-                logger.info(f"Model parameters: {total_params:,} total, {trainable_params:,} trainable")
-                self.parameters_logged = True
-            except Exception as e:
-                logger.warning(f"Warning: Could not count model parameters: {e}")
-    
-    def on_train_epoch_end(self, trainer, pl_module):
-        """Log essential training metrics only"""
-        # Extract key training metrics
-        train_metrics = trainer.callback_metrics
-        
-        # Log essential metrics to WandB
-        essential_metrics = {}
-        for key in ['train_within_image_disagreement', 'train_between_image_disagreement']:
-            if key in train_metrics:
-                value = train_metrics[key]
-                if isinstance(value, torch.Tensor):
-                    essential_metrics[key] = value.item()
-                else:
-                    essential_metrics[key] = value
-        
-        if essential_metrics:
-            wandb.log(essential_metrics)
-    
-    def on_validation_epoch_end(self, trainer, pl_module):
-        """Log validation metrics"""
-        val_metrics = trainer.callback_metrics
-        
-        # Log validation metrics to WandB
-        val_essential_metrics = {}
-        for key in ['val_within_image_disagreement', 'val_between_image_disagreement']:
-            if key in val_metrics:
-                value = val_metrics[key]
-                if isinstance(value, torch.Tensor):
-                    val_essential_metrics[key] = value.item()
-                else:
-                    val_essential_metrics[key] = value
-        
-        if val_essential_metrics:
-            wandb.log(val_essential_metrics)
-    
-
-    def on_train_end(self, trainer, pl_module):
-        """Log final training metrics"""
-        wandb.log({
-            "training_complete": True,
-            "final_epoch": trainer.current_epoch
-        })
+def create_circular_mask(image, radius, soft_edge=0):
+    h, w = image.shape[:2]
+    center_y, center_x = h // 2, w // 2
+    Y, X = np.ogrid[:h, :w]
+    dist = np.sqrt((X - center_x)**2 + (Y - center_y)**2)
+    if soft_edge > 0:
+        mask = 1 - np.clip((dist - radius) / soft_edge, 0, 1)
+        mask = gaussian_filter(mask, sigma=soft_edge / 2)
+    else:
+        mask = (dist <= radius).astype(np.float32)
+    if len(image.shape) == 3:
+        mask = mask[..., np.newaxis]
+    return mask
 
 
 def create_single_particle_pipeline(config, particle_type):
     """Create training pipeline for a specific particle type"""
     
-    sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')
+    # Try both .jpg and .png as possible sample image extensions
+    possible_extensions = ['jpg', 'png']
+    sample_path = None
+    for ext in possible_extensions:
+        candidate_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.{ext}')
+        if os.path.exists(candidate_path):
+            sample_path = candidate_path
+            break
+    if sample_path is None:
+        # Default to .jpg for error message if neither exists
+        sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')
     
     if not os.path.exists(sample_path):
         raise FileNotFoundError(f"Sample not found: {sample_path}")
     
     training_image = np.array(dt.LoadImage(sample_path).resolve()).astype(np.float32)
     
-    # Convert RGB to grayscale if needed
     if len(training_image.shape) == 3 and training_image.shape[-1] == 3:
-        # Convert RGB to grayscale using luminance formula
         training_image = np.dot(training_image[..., :3], [0.299, 0.587, 0.114])
     
-    # Add channel dimension if needed
     if len(training_image.shape) == 2:
         training_image = training_image[..., np.newaxis]
     
     training_pipeline = (
         dt.Value(training_image)
-        #>> dt.AveragePooling(ksize=(1, 1, 3))
-        #>> dt.Affine(
-        #    scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
-        #    rotate=lambda: 2*np.pi*np.random.uniform(config['rotation_range'][0], config['rotation_range'][1]),
-        #    translate=lambda: np.random.uniform(config['translation_range'][0], config['translation_range'][1], 2),
-        #    mode='constant'
-        #)
+        #>> dt.AveragePooling(ksize=(config['downsample'], config['downsample'], 3))
+        >> dt.Affine(
+            scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
+            rotate=lambda: 2*np.pi*np.random.uniform(config['rotation_range'][0], config['rotation_range'][1]),
+            translate=lambda: np.random.uniform(config['translation_range'][0], config['translation_range'][1], 2),
+            mode='constant'
+        )
+        #>> dt.Gaussian(sigma=lambda:np.random.uniform(config['sigma_min'], config['sigma_max']))
         >> dt.Multiply(lambda: np.random.uniform(config['mul_min'], config['mul_max']))
         >> dt.Add(lambda: np.random.uniform(config['add_min'], config['add_max']))
         >> dt.MoveAxis(-1, 0)
@@ -136,19 +94,25 @@ def create_single_particle_pipeline(config, particle_type):
 def create_validation_pipeline(config, particle_type):
     """Create validation pipeline for a specific particle type"""
     
-    sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')
-    
+    # Try both .jpg and .png as possible sample image extensions
+    possible_extensions = ['jpg', 'png']
+    sample_path = None
+    for ext in possible_extensions:
+        candidate_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.{ext}')
+        if os.path.exists(candidate_path):
+            sample_path = candidate_path
+            break
+    if sample_path is None:
+        # Default to .jpg for error message if neither exists
+        sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')    
     if not os.path.exists(sample_path):
         raise FileNotFoundError(f"Sample not found: {sample_path}")
     
     validation_image = np.array(dt.LoadImage(sample_path).resolve()).astype(np.float32)
     
-    # Convert RGB to grayscale if needed
     if len(validation_image.shape) == 3 and validation_image.shape[-1] == 3:
-        # Convert RGB to grayscale using luminance formula
         validation_image = np.dot(validation_image[..., :3], [0.299, 0.587, 0.114])
     
-    # Add channel dimension if needed
     if len(validation_image.shape) == 2:
         validation_image = validation_image[..., np.newaxis]
     
@@ -161,16 +125,19 @@ def create_validation_pipeline(config, particle_type):
     val_scale_max = config.get('val_scale_max', config['scale_max'])
     val_rotation_range = config.get('val_rotation_range', config['rotation_range'])
     val_translation_range = config.get('val_translation_range', config['translation_range'])
-    
+    val_sigma_min = config.get('val_sigma_min', config['sigma_min'])
+    val_sigma_max = config.get('val_sigma_max', config['sigma_max'])
+
     validation_pipeline = (
         dt.Value(validation_image)
-        #>> dt.AveragePooling(ksize=(1, 1, 3))
-        #>> dt.Affine(
-        #    scale=lambda: np.random.uniform(val_scale_min, val_scale_max),
-        #    rotate=lambda: 2*np.pi*np.random.uniform(val_rotation_range[0], val_rotation_range[1]),
-        #    translate=lambda: np.random.uniform(val_translation_range[0], val_translation_range[1], 2),
-        #    mode='constant'
-        #)
+        #>> dt.AveragePooling(ksize=(config['downsample'], config['downsample'], 3))
+        >> dt.Affine(
+            scale=lambda: np.random.uniform(val_scale_min, val_scale_max),
+            rotate=lambda: 2*np.pi*np.random.uniform(val_rotation_range[0], val_rotation_range[1]),
+            translate=lambda: np.random.uniform(val_translation_range[0], val_translation_range[1], 2),
+            mode='constant'
+        )
+        #>> dt.Gaussian(sigma=lambda:np.random.uniform(val_sigma_min, val_sigma_max))
         >> dt.Multiply(lambda: np.random.uniform(val_mul_min, val_mul_max))
         >> dt.Add(lambda: np.random.uniform(val_add_min, val_add_max))
         >> dt.MoveAxis(-1, 0)
@@ -186,53 +153,26 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
     logger.info(f"\n=== Training LodeSTAR for {particle_type} particles ===")
     
     # Configure WandB project name
+    if 'wandb' not in config:
+        config['wandb'] = {}
     config['wandb']['project'] = f"LodeSTAR_{particle_type}"
     config['wandb']['notes'] = f"Training LodeSTAR model for {particle_type} particle detection"
     
     # Set random seed
     L.seed_everything(config['seed'])
     
-    # Initialize WandB experiment tracking
-    wandb.init(
-        project=config['wandb']['project'],
-        entity=config['wandb']['entity'],
-        tags=config['wandb']['tags'],
-        notes=config['wandb']['notes'],
-        config=config,
-        dir=config.get('wandb_log_dir', 'wandb_logs')
-    )
-    
-    # Setup WandB logger for PyTorch Lightning
-    wandb_logger = WandbLogger(
-        project=config['wandb']['project'],
-        entity=config['wandb']['entity'],
-        tags=config['wandb']['tags'],
-        log_model=True,
-        dir=config.get('wandb_log_dir', 'wandb_logs')
-    )
+    # Setup logger (WandB if available, no-op otherwise)
+    exp_logger = get_logger(config, particle_type)
     
     # Create checkpoint directory
     dir_export = config.get('dir_export', 'lightning_logs')
-    dir_checkpoint = os.path.join(dir_export, wandb.run.id, 'checkpoints')
+    run_id = get_run_id(exp_logger)
+    dir_checkpoint = os.path.join(dir_export, run_id, 'checkpoints')
     os.makedirs(dir_checkpoint, exist_ok=True)
     
     # Create models directory for final outputs
     models_dir = 'models'
     os.makedirs(models_dir, exist_ok=True)
-    
-    # Setup callbacks
-    callbacks = [
-        ModelCheckpoint(
-            monitor='val_within_image_disagreement',
-            mode='min',
-            filename=f'{particle_type}-{{epoch}}-{{step}}-{{val_loss:.2f}}',
-            save_top_k=3,
-            every_n_epochs=1,
-            dirpath=dir_checkpoint
-        ),
-        LearningRateMonitor(logging_interval='epoch'),
-        LodeSTARMetricsCallback(particle_type),
-    ]
     
     # Create data generation pipeline
     training_pipeline = create_single_particle_pipeline(config, particle_type)
@@ -274,6 +214,28 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
     )
     
     logger.info(f"Training batches: {len(train_dataloader)}")
+    
+    # Get sample path for logging original image
+    sample_path = None
+    for ext in ['jpg', 'png']:
+        candidate = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.{ext}')
+        if os.path.exists(candidate):
+            sample_path = candidate
+            break
+    
+    # Setup callbacks (after dataloaders for sample logging)
+    callbacks = [
+        ModelCheckpoint(
+            monitor='val_within_image_disagreement',
+            mode='min',
+            filename=f'{particle_type}-{{epoch}}-{{step}}-{{val_loss:.2f}}',
+            save_top_k=3,
+            every_n_epochs=1,
+            dirpath=dir_checkpoint
+        ),
+        LearningRateMonitor(logging_interval='epoch'),
+        TrainingMetricsCallback(particle_type, train_dataloader, sample_path, logger),
+    ]
     
     # Initialize LodeSTAR model based on configuration
     if config['lodestar_version'] == 'default':
@@ -323,7 +285,7 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
         limit_val_batches=1.0,  # Use full validation set
         check_val_every_n_epoch=1,  # Validate every epoch
         
-        logger=wandb_logger,
+        logger=exp_logger if WANDB_AVAILABLE else True,
         callbacks=callbacks
     )
     
@@ -332,16 +294,8 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
     
     # Log training configuration
     logger.info(f"Training on particle type: {particle_type}")
-    
-    # Log key configuration parameters
-    wandb.log({
-        "particle_type": particle_type,
-        "max_epochs": config['max_epochs'],
-        "batch_size": config['batch_size'],
-        "learning_rate": config['lr'],
-        "training_samples": config['length'],
-        "batches_per_epoch": len(train_dataloader)
-    })
+    set_summary("particle_type", particle_type)
+    set_summary("batches_per_epoch", len(train_dataloader))
     
     # Start training process
     logger.info(f"Starting LodeSTAR training for {particle_type}...")
@@ -363,7 +317,7 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
     trainer.save_checkpoint(final_checkpoint)
     
     # Create organized model storage
-    run_models_dir = os.path.join(models_dir, wandb.run.id)
+    run_models_dir = os.path.join(models_dir, run_id)
     os.makedirs(run_models_dir, exist_ok=True)
     
     # Archive final model and configuration
@@ -380,14 +334,12 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
     logger.info(f"Final model copied to {final_model_path}")
     logger.info(f"Config copied to {final_config_path}")
     
-    # Log training completion metrics
-    wandb.log({
-        "model_size_mb": os.path.getsize(model_path) / (1024 * 1024),
-        "final_model_path": final_model_path
-    })
+    # Log training completion summary
+    set_summary("model_size_mb", os.path.getsize(model_path) / (1024 * 1024))
+    set_summary("final_model_path", final_model_path)
     
-    # Finish WandB and return results
-    wandb.finish()
+    # Finish experiment logger
+    finish_run(exp_logger)
     return final_model_path, final_checkpoint
 
 

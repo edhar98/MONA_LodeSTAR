@@ -91,7 +91,8 @@ def save_images(
     base_name: str,
     start_index: int = 1,
     dtype: Optional[np.dtype] = None,
-    force: bool = False
+    force: bool = False,
+    normed: bool = True
 ) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -110,10 +111,26 @@ def save_images(
             continue
         
         if dtype == source_dtype:
-            image_converted = image
+            if source_dtype == np.uint16 and normed:
+                image_min = image.min()
+                image_max = image.max()
+                if image_max > image_min:
+                    image_converted = ((image.astype(np.float32) - image_min) / (image_max - image_min) * 65535.0).astype(np.uint16)
+                else:
+                    image_converted = image
+            else:
+                image_converted = image
         elif dtype == np.uint8:
             if source_dtype == np.uint16:
-                image_converted = (image.astype(np.float32) / 65535.0 * 255.0).astype(np.uint8)
+                if normed:
+                    image_min = image.min()
+                    image_max = image.max()
+                    if image_max > image_min:
+                        image_converted = ((image.astype(np.float32) - image_min) / (image_max - image_min) * 255.0).astype(np.uint8)
+                    else:
+                        image_converted = np.zeros_like(image, dtype=np.uint8)
+                else:
+                    image_converted = (image.astype(np.float32) / 65535.0 * 255.0).astype(np.uint8)
             elif source_dtype in (np.float32, np.float64):
                 image_min = image.min()
                 image_max = image.max()
@@ -156,7 +173,8 @@ def save_video(
     output_path: Path,
     fps: float = 30.0,
     dtype: Optional[np.dtype] = None,
-    force: bool = False
+    force: bool = False,
+    normed: bool = True
 ) -> bool:
     if not HAS_IMAGEIO:
         raise ImportError("imageio is required for video conversion. Install it with: pip install imageio imageio-ffmpeg")
@@ -172,10 +190,26 @@ def save_video(
     video_frames = []
     for image in images:
         if dtype == source_dtype:
-            image_converted = image
+            if source_dtype == np.uint16 and normed:
+                image_min = image.min()
+                image_max = image.max()
+                if image_max > image_min:
+                    image_converted = ((image.astype(np.float32) - image_min) / (image_max - image_min) * 65535.0).astype(np.uint16)
+                else:
+                    image_converted = image
+            else:
+                image_converted = image
         elif dtype == np.uint8:
             if source_dtype == np.uint16:
-                image_converted = (image.astype(np.float32) / 65535.0 * 255.0).astype(np.uint8)
+                if normed:
+                    image_min = image.min()
+                    image_max = image.max()
+                    if image_max > image_min:
+                        image_converted = ((image.astype(np.float32) - image_min) / (image_max - image_min) * 255.0).astype(np.uint8)
+                    else:
+                        image_converted = np.zeros_like(image, dtype=np.uint8)
+                else:
+                    image_converted = (image.astype(np.float32) / 65535.0 * 255.0).astype(np.uint8)
             elif source_dtype in (np.float32, np.float64):
                 image_min = image.min()
                 image_max = image.max()
@@ -228,9 +262,9 @@ def save_video(
 
 
 def process_single_tdms_file(
-    args: Tuple[Path, Path, int, int, int, int, Optional[str], Optional[str], Optional[np.dtype], bool, float, bool]
+    args: Tuple[Path, Path, int, int, int, int, Optional[str], Optional[str], Optional[np.dtype], bool, float, bool, bool]
 ) -> int:
-    tdms_file, output_dir, start_index, image_width, image_height, channel_index, group_name, base_name, dtype, to_video, fps, force = args
+    tdms_file, output_dir, start_index, image_width, image_height, channel_index, group_name, base_name, dtype, to_video, fps, force, normed = args
     
     images = extract_images_from_tdms(
         tdms_file,
@@ -248,14 +282,15 @@ def process_single_tdms_file(
         images,
         output_dir,
         file_base_name,
-        start_index=start_index,
+        start_index=1,
         dtype=dtype,
-        force=force
+        force=force,
+        normed=normed
     )
     
     if to_video:
         output_path = output_dir / f"{file_base_name}.mp4"
-        save_video(images, output_path, fps=fps, dtype=dtype, force=force)
+        save_video(images, output_path, fps=fps, dtype=dtype, force=force, normed=normed)
     
     return saved
 
@@ -274,7 +309,8 @@ def process_tdms_files(
     num_workers: Optional[int] = None,
     to_video: bool = False,
     fps: float = 30.0,
-    force: bool = False
+    force: bool = False,
+    normed: bool = True
 ) -> int:
     input_path = Path(input_pattern)
     
@@ -325,19 +361,20 @@ def process_tdms_files(
                 images,
                 output_dir,
                 file_base_name,
-                start_index=start_index,
+                start_index=1,
                 dtype=dtype,
-                force=force
+                force=force,
+                normed=normed
             )
             total_saved += saved
             
             if to_video:
                 output_path = output_dir / f"{file_base_name}.mp4"
-                save_video(images, output_path, fps=fps, dtype=dtype, force=force)
+                save_video(images, output_path, fps=fps, dtype=dtype, force=force, normed=normed)
         return total_saved
     
     tasks = [
-        (tdms_file, output_dir, start_index, image_width, image_height, channel_index, group_name, base_name, dtype, to_video, fps, force)
+        (tdms_file, output_dir, start_index, image_width, image_height, channel_index, group_name, base_name, dtype, to_video, fps, force, normed)
         for tdms_file in tdms_files
     ]
     
@@ -455,6 +492,20 @@ def main() -> None:
         help="Overwrite existing output files (default: skip existing files)"
     )
     
+    parser.add_argument(
+        "--normed",
+        action="store_true",
+        default=True,
+        help="Normalize images to full dynamic range (default: True). Use --no-normed to preserve raw values."
+    )
+    
+    parser.add_argument(
+        "--no-normed",
+        dest="normed",
+        action="store_false",
+        help="Preserve raw image values without normalization"
+    )
+    
     args = parser.parse_args()
     
     dtype_map = {
@@ -499,7 +550,8 @@ def main() -> None:
             num_workers=args.workers,
             to_video=args.to_mp4,
             fps=args.fps,
-            force=args.force
+            force=args.force,
+            normed=args.normed
         )
         
         if args.to_mp4:

@@ -5,6 +5,7 @@ from jinja2 import Environment, BaseLoader
 import xml.etree.ElementTree as ET
 import numpy as np
 from scipy.spatial.distance import cdist
+import cv2
 
 def calculate_detection_metrics(gt_bboxes, detections, gt_labels=None, detection_labels=None, distance_threshold=20):
     if len(gt_bboxes) == 0 and len(detections) == 0:
@@ -211,3 +212,31 @@ class XMLWriter:
 
 # Alias for backward compatibility
 Writer = XMLWriter
+
+
+def create_video_from_detections(images_dir: str, output_path: str, fps: int = 10, 
+                                  extensions: tuple = ('.jpg', '.png', '.tif', '.tiff')) -> str:
+    image_files = sorted([f for f in os.listdir(images_dir) if f.lower().endswith(extensions)])
+    
+    if not image_files:
+        raise ValueError(f"No images found in {images_dir}")
+    
+    first_image = cv2.imread(os.path.join(images_dir, image_files[0]))
+    if first_image is None:
+        raise ValueError(f"Could not read first image: {image_files[0]}")
+    
+    height, width = first_image.shape[:2]
+    
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    
+    for image_file in image_files:
+        image_path = os.path.join(images_dir, image_file)
+        frame = cv2.imread(image_path)
+        if frame is not None:
+            if frame.shape[:2] != (height, width):
+                frame = cv2.resize(frame, (width, height))
+            video_writer.write(frame)
+    
+    video_writer.release()
+    return output_path
