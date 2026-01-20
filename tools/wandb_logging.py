@@ -81,6 +81,19 @@ def log_images(key, images, step=0):
         wandb.log({key: images}, step=step)
 
 
+def log_source_files(files, artifact_name="source_code"):
+    if not WANDB_AVAILABLE or wandb.run is None:
+        return
+    try:
+        artifact = wandb.Artifact(artifact_name, type="code")
+        for file_path in files:
+            if os.path.exists(file_path):
+                artifact.add_file(file_path)
+        wandb.log_artifact(artifact)
+    except Exception:
+        pass
+
+
 def finish_run(logger_instance):
     if WANDB_AVAILABLE and isinstance(logger_instance, WandbLogger):
         logger_instance.experiment.finish()
@@ -89,12 +102,13 @@ def finish_run(logger_instance):
 
 
 class TrainingMetricsCallback(Callback):
-    def __init__(self, particle_type, train_dataloader=None, sample_path=None, app_logger=None):
+    def __init__(self, particle_type, train_dataloader=None, sample_path=None, app_logger=None, source_files=None):
         super().__init__()
         self.particle_type = particle_type
         self.train_dataloader = train_dataloader
         self.sample_path = sample_path
         self.app_logger = app_logger
+        self.source_files = source_files or []
         self.setup_done = False
         
     def on_fit_start(self, trainer, pl_module):
@@ -110,6 +124,9 @@ class TrainingMetricsCallback(Callback):
         
         if self.app_logger:
             self.app_logger.info(f"Model parameters: {total_params:,} total, {trainable_params:,} trainable")
+        
+        if self.source_files:
+            log_source_files(self.source_files)
         
         if not WANDB_AVAILABLE or wandb.run is None:
             return

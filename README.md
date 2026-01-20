@@ -25,15 +25,16 @@ MONA_LodeSTAR/
 │   ├── train_single_particle.py   # Training pipeline
 │   ├── test_single_particle.py    # Testing and evaluation
 │   ├── composite_model.py         # Composite model for multi-class detection
-│   ├── test_composite_model.py    # Testing composite model
-│   ├── compare_models.py          # Compare single vs composite models
-│   ├── run_composite_pipeline.py  # Composite model example
 │   ├── custom_lodestar.py         # Paper-accurate LodeSTAR implementation
-│   ├── run_single_particle_pipeline.py  # Complete pipeline runner
 │   ├── config.yaml                # Configuration file
 │   ├── utils.py                   # Utility functions
-│   ├── generate_samples.py        # Sample generation script
-|   └── requirements.txt           # Dependencies
+│   └── requirements.txt           # Dependencies
+├── tools/                         # Data processing utilities
+│   ├── tdms_to_png.py             # TDMS to PNG/MP4 converter
+│   ├── crop.py                    # Interactive image cropping
+│   ├── mask.py                    # Circular ROI masking
+│   ├── merge_mp4.py               # MP4 video merger
+│   └── wandb_logging.py           # WandB logging abstraction
 ├── COMPOSITE_MODEL_README.md      # Detailed composite model documentation
 ```
 

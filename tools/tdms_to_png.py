@@ -316,6 +316,10 @@ def process_tdms_files(
     
     if input_path.is_file():
         tdms_files = [input_path]
+    elif input_path.is_dir():
+        tdms_files = sorted(input_path.glob("*.tdms"))
+        if num_files:
+            tdms_files = tdms_files[:num_files]
     elif '{' in input_pattern:
         tdms_files = []
         file_idx = start_index
@@ -329,8 +333,12 @@ def process_tdms_files(
                 break
     else:
         input_dir = input_path.parent if input_path.parent != Path('.') else Path('.')
-        pattern = input_path.name if input_path.name != input_pattern else '*'
-        tdms_files = sorted(input_dir.glob(f"{pattern}.tdms"))
+        if '*' in input_pattern or '?' in input_pattern:
+            pattern = input_path.name
+            tdms_files = sorted(input_dir.glob(pattern))
+        else:
+            pattern = input_path.name if input_path.name != input_pattern else '*'
+            tdms_files = sorted(input_dir.glob(f"{pattern}.tdms"))
         if num_files:
             tdms_files = tdms_files[:num_files]
     

@@ -224,6 +224,10 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
             break
     
     # Setup callbacks (after dataloaders for sample logging)
+    source_files = [
+        os.path.abspath(__file__),
+        os.path.join(os.path.dirname(__file__), 'config.yaml'),
+    ]
     callbacks = [
         ModelCheckpoint(
             monitor='val_within_image_disagreement',
@@ -234,7 +238,7 @@ def train_single_particle_model(particle_type, config, checkpoint_path=None):
             dirpath=dir_checkpoint
         ),
         LearningRateMonitor(logging_interval='epoch'),
-        TrainingMetricsCallback(particle_type, train_dataloader, sample_path, logger),
+        TrainingMetricsCallback(particle_type, train_dataloader, sample_path, logger, source_files),
     ]
     
     # Initialize LodeSTAR model based on configuration

@@ -5,7 +5,9 @@ from jinja2 import Environment, BaseLoader
 import xml.etree.ElementTree as ET
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.spatial import cKDTree
 import cv2
+import pandas as pd
 
 def calculate_detection_metrics(gt_bboxes, detections, gt_labels=None, detection_labels=None, distance_threshold=20):
     if len(gt_bboxes) == 0 and len(detections) == 0:
@@ -212,6 +214,132 @@ class XMLWriter:
 
 # Alias for backward compatibility
 Writer = XMLWriter
+
+
+def preprocess_image(image: np.ndarray) -> np.ndarray:
+    if not isinstance(image, np.ndarray):
+        image = np.array(image)
+    
+    if len(image.shape) == 3:
+        if image.shape[-1] == 3:
+            image = np.dot(image[..., :3], [0.299, 0.587, 0.114])
+        elif image.shape[0] == 3:
+            image = np.dot(image[:3].transpose(1, 2, 0), [0.299, 0.587, 0.114])
+        elif image.shape[-1] == 1:
+            image = image[..., 0]
+        elif image.shape[0] == 1:
+            image = image[0]
+        else:
+            image = image[0] if image.shape[0] < image.shape[-1] else image[..., 0]
+    elif len(image.shape) > 3:
+        if image.shape[1] == 3:
+            image = np.dot(image[0].transpose(1, 2, 0), [0.299, 0.587, 0.114])
+        else:
+            image = image[0, 0] if len(image.shape) == 4 else image[0]
+    
+    if len(image.shape) != 2:
+        raise ValueError(f"Image must be 2D after processing, got shape {image.shape}")
+    
+    return image
+
+
+def cluster_nearby_detections(detections: np.ndarray, distance_threshold: float = 20) -> np.ndarray:
+    if len(detections) <= 1:
+        return detections
+    
+    tree = cKDTree(detections)
+    pairs = tree.query_pairs(r=distance_threshold)
+    
+    n = len(detections)
+    parent = list(range(n))
+    
+    def find(x):
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+    
+    def union(x, y):
+        px, py = find(x), find(y)
+        if px != py:
+            parent[px] = py
+    
+    for i, j in pairs:
+        union(i, j)
+    
+    clusters = {}
+    for i in range(n):
+        root = find(i)
+        clusters.setdefault(root, []).append(i)
+    
+    return np.array([np.mean(detections[indices], axis=0) for indices in clusters.values()])
+
+
+def load_csv_ground_truth(csv_path: str) -> dict:
+    df = pd.read_csv(csv_path, index_col=0)
+    
+    sorted_frames = sorted(df['frame'].unique())
+    
+    frames = {}
+    for image_idx, frame_val in enumerate(sorted_frames):
+        frame_data = df[df['frame'] == frame_val]
+        frames[image_idx] = {
+            'positions': frame_data[['x', 'y']].values,
+            'phi': frame_data['phi'].values,
+            'max_intensity': frame_data['max_inensity'].values,
+            'summed_intensity': frame_data['summed_inensity'].values,
+            'frame': int(frame_val)
+        }
+    return frames
+
+
+def detect_by_area(weights: np.ndarray, cutoff: float = 0.9,
+                   min_area: int = 100, max_area: int = 2500) -> np.ndarray:
+    if weights is None:
+        return np.empty((0, 2))
+    
+    binary_mask = (weights > cutoff).astype(np.uint8)
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    detections = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < min_area or area > max_area:
+            continue
+        
+        M = cv2.moments(contour)
+        if M["m00"] == 0:
+            continue
+        
+        cx = M["m10"] / M["m00"]
+        cy = M["m01"] / M["m00"]
+        detections.append([cx, cy])
+    
+    return np.array(detections) if detections else np.empty((0, 2))
+
+
+def save_image_with_detections(image: np.ndarray, detections: np.ndarray, save_path: str,
+                               gt_bboxes: np.ndarray = None,
+                               det_color: tuple = (255, 0, 0), gt_color: tuple = (0, 255, 0),
+                               marker_radius: int = 3, marker_thickness: int = 1):
+    image = preprocess_image(image)
+    
+    if image.max() <= 1.0:
+        image_uint8 = (image * 255).astype(np.uint8)
+    else:
+        image_uint8 = ((image - image.min()) / (image.max() - image.min() + 1e-8) * 255).astype(np.uint8)
+    
+    image_rgb = cv2.cvtColor(image_uint8, cv2.COLOR_GRAY2RGB)
+    
+    if gt_bboxes is not None and len(gt_bboxes) > 0:
+        for x, y in gt_bboxes[:, :2]:
+            cv2.circle(image_rgb, (int(x), int(y)), marker_radius, gt_color, marker_thickness)
+    
+    if len(detections) > 0:
+        for det in detections:
+            x, y = det[0], det[1]
+            cv2.circle(image_rgb, (int(x), int(y)), marker_radius, det_color, marker_thickness)
+    
+    cv2.imwrite(save_path, cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
 
 
 def create_video_from_detections(images_dir: str, output_path: str, fps: int = 10, 
