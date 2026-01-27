@@ -6,10 +6,15 @@ import deeptrack as dt
 import utils
 from composite_model import CompositeLodeSTAR
 
+_SCRIPT_DIR: str = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT: str = os.path.dirname(_SCRIPT_DIR)
+_DEFAULT_CONFIG_PATH: str = os.path.join(_SCRIPT_DIR, 'config.yaml')
+_DEFAULT_SUMMARY_PATH: str = os.path.join(_REPO_ROOT, 'trained_models_summary.yaml')
 
-def run_composite_detection_example(visualize=False):
-    config = utils.load_yaml('src/config.yaml')
-    trained_models = utils.load_yaml('trained_models_summary.yaml')
+
+def run_composite_detection_example(visualize: bool = False) -> None:
+    config = utils.load_yaml(_DEFAULT_CONFIG_PATH)
+    trained_models = utils.load_yaml(_DEFAULT_SUMMARY_PATH)
     
     print("=== Composite LodeSTAR Detection Example ===")
     print(f"Loading models for particle types: {list(trained_models.keys())}")
@@ -17,9 +22,9 @@ def run_composite_detection_example(visualize=False):
     composite = CompositeLodeSTAR(config, trained_models)
     print(f"Composite model loaded with {len(composite.models)} models")
     
-    file_name = 'image_0012.jpg'    
-    test_image_path = f'data/Testing_snr_10-10/different_shape_same_size/images/{file_name}'
-    annotation_path = f'data/Testing_snr_10-10/different_shape_same_size/annotations/{file_name.replace(".jpg", ".xml")}'
+    file_name = 'image_0012.jpg'
+    test_image_path = os.path.join(_REPO_ROOT, 'data', 'Testing_snr_10-10', 'different_shape_same_size', 'images', file_name)
+    annotation_path = os.path.join(_REPO_ROOT, 'data', 'Testing_snr_10-10', 'different_shape_same_size', 'annotations', file_name.replace('.jpg', '.xml'))
     
     gt_bboxes, gt_labels, _ = utils.parse_xml_annotations(annotation_path)
     

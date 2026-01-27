@@ -111,3 +111,36 @@ from tools.wandb_logging import get_logger, WANDB_AVAILABLE
 
 logger = get_logger(config, particle_type)
 ```
+
+---
+
+## ELAB Integration (`elab/`)
+
+ELAB integration tools for uploading training and test results to ELAB.
+
+### Setup
+
+```bash
+export ELAB_HOST_URL="https://your-elab-instance.com"
+export ELAB_API_KEY="your-api-key"
+export ELAB_VERIFY_SSL="true"
+```
+
+### Usage
+
+```bash
+# Using root wrapper
+python elab.py upload-training
+python elab.py upload-test
+
+# Using direct CLI (subcommands: upload-training, upload-test, link-resources)
+python tools/elab_cli.py simple upload-training
+python tools/elab_cli.py simple upload-test
+```
+
+### Configuration
+
+- Reference config (structure/docs): `tools/elab/config/elab_config.yaml`. Current scripts do not load it; defaults are hardcoded.
+- Reference: `elab_config.yaml` (root)
+
+See [ELAB_CLI_SIMPLE_USAGE.md](../ELAB_CLI_SIMPLE_USAGE.md), [DUPLICATES_DOCUMENTATION.md](../DUPLICATES_DOCUMENTATION.md), and [TOOLS_VERIFICATION.md](../TOOLS_VERIFICATION.md) for entry points and verification.

@@ -100,6 +100,10 @@ trained_models = utils.load_yaml('trained_models_summary.yaml')
 
 composite = CompositeLodeSTAR(config, trained_models)
 
+# Uses model-specific parameters from each model's config (recommended)
+detections, labels, weight_maps, outputs = composite.detect_and_classify(image)
+
+# Override parameters for all models (if needed)
 detections, labels, weight_maps, outputs = composite.detect_and_classify(
     image,
     alpha=0.2,

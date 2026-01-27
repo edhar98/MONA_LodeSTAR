@@ -1,0 +1,48 @@
+# ELAB Configuration for MONA LodeSTAR Project
+
+# Default experiment settings
+experiment:
+  template: 24  # LodeSTAR template ID
+  category: 5    # "Full Run" category
+  team: 1        # "Molecular Nanophotonics Group"
+
+# Default tags for different experiment types
+tags:
+  training: "155,156"  # LodeSTAR|ML tags
+  testing: "155,156"   # LodeSTAR|ML tags
+  evaluation: "155,156"  # LodeSTAR|ML tags
+
+# Directory mappings for different upload types
+directories:
+  training:
+    - "logs"
+    - "checkpoints" 
+    - "models"
+    - "lightning_logs"
+  testing:
+    - "logs"
+    - "detection_results"
+  evaluation:
+    - "logs"
+    - "evaluation_results"
+    - "detection_results"
+
+# File patterns to include in uploads
+file_patterns:
+  additional_files:
+    - "trained_models_summary.yaml"
+    - "test_results_summary.yaml"
+    - "config.yaml"
+    - "requirements.txt"
+
+# Default title prefixes
+title_prefixes:
+  training: "LodeSTAR Training Results"
+  testing: "LodeSTAR Test Results"
+  evaluation: "LodeSTAR Evaluation Results"
+
+# Archive settings
+archive:
+  compression: "gz"  # tar.gz compression
+  include_hidden: false
+  max_size_mb: 1000  # Maximum archive size in MB

@@ -1,0 +1,79 @@
+wandb:
+  project: LodeSTAR
+  entity: harutyunianedgar-universit-t-leipzig
+  tags: ["LodeSTAR", "MONA"]
+  notes: "Training LodeSTAR model for single particle detection"
+
+data_dir: data/
+
+lodestar_version: default
+
+# Sample configuration - can be single particle or multiple
+samples: [JP_Fe_wf_2_40] # [PusherPuller, Ring] # [JP_1_5um_laser_2_35] #[Janus, Ring, Spot, Ellipse, Rod]  # Can be: Janus, Ring, Spot, Ellipse, Rod
+
+# Training dataset augmentation
+add_min: -0.1
+add_max: 0.1
+mul_min: 0.1
+mul_max: 0.9
+scale_min: 1.0 #0.90
+scale_max: 1.0 #1.1
+rotation_range: [0, 0] # [0, 1]  # Rotation range in radians
+translation_range: [0, 0]  # Translation range in pixels
+sigma_min: 0
+sigma_max: 0.5
+downsample: 1
+
+# Validation dataset augmentation (more conservative)
+val_add_min: -0.05
+val_add_max: 0.05
+val_mul_min: 0.4
+val_mul_max: 0.7
+val_scale_min: 1.0 #0.98
+val_scale_max: 1.0 #1.02
+val_rotation_range: [0,0] #[0, 1]  # Less rotation for validation
+val_translation_range: [0, 0]  # Less translation for validation
+val_sigma_min: 0.05
+val_sigma_max: 0.45
+
+# Paper specifications: 5000 mini-batches of 8 samples = 40,000 total samples
+length: 512  # Training samples per epoch (paper: 5000 mini-batches × 8 samples = 40,000 total)
+
+# training
+seed: 37
+n_transforms: 4  
+max_epochs: 200
+devices: 1
+strategy: "ddp"
+num_workers: 8
+batch_size: 16
+
+# optimizer 
+lr: 0.0001
+
+# detection
+alpha: 0.1  # Object similarity metric (0.1-0.3 range)
+beta: 0.9  # 1 - alpha
+cutoff: 0.1  # Detection threshold (0.1-0.3 range)
+mode: constant
+visualize: True
+
+# area-based detection
+area_detection:
+  min_area: 200
+  max_area: 500
+
+# testing
+testing_type: 'JP_FE/wf_2_40'
+dataset_types: ['04']
+gt_from_csv: False
+fps: 30
+
+lightning:
+  accelerator: 'gpu'
+  precision: '16-mixed'
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  log_every_n_steps: 50
+  val_check_interval: 1.0
+  check_val_every_n_epoch: 1

@@ -27,16 +27,37 @@ MONA_LodeSTAR/
 │   ├── composite_model.py         # Composite model for multi-class detection
 │   ├── custom_lodestar.py         # Paper-accurate LodeSTAR implementation
 │   ├── config.yaml                # Configuration file
+│   ├── samples.yaml               # Particle sample definitions
 │   ├── utils.py                   # Utility functions
 │   └── requirements.txt           # Dependencies
+├── web/                           # Web interface
+│   ├── app.py                     # FastAPI backend
+│   ├── templates/index.html        # Web UI
+│   └── data/                      # User data (runtime)
 ├── tools/                         # Data processing utilities
 │   ├── tdms_to_png.py             # TDMS to PNG/MP4 converter
 │   ├── crop.py                    # Interactive image cropping
 │   ├── mask.py                    # Circular ROI masking
 │   ├── merge_mp4.py               # MP4 video merger
-│   └── wandb_logging.py           # WandB logging abstraction
-├── COMPOSITE_MODEL_README.md      # Detailed composite model documentation
+│   ├── wandb_logging.py           # WandB logging abstraction
+│   └── elab/                      # ELAB integration
+├── debug/                         # Research & experimentation
+│   ├── diagnostics/               # Diagnostic scripts
+│   └── inspection/                 # Inspection tools
+├── test/                          # Test infrastructure
+│   ├── unit/                      # Unit tests
+│   ├── regression/                # Regression tests
+│   └── integration/               # Integration tests
+├── docs/                          # Documentation
+│   ├── papers/                    # Research papers
+│   ├── ARCHITECTURE.md            # Architecture overview
+│   ├── BRANCH_GUIDES.md           # Branch-specific guides
+│   └── QUICK_REFERENCE.md         # Quick reference
+├── presentation/                  # Presentation materials
+└── COMPOSITE_MODEL_README.md      # Detailed composite model documentation
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the 6-branch workflow structure and [docs/BRANCH_GUIDES.md](docs/BRANCH_GUIDES.md) for branch-specific documentation.
 
 ## Installation
 
@@ -118,6 +139,8 @@ The system generates several output files and directories during execution:
 ### **Summary Files**
 - **`test_results_summary.yaml`**: Test results organized by particle type and dataset category (same/different shape/size), containing precision, recall, F1-scores, and total true/false positive/negative counts for each test scenario
 - **`trained_models_summary.yaml`**: Model tracking information organized by particle type, containing checkpoint paths, model weight paths, and model directories for each training run, including multiple model versions per particle type
+
+**Note:** Research papers are located in `docs/papers/`. See [INVENTORY.md](INVENTORY.md) for complete file organization.
 
 ## Data Generation
 
@@ -211,6 +234,17 @@ detections, labels, weight_maps, outputs = composite.detect_and_classify(image)
 ```
 
 See `COMPOSITE_MODEL_README.md` for detailed documentation.
+
+## Documentation
+
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - 6-branch workflow and system architecture
+- **[Branch Guides](docs/BRANCH_GUIDES.md)** - Detailed guides for each branch
+- **[Quick Reference](docs/QUICK_REFERENCE.md)** - Common commands and patterns
+- **[Composite Model](COMPOSITE_MODEL_README.md)** - Multi-class detection documentation
+- **[Model Detection Parameters](MODEL_SPECIFIC_DETECTION_PARAMS.md)** - Detection parameter guide
+- **[Duplicate Files](DUPLICATES_DOCUMENTATION.md)** - Clarification on duplicate files
+- **[Inventory](INVENTORY.md)** - Complete codebase inventory
+- **[Cleanup Report](CLEANUP_REPORT.md)** - Cleanup actions executed
 
 ## Model Architecture
 

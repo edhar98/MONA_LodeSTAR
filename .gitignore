@@ -1,8 +1,39 @@
 __pycache__
 .ipynb_checkpoints
+mona_track.egg-info/
 data
 detection_results
 logs
 models
 wandb_logs
 lightning_logs/
+
+# Temporary files
+count
+ddd
+diff.txt
+*.aux
+*.log
+*.out
+
+# Archive files
+*.tar.gz
+
+# Test results
+snr_test_results.txt
+test_results_summary.yaml
+test_composite_results_summary.yaml
+
+# Compiled binaries
+tools/tdms_to_png
+
+# Runtime data
+web/sessions.json
+web/training_jobs.json
+web/users.json
+web/uploads/
+web/samples/
+
+# Output directories
+detection_output/
+debug_outputs/

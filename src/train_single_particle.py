@@ -15,7 +15,7 @@ import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tools')))
 from wandb_logging import (
     WANDB_AVAILABLE, get_logger, get_run_id, set_summary, finish_run, TrainingMetricsCallback
 )

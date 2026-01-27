@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MONA Track</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+        
+        .login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .login-box { background: #1a1a1a; padding: 40px; border-radius: 12px; width: 100%; max-width: 400px; border: 1px solid #333; }
+        .login-box h1 { text-align: center; margin-bottom: 30px; font-size: 1.8rem; }
+        .login-box .form-group { margin-bottom: 20px; }
+        .login-box label { display: block; margin-bottom: 8px; color: #aaa; }
+        .login-box input { width: 100%; padding: 12px; border: 1px solid #333; border-radius: 6px; background: #222; color: #fff; font-size: 1rem; }
+        .login-box .btn-group { display: flex; gap: 10px; margin-top: 30px; }
+        .login-box .btn { flex: 1; }
+        .login-error { color: #ff4a4a; margin-bottom: 15px; text-align: center; }
+        
+        .app-container { display: none; }
+        .app-container.active { display: block; }
+        
+        header { background: #111; border-bottom: 1px solid #2a2a2a; padding: 0 20px; display: flex; align-items: center; height: 60px; }
+        .logo { font-size: 1.4rem; font-weight: 600; color: #fff; margin-right: 40px; }
+        .nav-menu { display: flex; gap: 5px; flex: 1; }
+        .nav-item { padding: 18px 24px; color: #888; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; font-weight: 500; }
+        .nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+        .nav-item.active { color: #4a9eff; border-bottom-color: #4a9eff; }
+        .user-info { color: #888; font-size: 0.9rem; display: flex; align-items: center; gap: 15px; }
+        .user-info span { color: #fff; }
+        .btn-logout { padding: 8px 16px; background: #333; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+        .btn-logout:hover { background: #444; }
+        
+        .main-content { padding: 30px; max-width: 1600px; margin: 0 auto; }
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        .panel { background: #1a1a1a; border-radius: 12px; padding: 24px; border: 1px solid #2a2a2a; margin-bottom: 20px; }
+        .panel-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
+        .panel-header .badge { background: #4a9eff; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        
+        .upload-zone { border: 2px dashed #444; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .upload-zone:hover { border-color: #4a9eff; background: rgba(74, 158, 255, 0.05); }
+        .upload-zone input { display: none; }
+        .upload-icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5; }
+        .upload-text { color: #888; }
+        .upload-text strong { color: #4a9eff; }
+        
+        .canvas-container { background: #000; border-radius: 8px; position: relative; min-height: 400px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        canvas { max-width: 100%; max-height: 500px; cursor: crosshair; }
+        
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: #aaa; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #222; color: #fff; font-size: 0.9rem; }
+        .form-group input:focus { outline: none; border-color: #4a9eff; }
+        .form-group input[type="checkbox"] { width: auto; margin-right: 8px; }
+        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+        .form-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        
+        .btn { padding: 12px 24px; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
+        .btn-primary { background: #4a9eff; color: #fff; }
+        .btn-primary:hover { background: #3a8eef; }
+        .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .btn-secondary { background: #333; color: #fff; }
+        .btn-secondary:hover { background: #444; }
+        .btn-danger { background: #ff4a4a; color: #fff; }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        
+        .sample-item { display: flex; align-items: center; gap: 15px; padding: 12px; background: #222; border-radius: 8px; margin-bottom: 10px; }
+        .sample-preview { width: 50px; height: 50px; border-radius: 6px; background: #333; display: flex; align-items: center; justify-content: center; }
+        .sample-info { flex: 1; }
+        .sample-name { font-weight: 500; }
+        .sample-meta { font-size: 0.8rem; color: #888; }
+        
+        .model-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #222; border-radius: 8px; margin-bottom: 10px; }
+        
+        .progress-bar { height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: #4a9eff; transition: width 0.3s; }
+        
+        .status { padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
+        .status-ready { background: rgba(74, 255, 128, 0.2); color: #4aff80; }
+        .status-training { background: rgba(74, 158, 255, 0.2); color: #4a9eff; }
+        
+        .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 15px; }
+        .alert-info { background: rgba(74, 158, 255, 0.1); border: 1px solid rgba(74, 158, 255, 0.3); color: #4a9eff; }
+        
+        .hidden { display: none !important; }
+        
+        .loader { width: 20px; height: 20px; border: 2px solid #333; border-top-color: #4a9eff; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .controls-bar { display: flex; gap: 15px; align-items: center; margin-top: 15px; flex-wrap: wrap; }
+        .frame-slider { flex: 1; min-width: 200px; }
+        input[type="range"] { width: 100%; height: 6px; border-radius: 3px; background: #333; -webkit-appearance: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #4a9eff; cursor: pointer; }
+        
+        .section-title { font-size: 0.9rem; color: #888; margin: 20px 0 10px; padding-bottom: 5px; border-bottom: 1px solid #333; }
+        
+        .tool-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
+        .tool-btn { padding: 10px 20px; background: #222; border: 1px solid #333; color: #aaa; cursor: pointer; border-radius: 6px; }
+        .tool-btn.active { background: #4a9eff; border-color: #4a9eff; color: #fff; }
+        
+        .weightmap-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .weightmap-container canvas { width: 100%; height: auto; }
+        
+        .postprocess-placeholder { text-align: center; padding: 60px; color: #666; }
+        .postprocess-placeholder h3 { margin-bottom: 10px; color: #888; }
+        
+        .sub-nav { display: flex; gap: 5px; margin-bottom: 20px; padding: 5px; background: #1a1a1a; border-radius: 8px; }
+        .sub-nav-btn { padding: 10px 20px; background: transparent; border: none; color: #888; cursor: pointer; border-radius: 6px; font-size: 0.9rem; transition: all 0.2s; }
+        .sub-nav-btn:hover { background: #222; color: #fff; }
+        .sub-nav-btn.active { background: #4a9eff; color: #fff; }
+        .subtab { display: none; }
+        .subtab.active { display: block; }
+        
+        .file-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: #333; border-radius: 4px; margin-bottom: 5px; }
+        .file-item input[type="checkbox"] { width: 18px; height: 18px; }
+        .file-item label { flex: 1; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="login-container" id="loginContainer">
+        <div class="login-box">
+            <h1>MONA Track</h1>
+            <div id="loginError" class="login-error hidden"></div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="loginUsername" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="loginPassword" placeholder="Enter password">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="loginBtn">Login</button>
+                <button class="btn btn-secondary" id="registerBtn">Register</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" id="appContainer">
+        <header>
+            <div class="logo">MONA Track</div>
+            <nav class="nav-menu">
+                <div class="nav-item active" data-page="preprocessing">00. Preprocessing</div>
+                <div class="nav-item" data-page="training">01. Training</div>
+                <div class="nav-item" data-page="detection">02. Detection</div>
+                <div class="nav-item" data-page="postprocessing">03. Postprocessing</div>
+            </nav>
+            <div class="user-info">
+                <span id="displayUsername">-</span>
+                <button class="btn-logout" id="logoutBtn">Logout</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- PREPROCESSING PAGE -->
+            <div class="page active" id="page-preprocessing">
+                <div class="sub-nav">
+                    <button class="sub-nav-btn active" data-subtab="upload">Upload & View</button>
+                    <button class="sub-nav-btn" data-subtab="export">TDMS Export</button>
+                    <button class="sub-nav-btn" data-subtab="crop">Crop Sample</button>
+                    <button class="sub-nav-btn" data-subtab="mask">Mask Sample</button>
+                    <button class="sub-nav-btn" data-subtab="merge">Video Merge</button>
+                </div>
+
+                <!-- UPLOAD SUBTAB -->
+                <div class="subtab active" id="subtab-upload">
+                    <div class="grid-2">
+                        <div>
+                            <div class="panel">
+                                <div class="panel-header">Upload Image / TDMS</div>
+                                <div class="upload-zone" id="uploadZone">
+                                    <input type="file" id="fileInput" accept=".tdms,.jpg,.jpeg,.png,.tif,.tiff">
+                                    <div class="upload-icon" id="uploadIcon">📁</div>
+                                    <div class="upload-text" id="uploadText">Drop file or <strong>click to browse</strong></div>
+                                    <div class="upload-progress hidden" id="uploadProgress">
+                                        <div class="progress-bar" style="height: 8px; margin-top: 10px;">
+                                            <div class="progress-fill" id="uploadProgressFill" style="width: 0%;"></div>
+                                        </div>
+                                        <div id="uploadProgressText" style="margin-top: 5px; font-size: 0.85rem; color: #888;">0%</div>
+                                    </div>
+                                </div>
+                                <div id="tdmsSettings" class="hidden" style="margin-top: 15px;">
+                                    <div class="section-title">TDMS Settings</div>
+                                    <div class="form-row-4">
+                                        <div class="form-group"><label>Width</label><input type="number" id="tdmsWidth" value="1024"></div>
+                                        <div class="form-group"><label>Height</label><input type="number" id="tdmsHeight" value="1024"></div>
+                                        <div class="form-group"><label>Channel</label><input type="number" id="tdmsChannel" value="0"></div>
+                                        <div class="form-group"><label>Normalize</label><select id="tdmsNormalize"><option value="true">Yes</option><option value="false">No</option></select></div>
+                                    </div>
+                                </div>
+                                <div id="fileInfo" class="hidden" style="margin-top: 15px; padding: 12px; background: #222; border-radius: 6px;">
+                                    <strong id="fileName">-</strong><br><small id="fileMeta" style="color: #888;">-</small>
+                                </div>
+                                <div id="frameControls" class="controls-bar hidden">
+                                    <span style="color: #888;">Frame:</span>
+                                    <input type="range" id="frameSlider" class="frame-slider" min="0" max="0" value="0">
+                                    <input type="number" id="frameInput" style="width: 70px; padding: 6px;" value="0">
+                                    <span style="color: #888;">/ <span id="frameTotal">0</span></span>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">Uploaded Files</div>
+                                <div id="uploadedFilesList"><div class="alert alert-info">No files uploaded yet</div></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">Preview</div>
+                            <div class="canvas-container"><canvas id="previewCanvas"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXPORT SUBTAB -->
+                <div class="subtab" id="subtab-export">
+                    <div class="grid-2">
+                        <div class="panel">
+                            <div class="panel-header">TDMS Export Settings</div>
+                            <div class="form-group">
+                                <label>Select TDMS File</label>
+                                <select id="exportFileSelect"><option value="">Upload a TDMS file first</option></select>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Output Format</label><select id="exportFormat"><option value="png">PNG Images (ZIP)</option><option value="mp4">MP4 Video</option></select></div>
+                                <div class="form-group"><label>Data Type</label><select id="exportDtype"><option value="uint8">8-bit</option><option value="uint16">16-bit</option></select></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Start Frame</label><input type="number" id="exportStart" value="0" min="0"></div>
+                                <div class="form-group"><label>End Frame (empty=all)</label><input type="number" id="exportEnd" placeholder="All"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>FPS (for MP4)</label><input type="number" id="exportFps" value="30" step="1"></div>
+                                <div class="form-group"><label>Output Name</label><input type="text" id="exportName" placeholder="Auto"></div>
+                            </div>
+                            <div class="form-group"><label><input type="checkbox" id="exportNormalize" checked> Normalize to full range</label></div>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" id="exportDownloadBtn" disabled>Download</button>
+                                <button class="btn btn-secondary" id="exportSaveBtn" disabled>Save to Server</button>
+                            </div>
+                            <div id="exportStatus" class="hidden" style="margin-top: 15px;"></div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">Exported Files</div>
+                            <div id="exportedFilesList"><div class="alert alert-info">No exports yet</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CROP SUBTAB -->
+                <div class="subtab" id="subtab-crop">
+                    <div class="grid-2">
+                        <div class="panel">
+                            <div class="panel-header">Crop Sample</div>
+                            <div class="canvas-container"><canvas id="cropCanvas"></canvas></div>
+                            <div id="cropInfo" style="margin-top: 10px; color: #888; font-size: 0.85rem;">Draw a square on the image. Scroll to resize, drag to move.</div>
+                            <div class="form-row" style="margin-top: 15px;">
+                                <div class="form-group"><label>Particle Name</label><input type="text" id="particleName" placeholder="e.g., Janus"></div>
+                                <div class="form-group"><label>&nbsp;</label><button class="btn btn-primary" id="saveSampleBtn" style="width: 100%;" disabled>Save Sample</button></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">Samples</div>
+                            <div id="samplesList"><div class="alert alert-info">No samples yet</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MASK SUBTAB -->
+                <div class="subtab" id="subtab-mask">
+                    <div class="grid-2">
+                        <div class="panel">
+                            <div class="panel-header">Mask Sample</div>
+                            <div class="tool-buttons">
+                                <button class="tool-btn active" id="maskCircular">Circular</button>
+                                <button class="tool-btn" id="maskPolygon">Polygon</button>
+                            </div>
+                            <div class="canvas-container"><canvas id="maskCanvas"></canvas></div>
+                            <div id="maskInfo" style="margin-top: 10px; color: #888; font-size: 0.85rem;">Draw a circle for ROI. Scroll to resize, drag to move.</div>
+                            <div class="form-row" style="margin-top: 15px;">
+                                <div class="form-group"><label>Particle Name</label><input type="text" id="maskParticleName" placeholder="e.g., Janus"></div>
+                                <div class="form-group"><label>&nbsp;</label><button class="btn btn-primary" id="saveMaskBtn" style="width: 100%;" disabled>Save Masked Sample</button></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">Samples</div>
+                            <div id="maskSamplesList"><div class="alert alert-info">No samples yet</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MERGE SUBTAB -->
+                <div class="subtab" id="subtab-merge">
+                    <div class="grid-2">
+                        <div class="panel">
+                            <div class="panel-header">Video Merge</div>
+                            <div class="form-group"><label>Available Videos</label>
+                                <div id="mergeVideoList" style="max-height: 200px; overflow-y: auto; background: #222; border-radius: 6px; padding: 10px;"><div class="alert alert-info">No videos available</div></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Output Name</label><input type="text" id="mergeOutputName" placeholder="merged_video"></div>
+                                <div class="form-group"><label>FPS</label><input type="number" id="mergeFps" value="30"></div>
+                            </div>
+                            <div class="btn-group"><button class="btn btn-primary" id="mergeBtn" disabled>Merge Selected</button></div>
+                            <div id="mergeStatus" class="hidden" style="margin-top: 15px;"></div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">Result Videos</div>
+                            <div id="mergedVideosList"><div class="alert alert-info">No merged videos yet</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TRAINING PAGE -->
+            <div class="page" id="page-training">
+                <div class="grid-2">
+                    <div>
+                        <div class="panel">
+                            <div class="panel-header">Training Configuration</div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Particle</label><select id="trainParticle"><option value="">Select sample</option></select></div>
+                                <div class="form-group"><label>Max Epochs</label><input type="number" id="maxEpochs" value="100"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Batch Size</label><input type="number" id="batchSize" value="8"></div>
+                                <div class="form-group"><label>Learning Rate</label><input type="number" id="learningRate" value="0.0001" step="0.0001"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>N Transforms</label><input type="number" id="nTransforms" value="4"></div>
+                                <div class="form-group"><label>Samples (length)</label><input type="number" id="trainLength" value="400"></div>
+                            </div>
+                            
+                            <div class="section-title">Intensity Augmentation</div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Multiply Min</label><input type="number" id="mulMin" value="0.9" step="0.05"></div>
+                                <div class="form-group"><label>Multiply Max</label><input type="number" id="mulMax" value="1.1" step="0.05"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Add Min</label><input type="number" id="addMin" value="-0.1" step="0.05"></div>
+                                <div class="form-group"><label>Add Max</label><input type="number" id="addMax" value="0.1" step="0.05"></div>
+                            </div>
+                            
+                            <div class="section-title">Affine Augmentation</div>
+                            <div class="form-group">
+                                <label><input type="checkbox" id="useAffine"> Enable Affine Transforms</label>
+                            </div>
+                            <div id="affineParams">
+                                <div class="form-row">
+                                    <div class="form-group"><label>Scale Min</label><input type="number" id="scaleMin" value="0.9" step="0.05"></div>
+                                    <div class="form-group"><label>Scale Max</label><input type="number" id="scaleMax" value="1.1" step="0.05"></div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Rotation Min (0-1)</label><input type="number" id="rotationMin" value="0" step="0.1"></div>
+                                    <div class="form-group"><label>Rotation Max (0-1)</label><input type="number" id="rotationMax" value="1" step="0.1"></div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Translate Min (px)</label><input type="number" id="translateMin" value="-5"></div>
+                                    <div class="form-group"><label>Translate Max (px)</label><input type="number" id="translateMax" value="5"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="btn-group">
+                                <button class="btn btn-primary" id="trainBtn" disabled>Start Training</button>
+                            </div>
+                            <div id="trainingStatus" class="hidden" style="margin-top: 15px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span>Progress</span>
+                                    <span><span id="trainingEpoch">0</span> / <span id="trainingMaxEpoch">0</span> epochs (<span id="trainingProgress">0%</span>)</span>
+                                </div>
+                                <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%;"></div></div>
+                                <div id="trainingLive" style="margin-top: 10px; font-size: 0.85rem; color: #888;">
+                                    <span>Loss: <span id="trainingLoss">-</span></span>
+                                    <span style="margin-left: 15px;">Time: <span id="trainingTime">0:00</span></span>
+                                </div>
+                            </div>
+                            <div id="trainingSummary" class="hidden" style="margin-top: 15px; padding: 15px; background: #222; border-radius: 8px;">
+                                <div style="font-weight: 600; margin-bottom: 10px; color: #4aff80;">Training Complete</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
+                                    <div>Runtime: <strong id="summaryRuntime">-</strong></div>
+                                    <div>Device: <strong id="summaryDevice">-</strong></div>
+                                    <div>Final Loss: <strong id="summaryFinalLoss">-</strong></div>
+                                    <div>Min Loss: <strong id="summaryMinLoss">-</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="panel">
+                            <div class="panel-header">Trained Models</div>
+                            <div id="modelsList"><div class="alert alert-info">No models yet</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DETECTION PAGE -->
+            <div class="page" id="page-detection">
+                <div class="grid-2">
+                    <div>
+                        <div class="panel">
+                            <div class="panel-header">Detection Settings</div>
+                            <div class="form-group">
+                                <label>Model</label>
+                                <select id="detectModel"><option value="">Select model</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Image / TDMS Video</label>
+                                <input type="file" id="detectImageInput" accept=".jpg,.jpeg,.png,.tif,.tiff,.tdms" style="display:none;">
+                                <div class="upload-zone" id="detectUploadZone" style="padding: 20px;">
+                                    <div class="upload-text" id="detectUploadText">Drop file or <strong>click to browse</strong></div>
+                                    <div class="upload-progress hidden" id="detectUploadProgress">
+                                        <div class="progress-bar" style="height: 8px; margin-top: 10px;">
+                                            <div class="progress-fill" id="detectUploadProgressFill" style="width: 0%;"></div>
+                                        </div>
+                                        <div id="detectUploadProgressText" style="margin-top: 5px; font-size: 0.85rem; color: #888;">0%</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="detectFileInfo" class="hidden" style="padding: 12px; background: #222; border-radius: 6px; margin-bottom: 15px;">
+                                <strong id="detectFileName">-</strong><br><small id="detectFileMeta" style="color: #888;">-</small>
+                            </div>
+                            <div id="detectTdmsSettings" class="hidden" style="margin-bottom: 15px;">
+                                <div class="section-title">TDMS Settings</div>
+                                <div class="form-row-4">
+                                    <div class="form-group"><label>Width</label><input type="number" id="detectTdmsWidth" value="1024"></div>
+                                    <div class="form-group"><label>Height</label><input type="number" id="detectTdmsHeight" value="1024"></div>
+                                    <div class="form-group"><label>Channel</label><input type="number" id="detectTdmsChannel" value="0"></div>
+                                    <div class="form-group"><label>Normalize</label><select id="detectTdmsNormalize"><option value="true">Yes</option><option value="false">No</option></select></div>
+                                </div>
+                            </div>
+                            <div id="detectFrameControls" class="controls-bar hidden" style="margin-bottom: 15px;">
+                                <span style="color: #888;">Frame:</span>
+                                <input type="range" id="detectFrameSlider" class="frame-slider" min="0" max="0" value="0">
+                                <input type="number" id="detectFrameInput" style="width: 70px; padding: 6px;" value="0">
+                                <span style="color: #888;">/ <span id="detectFrameTotal">0</span></span>
+                            </div>
+                            <div class="form-row-3">
+                                <div class="form-group"><label>Alpha</label><input type="number" id="detectAlpha" value="1.0" step="0.1"></div>
+                                <div class="form-group"><label>Beta</label><input type="number" id="detectBeta" value="0" step="0.1"></div>
+                                <div class="form-group"><label>Cutoff</label><input type="number" id="detectCutoff" value="0.8" step="0.05"></div>
+                            </div>
+                            <div class="form-group">
+                                <label><input type="checkbox" id="showWeightmap" checked> Show Weightmap</label>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" id="detectBtn" disabled>Detect Particles</button>
+                            </div>
+                            <div id="detectionResults" class="hidden" style="margin-top: 15px;">
+                                <div class="alert alert-info">Detected: <strong id="detectionCount">0</strong> particles | Frame: <strong id="detectionFrame">0</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="panel">
+                            <div class="panel-header">Results</div>
+                            <div class="weightmap-container">
+                                <div>
+                                    <div style="color: #888; margin-bottom: 10px; font-size: 0.85rem;">Detection</div>
+                                    <div class="canvas-container" style="min-height: 300px;"><canvas id="detectCanvas"></canvas></div>
+                                </div>
+                                <div id="weightmapPanel">
+                                    <div style="color: #888; margin-bottom: 10px; font-size: 0.85rem;">Weightmap</div>
+                                    <div class="canvas-container" style="min-height: 300px;"><canvas id="weightmapCanvas"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- POSTPROCESSING PAGE -->
+            <div class="page" id="page-postprocessing">
+                <div class="grid-2">
+                    <div class="panel">
+                        <div class="panel-header">Video Merge</div>
+                        <div class="form-group"><label>Available Videos</label>
+                            <div id="postMergeVideoList" style="max-height: 200px; overflow-y: auto; background: #222; border-radius: 6px; padding: 10px;"><div class="alert alert-info">No videos available</div></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group"><label>Output Name</label><input type="text" id="postMergeOutputName" placeholder="merged_video"></div>
+                            <div class="form-group"><label>FPS</label><input type="number" id="postMergeFps" value="30"></div>
+                        </div>
+                        <div class="btn-group"><button class="btn btn-primary" id="postMergeBtn" disabled>Merge Selected</button></div>
+                        <div id="postMergeStatus" class="hidden" style="margin-top: 15px;"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header">Results & Downloads</div>
+                        <div id="postResultsList"><div class="alert alert-info">No results yet</div></div>
+                    </div>
+                </div>
+                <div class="panel" style="margin-top: 20px;">
+                    <div class="panel-header">Tracking & Analysis <span class="badge">Coming Soon</span></div>
+                    <div class="postprocess-placeholder">
+                        <h3>Future Features</h3>
+                        <p>Particle tracking, trajectory analysis, and data export will be available here.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE = (function() {
+            const path = window.location.pathname;
+            if (path.includes('/proxy/')) {
+                const match = path.match(/(.*\/proxy\/\d+)/);
+                if (match) return match[1];
+            }
+            return '';
+        })();
+        
+        (function() {
+            const link = document.createElement('link');
+            link.rel = 'icon';
+            link.type = 'image/svg+xml';
+            link.href = API_BASE + '/icon.svg';
+            document.head.appendChild(link);
+        })();
+        
+        let currentUser = null;
+        let currentFileId = null;
+        let currentFileType = null;
+        let currentFrameIndex = 0;
+        let currentImage = null;
+        let cropRect = null;
+        let maskCircle = null;
+        let isDrawing = false;
+        let isDragging = false;
+        let startX, startY, dragOffsetX, dragOffsetY;
+        let currentMaskTool = 'circular';
+        let maskPoints = [];
+        let trainPoll = null;
+        
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas ? previewCanvas.getContext('2d') : null;
+        const cropCanvas = document.getElementById('cropCanvas');
+        const cropCtx = cropCanvas ? cropCanvas.getContext('2d') : null;
+        const maskCanvas = document.getElementById('maskCanvas');
+        const maskCtx = maskCanvas ? maskCanvas.getContext('2d') : null;
+        const detectCanvas = document.getElementById('detectCanvas');
+        const detectCtx = detectCanvas ? detectCanvas.getContext('2d') : null;
+        const weightmapCanvas = document.getElementById('weightmapCanvas');
+        const weightmapCtx = weightmapCanvas ? weightmapCanvas.getContext('2d') : null;
+
+        // Auth
+        document.getElementById('loginBtn').onclick = async () => {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!username || !password) return;
+            
+            try {
+                const res = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password})
+                });
+                const data = await res.json();
+                if (data.error) {
+                    document.getElementById('loginError').textContent = data.error;
+                    document.getElementById('loginError').classList.remove('hidden');
+                } else {
+                    loginSuccess(username);
+                }
+            } catch (e) {
+                document.getElementById('loginError').textContent = 'Login failed';
+                document.getElementById('loginError').classList.remove('hidden');
+            }
+        };
+
+        document.getElementById('registerBtn').onclick = async () => {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!username || !password) return;
+            
+            try {
+                const res = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password})
+                });
+                const data = await res.json();
+                if (data.error) {
+                    document.getElementById('loginError').textContent = data.error;
+                    document.getElementById('loginError').classList.remove('hidden');
+                } else {
+                    loginSuccess(username);
+                }
+            } catch (e) {
+                document.getElementById('loginError').textContent = 'Registration failed';
+                document.getElementById('loginError').classList.remove('hidden');
+            }
+        };
+
+        document.getElementById('logoutBtn').onclick = () => {
+            currentUser = null;
+            localStorage.removeItem('mona_user');
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('appContainer').classList.remove('active');
+        };
+
+        function loginSuccess(username) {
+            currentUser = username;
+            localStorage.setItem('mona_user', username);
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('appContainer').classList.add('active');
+            document.getElementById('displayUsername').textContent = username;
+            loadDefaults();
+            loadSamples();
+            loadModels();
+            loadUploadedFiles();
+            checkActiveTraining();
+        }
+
+        async function checkActiveTraining() {
+            try {
+                const res = await fetch(`${API_BASE}/train/active/${currentUser}`);
+                const data = await res.json();
+                if (data.jobs && data.jobs.length > 0) {
+                    const job = data.jobs[0];
+                    document.getElementById('trainingStatus').classList.remove('hidden');
+                    document.getElementById('trainingSummary').classList.add('hidden');
+                    document.getElementById('trainingLive').classList.remove('hidden');
+                    document.getElementById('trainingProgress').textContent = job.progress + '%';
+                    document.getElementById('progressFill').style.width = job.progress + '%';
+                    document.getElementById('trainingEpoch').textContent = job.current_epoch || 0;
+                    document.getElementById('trainingMaxEpoch').textContent = job.config?.max_epochs || '-';
+                    if (job.current_loss) document.getElementById('trainingLoss').textContent = job.current_loss.toFixed(6);
+                    if (job.elapsed_time) {
+                        const mins = Math.floor(job.elapsed_time / 60);
+                        const secs = Math.floor(job.elapsed_time % 60);
+                        document.getElementById('trainingTime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+                    }
+                    document.getElementById('trainBtn').disabled = true;
+                    document.getElementById('trainBtn').innerHTML = '<span class="loader"></span>';
+                    trainPoll = setInterval(() => pollTraining(job.id), 2000);
+                }
+            } catch (e) {}
+        }
+
+        // Check saved user
+        (async function() {
+            const saved = localStorage.getItem('mona_user');
+            if (saved) {
+                try {
+                    const res = await fetch(`${API_BASE}/auth/check/${saved}`);
+                    const data = await res.json();
+                    if (data.exists) loginSuccess(saved);
+                } catch (e) {}
+            }
+        })();
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.onclick = () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                item.classList.add('active');
+                document.getElementById('page-' + item.dataset.page).classList.add('active');
+            };
+        });
+
+        // Sub-tab Navigation
+        document.querySelectorAll('.sub-nav-btn').forEach(btn => {
+            btn.onclick = () => {
+                const parent = btn.closest('.page');
+                parent.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.remove('active'));
+                parent.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('subtab-' + btn.dataset.subtab).classList.add('active');
+                if (btn.dataset.subtab === 'crop' || btn.dataset.subtab === 'mask') syncCanvasToSubtab(btn.dataset.subtab);
+                if (btn.dataset.subtab === 'upload') loadUploadedFiles();
+                if (btn.dataset.subtab === 'export') loadExportFiles();
+                if (btn.dataset.subtab === 'merge') loadMergeVideos();
+            };
+        });
+
+        function syncCanvasToSubtab(tab) {
+            if (!currentImage) return;
+            if (tab === 'crop') {
+                cropCanvas.width = currentImage.width;
+                cropCanvas.height = currentImage.height;
+                drawCropCanvas();
+            } else if (tab === 'mask') {
+                maskCanvas.width = currentImage.width;
+                maskCanvas.height = currentImage.height;
+                drawMaskCanvas();
+            }
+        }
+
+        // Mask Tools
+        document.getElementById('maskCircular').onclick = () => { currentMaskTool = 'circular'; document.getElementById('maskCircular').classList.add('active'); document.getElementById('maskPolygon').classList.remove('active'); maskCircle = null; maskPoints = []; drawMaskCanvas(); document.getElementById('maskInfo').textContent = 'Draw a circle for ROI. Scroll to resize, drag to move.'; };
+        document.getElementById('maskPolygon').onclick = () => { currentMaskTool = 'polygon'; document.getElementById('maskPolygon').classList.add('active'); document.getElementById('maskCircular').classList.remove('active'); maskCircle = null; maskPoints = []; drawMaskCanvas(); document.getElementById('maskInfo').textContent = 'Click to add polygon points. Close shape by clicking near start.'; };
+
+        // Upload
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        uploadZone.onclick = () => fileInput.click();
+        uploadZone.ondragover = e => { e.preventDefault(); uploadZone.style.borderColor = '#4a9eff'; };
+        uploadZone.ondragleave = () => uploadZone.style.borderColor = '#444';
+        uploadZone.ondrop = e => { e.preventDefault(); uploadZone.style.borderColor = '#444'; if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]); };
+        fileInput.onchange = e => { if (e.target.files.length) handleUpload(e.target.files[0]); };
+
+        const CHUNK_SIZE = 10 * 1024 * 1024;
+
+        async function handleUpload(file) {
+            if (!currentUser) {
+                alert('Please login first');
+                return;
+            }
+            
+            console.log('Uploading file:', file.name, 'size:', file.size, 'user:', currentUser);
+
+            const progressEl = document.getElementById('uploadProgress');
+            const progressFill = document.getElementById('uploadProgressFill');
+            const progressText = document.getElementById('uploadProgressText');
+            const uploadIcon = document.getElementById('uploadIcon');
+            const uploadTextEl = document.getElementById('uploadText');
+
+            progressEl.classList.remove('hidden');
+            uploadIcon.classList.add('hidden');
+            uploadTextEl.innerHTML = `<strong>${file.name}</strong>`;
+            progressFill.style.width = '0%';
+            progressText.textContent = '0%';
+
+            const settings = {
+                username: currentUser,
+                filename: file.name,
+                total_size: file.size,
+                image_width: parseInt(document.getElementById('tdmsWidth').value) || 1024,
+                image_height: parseInt(document.getElementById('tdmsHeight').value) || 1024,
+                channel_index: parseInt(document.getElementById('tdmsChannel').value) || 0,
+                normalize: document.getElementById('tdmsNormalize').value === 'true'
+            };
+
+            try {
+                const startRes = await fetch(`${API_BASE}/upload/start`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                const startData = await startRes.json();
+                if (startData.error) throw new Error(startData.error);
+
+                const uploadId = startData.upload_id;
+                let offset = 0;
+
+                while (offset < file.size) {
+                    const chunk = file.slice(offset, offset + CHUNK_SIZE);
+                    const chunkData = await chunk.arrayBuffer();
+                    
+                    const chunkRes = await fetch(`${API_BASE}/upload/chunk/${uploadId}?offset=${offset}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/octet-stream'},
+                        body: chunkData
+                    });
+                    const chunkResult = await chunkRes.json();
+                    if (chunkResult.error) throw new Error(chunkResult.error);
+
+                    offset += chunk.size;
+                    const pct = Math.round((offset / file.size) * 100);
+                    progressFill.style.width = pct + '%';
+                    progressText.textContent = pct + '%';
+                }
+
+                const completeRes = await fetch(`${API_BASE}/upload/complete`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: currentUser,
+                        upload_id: uploadId,
+                        filename: file.name,
+                        ...settings
+                    })
+                });
+                const data = await completeRes.json();
+                if (data.error) throw new Error(data.error);
+
+                progressEl.classList.add('hidden');
+                uploadIcon.classList.remove('hidden');
+                uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
+
+                currentFileId = data.id;
+                currentFileType = data.type;
+                document.getElementById('fileInfo').classList.remove('hidden');
+                document.getElementById('fileName').textContent = data.filename;
+                document.getElementById('fileMeta').textContent = `${data.width || '?'}x${data.height || '?'} | ${data.frame_count} frames`;
+
+                if (data.type === 'tdms') {
+                    document.getElementById('tdmsSettings').classList.remove('hidden');
+                    if (data.frame_count > 1) {
+                        document.getElementById('frameControls').classList.remove('hidden');
+                        document.getElementById('frameSlider').max = data.frame_count - 1;
+                        document.getElementById('frameTotal').textContent = data.frame_count;
+                    }
+                } else {
+                    document.getElementById('tdmsSettings').classList.add('hidden');
+                    document.getElementById('frameControls').classList.add('hidden');
+                }
+                loadFrame(0);
+
+            } catch (err) {
+                progressEl.classList.add('hidden');
+                uploadIcon.classList.remove('hidden');
+                uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
+                alert('Upload failed: ' + err.message);
+            }
+            loadUploadedFiles();
+        }
+
+        async function loadUploadedFiles() {
+            if (!currentUser) return;
+            const res = await fetch(`${API_BASE}/files/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('uploadedFilesList');
+            
+            if (Object.keys(data.files).length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No files uploaded yet</div>';
+                return;
+            }
+            
+            list.innerHTML = '';
+            for (const [id, file] of Object.entries(data.files)) {
+                const isActive = id === currentFileId;
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #222; border-radius: 6px; margin-bottom: 8px; ' + (isActive ? 'border: 1px solid #4a9eff;' : '');
+                fileItem.innerHTML = `
+                    <div style="flex: 1; cursor: pointer;" onclick="selectUploadedFile('${id}')">
+                        <div style="font-weight: 500;">${file.filename}</div>
+                        <div style="font-size: 0.85rem; color: #888;">${file.type === 'tdms' ? file.frame_count + ' frames' : (file.width || '?') + 'x' + (file.height || '?')}</div>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="deleteUploadedFile('${id}', '${file.filename.replace(/'/g, "\\'")}')" style="padding: 6px 12px; font-size: 0.85rem;">Delete</button>
+                `;
+                list.appendChild(fileItem);
+            }
+        }
+
+        async function selectUploadedFile(fileId) {
+            currentFileId = fileId;
+            const res = await fetch(`${API_BASE}/files/${currentUser}`);
+            const data = await res.json();
+            const file = data.files[fileId];
+            if (!file) return;
+            
+            currentFileType = file.type;
+            document.getElementById('fileInfo').classList.remove('hidden');
+            document.getElementById('fileName').textContent = file.filename;
+            document.getElementById('fileMeta').textContent = `${file.width || '?'}x${file.height || '?'} | ${file.frame_count} frames`;
+            
+            if (file.type === 'tdms') {
+                document.getElementById('tdmsSettings').classList.remove('hidden');
+                if (file.frame_count > 1) {
+                    document.getElementById('frameControls').classList.remove('hidden');
+                    document.getElementById('frameSlider').max = file.frame_count - 1;
+                    document.getElementById('frameTotal').textContent = file.frame_count;
+                }
+            } else {
+                document.getElementById('tdmsSettings').classList.add('hidden');
+                document.getElementById('frameControls').classList.add('hidden');
+            }
+            loadFrame(0);
+            loadUploadedFiles();
+        }
+
+        async function deleteUploadedFile(fileId, filename) {
+            if (!confirm(`Delete "${filename}"?`)) return;
+            
+            const res = await fetch(`${API_BASE}/files/${currentUser}/${fileId}`, { method: 'DELETE' });
+            const data = await res.json();
+            
+            if (data.error) {
+                alert('Delete failed: ' + data.error);
+                return;
+            }
+            
+            if (currentFileId === fileId) {
+                currentFileId = null;
+                currentFileType = null;
+                document.getElementById('fileInfo').classList.add('hidden');
+                document.getElementById('tdmsSettings').classList.add('hidden');
+                document.getElementById('frameControls').classList.add('hidden');
+            }
+            
+            loadUploadedFiles();
+        }
+
+        async function loadFrame(index) {
+            if (!currentFileId) return;
+            const res = await fetch(`${API_BASE}/frame/${currentUser}/${currentFileId}/${index}`);
+            const data = await res.json();
+            currentFrameIndex = index;
+            currentImage = new Image();
+            currentImage.onload = () => {
+                previewCanvas.width = currentImage.width;
+                previewCanvas.height = currentImage.height;
+                cropCanvas.width = currentImage.width;
+                cropCanvas.height = currentImage.height;
+                maskCanvas.width = currentImage.width;
+                maskCanvas.height = currentImage.height;
+                drawPreviewCanvas();
+                drawCropCanvas();
+                drawMaskCanvas();
+            };
+            currentImage.src = data.image;
+            document.getElementById('frameSlider').value = index;
+            document.getElementById('frameInput').value = index;
+        }
+
+        document.getElementById('frameSlider').oninput = e => loadFrame(parseInt(e.target.value));
+        document.getElementById('frameInput').onchange = e => loadFrame(Math.max(0, Math.min(parseInt(e.target.value) || 0, parseInt(e.target.max))));
+
+        function drawPreviewCanvas() {
+            if (!currentImage || !previewCanvas || !previewCtx) return;
+            previewCanvas.width = currentImage.width;
+            previewCanvas.height = currentImage.height;
+            previewCtx.drawImage(currentImage, 0, 0);
+        }
+
+        function drawCropCanvas() {
+            if (!currentImage || !cropCanvas || !cropCtx) return;
+            cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+            cropCtx.drawImage(currentImage, 0, 0);
+            
+            if (cropRect) {
+                cropCtx.strokeStyle = '#4a9eff';
+                cropCtx.lineWidth = 2;
+                cropCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+                cropCtx.fillStyle = 'rgba(74, 158, 255, 0.1)';
+                cropCtx.fillRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+                cropCtx.strokeStyle = '#4aff80';
+                cropCtx.beginPath();
+                cropCtx.moveTo(cropRect.x, cropRect.y);
+                cropCtx.lineTo(cropRect.x + cropRect.w, cropRect.y + cropRect.h);
+                cropCtx.moveTo(cropRect.x + cropRect.w, cropRect.y);
+                cropCtx.lineTo(cropRect.x, cropRect.y + cropRect.h);
+                cropCtx.stroke();
+            }
+        }
+
+        function drawMaskCanvas() {
+            if (!currentImage || !maskCanvas || !maskCtx) return;
+            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+            maskCtx.drawImage(currentImage, 0, 0);
+            
+            if (currentMaskTool === 'circular' && maskCircle) {
+                maskCtx.strokeStyle = '#ff4a4a';
+                maskCtx.lineWidth = 2;
+                maskCtx.beginPath();
+                maskCtx.arc(maskCircle.x, maskCircle.y, maskCircle.r, 0, 2 * Math.PI);
+                maskCtx.stroke();
+                maskCtx.fillStyle = 'rgba(255, 74, 74, 0.15)';
+                maskCtx.fill();
+                maskCtx.fillStyle = '#fff';
+                maskCtx.beginPath();
+                maskCtx.arc(maskCircle.x, maskCircle.y, 5, 0, 2 * Math.PI);
+                maskCtx.fill();
+            }
+            
+            if (currentMaskTool === 'polygon' && maskPoints.length > 0) {
+                maskCtx.strokeStyle = '#ff4a4a';
+                maskCtx.lineWidth = 2;
+                maskCtx.beginPath();
+                maskCtx.moveTo(maskPoints[0].x, maskPoints[0].y);
+                for (let i = 1; i < maskPoints.length; i++) maskCtx.lineTo(maskPoints[i].x, maskPoints[i].y);
+                if (maskPoints.length > 2) maskCtx.closePath();
+                maskCtx.stroke();
+                maskCtx.fillStyle = 'rgba(255, 74, 74, 0.15)';
+                maskCtx.fill();
+                maskPoints.forEach((p, i) => {
+                    maskCtx.fillStyle = i === 0 ? '#4aff80' : '#fff';
+                    maskCtx.beginPath();
+                    maskCtx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+                    maskCtx.fill();
+                });
+            }
+        }
+
+        function getCanvasCoords(canvas, e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: (e.clientX - rect.left) * canvas.width / rect.width, y: (e.clientY - rect.top) * canvas.height / rect.height };
+        }
+
+        // Crop Canvas Events
+        cropCanvas.onmousedown = e => {
+            const {x, y} = getCanvasCoords(cropCanvas, e);
+            if (cropRect && x >= cropRect.x && x <= cropRect.x + cropRect.w && y >= cropRect.y && y <= cropRect.y + cropRect.h) {
+                isDragging = true;
+                dragOffsetX = x - cropRect.x;
+                dragOffsetY = y - cropRect.y;
+            } else {
+                isDrawing = true;
+                startX = x; startY = y;
+                cropRect = null;
+            }
+        };
+
+        cropCanvas.onmousemove = e => {
+            const {x, y} = getCanvasCoords(cropCanvas, e);
+            if (isDrawing) {
+                const size = Math.max(Math.abs(x - startX), Math.abs(y - startY));
+                cropRect = { x: (startX + x) / 2 - size / 2, y: (startY + y) / 2 - size / 2, w: size, h: size };
+                drawCropCanvas();
+                document.getElementById('cropInfo').textContent = `Selection: ${Math.round(cropRect.w)}x${Math.round(cropRect.h)}px`;
+            } else if (isDragging && cropRect) {
+                cropRect.x = Math.max(0, Math.min(x - dragOffsetX, cropCanvas.width - cropRect.w));
+                cropRect.y = Math.max(0, Math.min(y - dragOffsetY, cropCanvas.height - cropRect.h));
+                drawCropCanvas();
+            }
+        };
+
+        cropCanvas.onmouseup = () => { isDrawing = false; isDragging = false; updateSaveButton(); };
+        cropCanvas.onmouseleave = () => { isDrawing = false; isDragging = false; };
+
+        cropCanvas.onwheel = e => {
+            if (!cropRect) return;
+            const {x, y} = getCanvasCoords(cropCanvas, e);
+            if (x < cropRect.x || x > cropRect.x + cropRect.w || y < cropRect.y || y > cropRect.y + cropRect.h) return;
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.1 : 0.9;
+            const newSize = Math.max(10, cropRect.w * factor);
+            const cx = cropRect.x + cropRect.w / 2, cy = cropRect.y + cropRect.h / 2;
+            cropRect = { x: Math.max(0, cx - newSize/2), y: Math.max(0, cy - newSize/2), w: newSize, h: newSize };
+            drawCropCanvas();
+            document.getElementById('cropInfo').textContent = `Selection: ${Math.round(cropRect.w)}x${Math.round(cropRect.h)}px`;
+        };
+
+        // Mask Canvas Events
+        maskCanvas.onmousedown = e => {
+            const {x, y} = getCanvasCoords(maskCanvas, e);
+            if (currentMaskTool === 'circular') {
+                if (maskCircle && Math.sqrt((x - maskCircle.x)**2 + (y - maskCircle.y)**2) <= maskCircle.r) {
+                    isDragging = true;
+                    dragOffsetX = x - maskCircle.x;
+                    dragOffsetY = y - maskCircle.y;
+                } else {
+                    isDrawing = true;
+                    startX = x; startY = y;
+                    maskCircle = null;
+                }
+            } else {
+                if (maskPoints.length > 2 && Math.sqrt((x - maskPoints[0].x)**2 + (y - maskPoints[0].y)**2) < 15) {
+                    maskPoints.push({...maskPoints[0]});
+                } else {
+                    maskPoints.push({x, y});
+                }
+                drawMaskCanvas();
+                updateMaskButton();
+            }
+        };
+
+        maskCanvas.onmousemove = e => {
+            const {x, y} = getCanvasCoords(maskCanvas, e);
+            if (currentMaskTool === 'circular') {
+                if (isDrawing) {
+                    const r = Math.sqrt((x - startX)**2 + (y - startY)**2) / 2;
+                    const cx = (startX + x) / 2, cy = (startY + y) / 2;
+                    maskCircle = { x: cx, y: cy, r: Math.max(10, r) };
+                    drawMaskCanvas();
+                    document.getElementById('maskInfo').textContent = `Radius: ${Math.round(maskCircle.r)}px`;
+                } else if (isDragging && maskCircle) {
+                    maskCircle.x = Math.max(maskCircle.r, Math.min(x - dragOffsetX, maskCanvas.width - maskCircle.r));
+                    maskCircle.y = Math.max(maskCircle.r, Math.min(y - dragOffsetY, maskCanvas.height - maskCircle.r));
+                    drawMaskCanvas();
+                }
+            }
+        };
+
+        maskCanvas.onmouseup = () => { isDrawing = false; isDragging = false; updateMaskButton(); };
+        maskCanvas.onmouseleave = () => { isDrawing = false; isDragging = false; };
+
+        maskCanvas.onwheel = e => {
+            if (currentMaskTool !== 'circular' || !maskCircle) return;
+            const {x, y} = getCanvasCoords(maskCanvas, e);
+            if (Math.sqrt((x - maskCircle.x)**2 + (y - maskCircle.y)**2) > maskCircle.r) return;
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.1 : 0.9;
+            maskCircle.r = Math.max(10, maskCircle.r * factor);
+            drawMaskCanvas();
+            document.getElementById('maskInfo').textContent = `Radius: ${Math.round(maskCircle.r)}px`;
+        };
+
+        function updateMaskButton() {
+            const name = document.getElementById('maskParticleName').value.trim();
+            const hasShape = (currentMaskTool === 'circular' && maskCircle) || (currentMaskTool === 'polygon' && maskPoints.length > 2);
+            document.getElementById('saveMaskBtn').disabled = !hasShape || !name || !currentFileId;
+        }
+        document.getElementById('maskParticleName').oninput = updateMaskButton;
+
+        function updateSaveButton() {
+            document.getElementById('saveSampleBtn').disabled = !cropRect || !document.getElementById('particleName').value.trim() || !currentFileId;
+        }
+        document.getElementById('particleName').oninput = updateSaveButton;
+
+        document.getElementById('saveSampleBtn').onclick = async () => {
+            const name = document.getElementById('particleName').value.trim();
+            if (!name || !cropRect) return;
+
+            await fetch(`${API_BASE}/sample`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: currentUser, particle_name: name, x: Math.round(cropRect.x), y: Math.round(cropRect.y), width: Math.round(cropRect.w), height: Math.round(cropRect.h), file_id: currentFileId, frame_index: currentFrameIndex })
+            });
+            
+            cropRect = null;
+            document.getElementById('particleName').value = '';
+            drawCropCanvas();
+            updateSaveButton();
+            loadSamples();
+        };
+
+        document.getElementById('saveMaskBtn').onclick = async () => {
+            const name = document.getElementById('maskParticleName').value.trim();
+            if (!name || !currentFileId) return;
+
+            if (currentMaskTool === 'circular' && maskCircle) {
+                await fetch(`${API_BASE}/mask/circular`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: currentUser, file_id: currentFileId, frame_index: currentFrameIndex, roi_center_x: maskCircle.x, roi_center_y: maskCircle.y, roi_radius: maskCircle.r, particle_name: name })
+                });
+            } else if (currentMaskTool === 'polygon' && maskPoints.length > 2) {
+                await fetch(`${API_BASE}/mask`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: currentUser, particle_name: name, mask_data: maskCanvas.toDataURL() })
+                });
+            }
+            
+            maskCircle = null;
+            maskPoints = [];
+            document.getElementById('maskParticleName').value = '';
+            drawMaskCanvas();
+            updateMaskButton();
+            loadSamples();
+        };
+
+        // Export functionality
+        async function loadExportFiles() {
+            const res = await fetch(`${API_BASE}/files/${currentUser}?file_type=tdms`);
+            const data = await res.json();
+            const select = document.getElementById('exportFileSelect');
+            select.innerHTML = '<option value="">Select TDMS file</option>';
+            for (const [id, file] of Object.entries(data.files)) {
+                select.innerHTML += `<option value="${id}">${file.filename} (${file.frame_count} frames)</option>`;
+            }
+            document.getElementById('exportDownloadBtn').disabled = true;
+            document.getElementById('exportSaveBtn').disabled = true;
+            loadExportedFiles();
+        }
+
+        document.getElementById('exportFileSelect').onchange = () => {
+            const hasFile = !!document.getElementById('exportFileSelect').value;
+            document.getElementById('exportDownloadBtn').disabled = !hasFile;
+            document.getElementById('exportSaveBtn').disabled = !hasFile;
+        };
+
+        async function loadExportedFiles() {
+            const res = await fetch(`${API_BASE}/results/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('exportedFilesList');
+            if (data.results.length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No exports yet</div>';
+                return;
+            }
+            list.innerHTML = data.results.map(r => `<div class="file-item"><span>${r.name}</span><small style="color:#888">${r.type === 'folder' ? r.png_count + ' images' : (r.size / 1024).toFixed(1) + ' KB'}</small></div>`).join('');
+        }
+
+        async function exportTdms(saveToServer) {
+            const fileId = document.getElementById('exportFileSelect').value;
+            if (!fileId) return;
+            
+            const btn = saveToServer ? document.getElementById('exportSaveBtn') : document.getElementById('exportDownloadBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loader"></span>';
+
+            const res = await fetch(`${API_BASE}/tdms/export`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: currentUser, file_id: fileId,
+                    output_format: document.getElementById('exportFormat').value,
+                    dtype: document.getElementById('exportDtype').value,
+                    normalize: document.getElementById('exportNormalize').checked,
+                    fps: parseFloat(document.getElementById('exportFps').value),
+                    start_frame: parseInt(document.getElementById('exportStart').value) || 0,
+                    end_frame: document.getElementById('exportEnd').value ? parseInt(document.getElementById('exportEnd').value) : null,
+                    save_to_server: saveToServer,
+                    output_name: document.getElementById('exportName').value || null
+                })
+            });
+            const data = await res.json();
+            
+            btn.disabled = false;
+            btn.textContent = saveToServer ? 'Save to Server' : 'Download';
+
+            if (data.status === 'ready' && data.data) {
+                const link = document.createElement('a');
+                link.href = 'data:application/octet-stream;base64,' + data.data;
+                link.download = data.filename;
+                link.click();
+            }
+            
+            document.getElementById('exportStatus').classList.remove('hidden');
+            document.getElementById('exportStatus').innerHTML = `<div class="alert alert-info">Exported ${data.frames} frames</div>`;
+            loadExportedFiles();
+        }
+
+        document.getElementById('exportDownloadBtn').onclick = () => exportTdms(false);
+        document.getElementById('exportSaveBtn').onclick = () => exportTdms(true);
+
+        // Video Merge functionality
+        async function loadMergeVideos() {
+            const res = await fetch(`${API_BASE}/results/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('mergeVideoList');
+            const videos = data.results.filter(r => r.type === '.mp4');
+            
+            if (videos.length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No videos available</div>';
+                document.getElementById('mergeBtn').disabled = true;
+                return;
+            }
+            
+            list.innerHTML = videos.map(v => `<div class="file-item"><input type="checkbox" id="merge_${v.name}" value="${v.name}"><label for="merge_${v.name}">${v.name}</label></div>`).join('');
+            document.getElementById('mergeBtn').disabled = false;
+            loadMergedVideos();
+        }
+
+        async function loadMergedVideos() {
+            const res = await fetch(`${API_BASE}/results/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('mergedVideosList');
+            const videos = data.results.filter(r => r.type === '.mp4');
+            if (videos.length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No merged videos yet</div>';
+                return;
+            }
+            list.innerHTML = videos.map(v => `<div class="file-item"><span>${v.name}</span><small style="color:#888">${(v.size / 1024 / 1024).toFixed(1)} MB</small></div>`).join('');
+        }
+
+        document.getElementById('mergeBtn').onclick = async () => {
+            const checkboxes = document.querySelectorAll('#mergeVideoList input[type="checkbox"]:checked');
+            const fileIds = Array.from(checkboxes).map(cb => cb.value.replace('.mp4', ''));
+            if (fileIds.length < 2) { alert('Select at least 2 videos'); return; }
+
+            const btn = document.getElementById('mergeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loader"></span>';
+
+            const res = await fetch(`${API_BASE}/video/merge`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: currentUser,
+                    file_ids: fileIds,
+                    output_name: document.getElementById('mergeOutputName').value || 'merged',
+                    fps: parseFloat(document.getElementById('mergeFps').value)
+                })
+            });
+            const data = await res.json();
+            
+            btn.disabled = false;
+            btn.textContent = 'Merge Selected';
+            document.getElementById('mergeStatus').classList.remove('hidden');
+            document.getElementById('mergeStatus').innerHTML = `<div class="alert alert-info">Merged ${data.source_files} files (${data.total_frames} frames)</div>`;
+            loadMergedVideos();
+        };
+
+        // Postprocessing page functions
+        async function loadPostResults() {
+            const res = await fetch(`${API_BASE}/results/${currentUser}`);
+            const data = await res.json();
+            
+            const videoList = document.getElementById('postMergeVideoList');
+            const resultsList = document.getElementById('postResultsList');
+            const videos = data.results.filter(r => r.type === '.mp4');
+            
+            if (videos.length === 0) {
+                videoList.innerHTML = '<div class="alert alert-info">No videos available</div>';
+                document.getElementById('postMergeBtn').disabled = true;
+            } else {
+                videoList.innerHTML = videos.map(v => `<div class="file-item"><input type="checkbox" id="post_${v.name}" value="${v.name}"><label for="post_${v.name}">${v.name}</label></div>`).join('');
+                document.getElementById('postMergeBtn').disabled = false;
+            }
+            
+            if (data.results.length === 0) {
+                resultsList.innerHTML = '<div class="alert alert-info">No results yet</div>';
+            } else {
+                resultsList.innerHTML = data.results.map(r => `<div class="file-item"><span>${r.name}</span><small style="color:#888">${r.type === 'folder' ? r.png_count + ' images' : (r.size / 1024 / 1024).toFixed(2) + ' MB'}</small></div>`).join('');
+            }
+        }
+
+        document.getElementById('postMergeBtn').onclick = async () => {
+            const checkboxes = document.querySelectorAll('#postMergeVideoList input[type="checkbox"]:checked');
+            const fileIds = Array.from(checkboxes).map(cb => cb.value.replace('.mp4', ''));
+            if (fileIds.length < 2) { alert('Select at least 2 videos'); return; }
+
+            const btn = document.getElementById('postMergeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loader"></span>';
+
+            const res = await fetch(`${API_BASE}/video/merge`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: currentUser,
+                    file_ids: fileIds,
+                    output_name: document.getElementById('postMergeOutputName').value || 'merged',
+                    fps: parseFloat(document.getElementById('postMergeFps').value)
+                })
+            });
+            const data = await res.json();
+            
+            btn.disabled = false;
+            btn.textContent = 'Merge Selected';
+            document.getElementById('postMergeStatus').classList.remove('hidden');
+            document.getElementById('postMergeStatus').innerHTML = `<div class="alert alert-info">Merged ${data.source_files} files (${data.total_frames} frames)</div>`;
+            loadPostResults();
+        };
+
+        // Load postprocessing results when switching to that page
+        document.querySelector('[data-page="postprocessing"]').addEventListener('click', loadPostResults);
+
+        async function loadSamples() {
+            const res = await fetch(`${API_BASE}/samples/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('samplesList');
+            const maskList = document.getElementById('maskSamplesList');
+            const trainSelect = document.getElementById('trainParticle');
+            
+            if (Object.keys(data.samples).length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No samples yet</div>';
+                maskList.innerHTML = '<div class="alert alert-info">No samples yet</div>';
+                trainSelect.innerHTML = '<option value="">Select sample</option>';
+                document.getElementById('trainBtn').disabled = true;
+                return;
+            }
+
+            let html = '';
+            trainSelect.innerHTML = '<option value="">Select sample</option>';
+            for (const [name, samples] of Object.entries(data.samples)) {
+                const s = samples[0];
+                const maskType = s.mask_type ? ` (${s.mask_type})` : '';
+                html += `<div class="sample-item"><div class="sample-preview">🔬</div><div class="sample-info"><div class="sample-name">${name}${maskType}</div><div class="sample-meta">${s.width}x${s.height}px</div></div><button class="btn btn-danger btn-sm" onclick="deleteSample('${name}')">Delete</button></div>`;
+                trainSelect.innerHTML += `<option value="${name}">${name}</option>`;
+            }
+            list.innerHTML = html;
+            maskList.innerHTML = html;
+            updateTrainButton();
+        }
+
+        async function deleteSample(name) {
+            if (!confirm(`Delete ${name}?`)) return;
+            await fetch(`${API_BASE}/sample/${currentUser}/${name}`, { method: 'DELETE' });
+            loadSamples();
+        }
+
+        function updateTrainButton() { document.getElementById('trainBtn').disabled = !document.getElementById('trainParticle').value; }
+        document.getElementById('trainParticle').onchange = updateTrainButton;
+
+        document.getElementById('trainBtn').onclick = async () => {
+            const particle = document.getElementById('trainParticle').value;
+            if (!particle) return;
+
+            document.getElementById('trainBtn').disabled = true;
+            document.getElementById('trainBtn').innerHTML = '<span class="loader"></span>';
+            document.getElementById('trainingSummary').classList.add('hidden');
+            document.getElementById('trainingLive').classList.remove('hidden');
+            document.getElementById('trainingLoss').textContent = '-';
+            document.getElementById('trainingTime').textContent = '0:00';
+
+            const res = await fetch(`${API_BASE}/train`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: currentUser, particle_name: particle,
+                    n_transforms: parseInt(document.getElementById('nTransforms').value),
+                    max_epochs: parseInt(document.getElementById('maxEpochs').value),
+                    batch_size: parseInt(document.getElementById('batchSize').value),
+                    lr: parseFloat(document.getElementById('learningRate').value),
+                    length: parseInt(document.getElementById('trainLength').value),
+                    mul_min: parseFloat(document.getElementById('mulMin').value),
+                    mul_max: parseFloat(document.getElementById('mulMax').value),
+                    add_min: parseFloat(document.getElementById('addMin').value),
+                    add_max: parseFloat(document.getElementById('addMax').value),
+                    scale_min: parseFloat(document.getElementById('scaleMin').value),
+                    scale_max: parseFloat(document.getElementById('scaleMax').value),
+                    rotation_min: parseFloat(document.getElementById('rotationMin').value),
+                    rotation_max: parseFloat(document.getElementById('rotationMax').value),
+                    translate_min: parseFloat(document.getElementById('translateMin').value),
+                    translate_max: parseFloat(document.getElementById('translateMax').value),
+                    use_affine: document.getElementById('useAffine').checked
+                })
+            });
+            const data = await res.json();
+            document.getElementById('trainingStatus').classList.remove('hidden');
+            trainPoll = setInterval(() => pollTraining(data.job_id), 2000);
+        };
+
+        async function pollTraining(jobId) {
+            const res = await fetch(`${API_BASE}/train/${jobId}`);
+            const data = await res.json();
+            
+            document.getElementById('trainingProgress').textContent = data.progress + '%';
+            document.getElementById('progressFill').style.width = data.progress + '%';
+            document.getElementById('trainingEpoch').textContent = data.current_epoch || 0;
+            document.getElementById('trainingMaxEpoch').textContent = data.config?.max_epochs || '-';
+            
+            if (data.current_loss !== undefined && data.current_loss !== null) {
+                document.getElementById('trainingLoss').textContent = data.current_loss.toFixed(6);
+            }
+            if (data.elapsed_time !== undefined) {
+                const mins = Math.floor(data.elapsed_time / 60);
+                const secs = Math.floor(data.elapsed_time % 60);
+                document.getElementById('trainingTime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            
+            if (data.status === 'completed' || data.status === 'failed') {
+                clearInterval(trainPoll);
+                document.getElementById('trainBtn').disabled = false;
+                document.getElementById('trainBtn').textContent = 'Start Training';
+                document.getElementById('trainingLive').classList.add('hidden');
+                
+                if (data.status === 'failed') {
+                    alert('Training failed: ' + data.error);
+                } else if (data.summary) {
+                    document.getElementById('trainingSummary').classList.remove('hidden');
+                    document.getElementById('summaryRuntime').textContent = data.summary.runtime_formatted;
+                    document.getElementById('summaryDevice').textContent = data.summary.device;
+                    document.getElementById('summaryFinalLoss').textContent = data.summary.final_loss?.toFixed(6) || '-';
+                    document.getElementById('summaryMinLoss').textContent = data.summary.min_loss?.toFixed(6) || '-';
+                }
+                loadModels();
+            }
+        }
+
+        async function loadModels() {
+            const res = await fetch(`${API_BASE}/models/${currentUser}`);
+            const data = await res.json();
+            const list = document.getElementById('modelsList');
+            const detectSelect = document.getElementById('detectModel');
+
+            if (data.models.length === 0) {
+                list.innerHTML = '<div class="alert alert-info">No models yet</div>';
+                detectSelect.innerHTML = '<option value="">Select model</option>';
+                document.getElementById('detectBtn').disabled = true;
+                return;
+            }
+
+            list.innerHTML = '';
+            detectSelect.innerHTML = '<option value="">Select model</option>';
+            for (const m of data.models) {
+                const summary = m.summary ? `<br><small style="color:#4aff80">${m.summary.runtime_formatted} | Loss: ${m.summary.final_loss?.toFixed(4) || '-'}</small>` : '';
+                list.innerHTML += `<div class="model-item">
+                    <div><strong>${m.particle_name}</strong><br><small style="color:#888">${new Date(m.created_at).toLocaleString()}</small>${summary}</div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <button class="btn btn-sm btn-secondary" onclick="renameModel('${m.id}', '${m.particle_name}')">Rename</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteModel('${m.id}', '${m.particle_name}')">Delete</button>
+                    </div>
+                </div>`;
+                detectSelect.innerHTML += `<option value="${m.id}">${m.particle_name}</option>`;
+            }
+            updateDetectButton();
+        }
+
+        async function deleteModel(modelId, name) {
+            if (!confirm(`Delete model "${name}"? This cannot be undone.`)) return;
+            await fetch(`${API_BASE}/models/${currentUser}/${modelId}`, { method: 'DELETE' });
+            loadModels();
+        }
+
+        async function renameModel(modelId, currentName) {
+            const newName = prompt('Enter new name:', currentName);
+            if (!newName || newName === currentName) return;
+            await fetch(`${API_BASE}/models/${currentUser}/${modelId}/rename`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ new_name: newName })
+            });
+            loadModels();
+        }
+
+        let detectFileId = null;
+        let detectFileType = null;
+        let detectFrameCount = 1;
+        let detectFrameIndex = 0;
+
+        const detectUploadZone = document.getElementById('detectUploadZone');
+        const detectImageInput = document.getElementById('detectImageInput');
+        detectUploadZone.onclick = () => detectImageInput.click();
+        detectUploadZone.ondragover = e => { e.preventDefault(); detectUploadZone.style.borderColor = '#4a9eff'; };
+        detectUploadZone.ondragleave = () => detectUploadZone.style.borderColor = '#444';
+        detectUploadZone.ondrop = e => { e.preventDefault(); detectUploadZone.style.borderColor = '#444'; if (e.dataTransfer.files.length) handleDetectUpload(e.dataTransfer.files[0]); };
+        detectImageInput.onchange = e => { if (e.target.files.length) handleDetectUpload(e.target.files[0]); };
+
+        function handleDetectUpload(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            const progressEl = document.getElementById('detectUploadProgress');
+            const progressFill = document.getElementById('detectUploadProgressFill');
+            const progressText = document.getElementById('detectUploadProgressText');
+            const uploadTextEl = document.getElementById('detectUploadText');
+            
+            if (ext === 'tdms') {
+                document.getElementById('detectTdmsSettings').classList.remove('hidden');
+                const formData = new FormData();
+                formData.append('username', currentUser);
+                formData.append('file', file);
+                formData.append('image_width', document.getElementById('detectTdmsWidth').value);
+                formData.append('image_height', document.getElementById('detectTdmsHeight').value);
+                formData.append('channel_index', document.getElementById('detectTdmsChannel').value);
+                formData.append('normalize', document.getElementById('detectTdmsNormalize').value);
+
+                progressEl.classList.remove('hidden');
+                uploadTextEl.innerHTML = `<strong>${file.name}</strong>`;
+                progressFill.style.width = '0%';
+                progressText.textContent = '0%';
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `${API_BASE}/detect/upload`);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = Math.round((e.loaded / e.total) * 100);
+                        progressFill.style.width = pct + '%';
+                        progressText.textContent = pct + '%';
+                    }
+                };
+
+                xhr.onload = () => {
+                    progressEl.classList.add('hidden');
+                    uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
+
+                    if (xhr.status === 200) {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data.error) { alert(data.error); return; }
+
+                        detectFileId = data.id;
+                        detectFileType = 'tdms';
+                        detectFrameCount = data.frame_count;
+                        detectFrameIndex = 0;
+
+                        document.getElementById('detectFileInfo').classList.remove('hidden');
+                        document.getElementById('detectFileName').textContent = data.filename;
+                        document.getElementById('detectFileMeta').textContent = `${data.width || '?'}x${data.height || '?'} | ${data.frame_count} frames`;
+
+                        if (data.frame_count > 1) {
+                            document.getElementById('detectFrameControls').classList.remove('hidden');
+                            document.getElementById('detectFrameSlider').max = data.frame_count - 1;
+                            document.getElementById('detectFrameSlider').value = 0;
+                            document.getElementById('detectFrameTotal').textContent = data.frame_count;
+                            document.getElementById('detectFrameInput').value = 0;
+                        } else {
+                            document.getElementById('detectFrameControls').classList.add('hidden');
+                        }
+                        updateDetectButton();
+                    } else {
+                        alert('Upload failed: ' + xhr.statusText);
+                    }
+                };
+
+                xhr.onerror = () => {
+                    progressEl.classList.add('hidden');
+                    uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
+                    alert('Upload failed');
+                };
+
+                xhr.send(formData);
+            } else {
+                detectFileId = null;
+                detectFileType = 'image';
+                detectFrameCount = 1;
+                document.getElementById('detectTdmsSettings').classList.add('hidden');
+                document.getElementById('detectFrameControls').classList.add('hidden');
+                document.getElementById('detectFileInfo').classList.remove('hidden');
+                document.getElementById('detectFileName').textContent = file.name;
+                document.getElementById('detectFileMeta').textContent = 'Single image';
+                updateDetectButton();
+            }
+        }
+
+        function updateDetectButton() {
+            const hasModel = !!document.getElementById('detectModel').value;
+            const hasFile = detectFileId || (detectImageInput.files && detectImageInput.files.length);
+            document.getElementById('detectBtn').disabled = !hasModel || !hasFile;
+        }
+        document.getElementById('detectModel').onchange = updateDetectButton;
+
+        document.getElementById('detectFrameSlider').oninput = e => { detectFrameIndex = parseInt(e.target.value); document.getElementById('detectFrameInput').value = detectFrameIndex; runDetection(); };
+        document.getElementById('detectFrameInput').onchange = e => { detectFrameIndex = Math.max(0, Math.min(parseInt(e.target.value) || 0, detectFrameCount - 1)); document.getElementById('detectFrameSlider').value = detectFrameIndex; runDetection(); };
+
+        document.getElementById('detectBtn').onclick = () => runDetection();
+
+        async function runDetection() {
+            const modelId = document.getElementById('detectModel').value;
+            if (!modelId) return;
+
+            document.getElementById('detectBtn').disabled = true;
+            document.getElementById('detectBtn').innerHTML = '<span class="loader"></span>';
+
+            let data;
+            if (detectFileType === 'tdms' && detectFileId) {
+                const params = new URLSearchParams({
+                    model_id: modelId,
+                    alpha: document.getElementById('detectAlpha').value,
+                    beta: document.getElementById('detectBeta').value,
+                    cutoff: document.getElementById('detectCutoff').value,
+                    return_weightmap: document.getElementById('showWeightmap').checked
+                });
+                const res = await fetch(`${API_BASE}/detect/frame/${currentUser}/${detectFileId}/${detectFrameIndex}?${params}`);
+                data = await res.json();
+            } else {
+                const formData = new FormData();
+                formData.append('username', currentUser);
+                formData.append('model_id', modelId);
+                formData.append('file', detectImageInput.files[0]);
+                formData.append('alpha', document.getElementById('detectAlpha').value);
+                formData.append('beta', document.getElementById('detectBeta').value);
+                formData.append('cutoff', document.getElementById('detectCutoff').value);
+                formData.append('return_weightmap', document.getElementById('showWeightmap').checked);
+
+                const res = await fetch(`${API_BASE}/detect`, { method: 'POST', body: formData });
+                data = await res.json();
+            }
+
+            document.getElementById('detectionResults').classList.remove('hidden');
+            document.getElementById('detectionCount').textContent = data.count;
+            document.getElementById('detectionFrame').textContent = detectFrameIndex;
+
+            const img = new Image();
+            img.onload = () => {
+                detectCanvas.width = img.width;
+                detectCanvas.height = img.height;
+                detectCtx.drawImage(img, 0, 0);
+                detectCtx.strokeStyle = '#4aff80';
+                detectCtx.lineWidth = 2;
+                for (const [x, y] of data.detections) {
+                    detectCtx.beginPath();
+                    detectCtx.arc(x, y, 10, 0, 2 * Math.PI);
+                    detectCtx.stroke();
+                }
+            };
+            img.src = data.image;
+
+            if (data.weightmap) {
+                const wmImg = new Image();
+                wmImg.onload = () => {
+                    weightmapCanvas.width = wmImg.width;
+                    weightmapCanvas.height = wmImg.height;
+                    weightmapCtx.drawImage(wmImg, 0, 0);
+                };
+                wmImg.src = data.weightmap;
+                document.getElementById('weightmapPanel').classList.remove('hidden');
+            } else {
+                document.getElementById('weightmapPanel').classList.add('hidden');
+            }
+
+            document.getElementById('detectBtn').disabled = false;
+            document.getElementById('detectBtn').textContent = 'Detect Particles';
+        }
+
+        async function loadDefaults() {
+            try {
+                const res = await fetch(`${API_BASE}/config/defaults`);
+                const d = await res.json();
+                document.getElementById('nTransforms').value = d.n_transforms;
+                document.getElementById('maxEpochs').value = d.max_epochs;
+                document.getElementById('batchSize').value = d.batch_size;
+                document.getElementById('learningRate').value = d.lr;
+                document.getElementById('trainLength').value = d.length;
+                document.getElementById('mulMin').value = d.mul_min;
+                document.getElementById('mulMax').value = d.mul_max;
+                document.getElementById('addMin').value = d.add_min;
+                document.getElementById('addMax').value = d.add_max;
+                document.getElementById('scaleMin').value = d.scale_min;
+                document.getElementById('scaleMax').value = d.scale_max;
+                document.getElementById('rotationMin').value = d.rotation_min;
+                document.getElementById('rotationMax').value = d.rotation_max;
+                document.getElementById('translateMin').value = d.translate_min;
+                document.getElementById('translateMax').value = d.translate_max;
+                document.getElementById('detectAlpha').value = d.alpha;
+                document.getElementById('detectCutoff').value = d.cutoff;
+            } catch (e) {}
+        }
+    </script>
+</body>
+</html>

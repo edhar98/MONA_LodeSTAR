@@ -1,7 +1,7 @@
 defaults:
-  image_size: 50
-  snr: 10.0
-  intensity_min: 0.8
+  image_size: 64
+  snr: 15.0
+  intensity_min: 0.1
   intensity_max: 1.0
   force_overwrite: false
   visualize: false
@@ -29,8 +29,8 @@ particles:
   Ring:
     parameters:
       - [1]
-      - [8]
-      - [2]
+      - [25]
+      - [3]
     description: Ring particle with clear circular structure
 
   Spot:

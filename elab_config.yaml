@@ -1,0 +1,31 @@
+# elab Configuration Reference
+# This file contains common values used in elab experiments
+
+# Experiment Categories
+categories:
+  5: "Full Run"
+  # Add other category IDs as needed
+
+# Teams
+teams:
+  1: "Molecular Nanophotonics Group"
+  # Add other team IDs as needed
+
+# Template Information
+template:
+  id: 24
+  name: "LodeSTAR: single particle pipeline"
+  description: "Specifically designed for LodeSTAR single particle pipeline experiments"
+
+# Example Usage Commands
+examples:
+  basic: "python src/elab_cli.py upload-test-run"
+  with_metadata: |
+    python src/elab_cli.py upload-test-run \
+      --label "janus_test_run" \
+      --category 5 \
+      --team 1
+  minimal_metadata: |
+    python src/elab_cli.py upload-test-run \
+      --category 5 \
+      --team 1
