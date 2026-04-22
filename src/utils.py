@@ -1,4 +1,5 @@
 import os
+import re
 import yaml
 import logging
 from jinja2 import Environment, BaseLoader
@@ -6,6 +7,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from scipy.spatial.distance import cdist
 from scipy.spatial import cKDTree
+from scipy import ndimage
 import cv2
 import pandas as pd
 
@@ -274,11 +276,53 @@ def cluster_nearby_detections(detections: np.ndarray, distance_threshold: float 
     return np.array([np.mean(detections[indices], axis=0) for indices in clusters.values()])
 
 
+def nms_detections(detections: np.ndarray, scores: np.ndarray = None,
+                   min_distance: float = 15) -> np.ndarray:
+    """Non-maximum suppression for particle detections.
+
+    Sorts by confidence (descending), greedily keeps each detection if no
+    already-kept detection is within min_distance pixels. Unlike
+    cluster_nearby_detections, this preserves both peaks when two particles
+    are close but distinct.
+
+    Args:
+        detections: (N, 2) array of [x, y] positions
+        scores:     (N,) confidence scores; if None all detections are equal
+                    and order is preserved
+        min_distance: suppress detections within this radius of a kept one
+
+    Returns:
+        (M, 2) array of kept positions, M <= N
+    """
+    if len(detections) <= 1:
+        return detections
+
+    if scores is None:
+        scores = np.ones(len(detections))
+
+    order = np.argsort(scores)[::-1]
+    kept = []
+    suppressed = np.zeros(len(detections), dtype=bool)
+
+    for idx in order:
+        if suppressed[idx]:
+            continue
+        kept.append(idx)
+        if len(kept) == 1:
+            tree = cKDTree(detections)
+        neighbours = tree.query_ball_point(detections[idx], r=min_distance)
+        for nb in neighbours:
+            if nb != idx:
+                suppressed[nb] = True
+
+    return detections[np.array(kept)]
+
+
 def load_csv_ground_truth(csv_path: str) -> dict:
     df = pd.read_csv(csv_path, index_col=0)
-    
+
     sorted_frames = sorted(df['frame'].unique())
-    
+
     frames = {}
     for image_idx, frame_val in enumerate(sorted_frames):
         frame_data = df[df['frame'] == frame_val]
@@ -317,32 +361,278 @@ def detect_by_area(weights: np.ndarray, cutoff: float = 0.9,
     return np.array(detections) if detections else np.empty((0, 2))
 
 
+def detect_by_watershed(weights: np.ndarray, cutoff: float = 0.3,
+                        min_distance: int = 10, min_area: int = 20) -> np.ndarray:
+    """Detect touching/overlapping particles via distance-transform watershed.
+
+    Steps:
+      1. Threshold weight map → binary mask
+      2. Distance transform → ridges peak at each particle centre
+      3. Local maxima of distance map → per-particle seeds/markers
+      4. Watershed on negated distance map, seeded by markers
+      5. Centroid of each labelled region
+    """
+    if weights is None:
+        return np.empty((0, 2))
+
+    from skimage.segmentation import watershed
+    from skimage.feature import peak_local_max
+
+    binary = (weights > cutoff).astype(np.uint8)
+    if binary.sum() == 0:
+        return np.empty((0, 2))
+
+    dist = ndimage.distance_transform_edt(binary)
+
+    # peak_local_max returns (row, col) coords of local maxima
+    peak_coords = peak_local_max(dist, min_distance=min_distance, labels=binary)
+    if len(peak_coords) == 0:
+        return np.empty((0, 2))
+
+    markers = np.zeros_like(binary, dtype=np.int32)
+    for idx, (r, c) in enumerate(peak_coords, start=1):
+        markers[r, c] = idx
+
+    labels = watershed(-dist, markers, mask=binary)
+
+    detections = []
+    for label_id in range(1, labels.max() + 1):
+        region = labels == label_id
+        if region.sum() < min_area:
+            continue
+        cy, cx = ndimage.center_of_mass(region)
+        detections.append([cx, cy])
+
+    return np.array(detections) if detections else np.empty((0, 2))
+
+
 def save_image_with_detections(image: np.ndarray, detections: np.ndarray, save_path: str,
                                gt_bboxes: np.ndarray = None,
                                det_color: tuple = (255, 0, 0), gt_color: tuple = (0, 255, 0),
-                               marker_radius: int = 3, marker_thickness: int = 1):
+                               marker_radius: int = 3, marker_thickness: int = 1,
+                               orientations: np.ndarray = None, arrow_length: float = 15.0):
     image = preprocess_image(image)
-    
+
     if image.max() <= 1.0:
         image_uint8 = (image * 255).astype(np.uint8)
     else:
         image_uint8 = ((image - image.min()) / (image.max() - image.min() + 1e-8) * 255).astype(np.uint8)
-    
+
     image_rgb = cv2.cvtColor(image_uint8, cv2.COLOR_GRAY2RGB)
-    
+
     if gt_bboxes is not None and len(gt_bboxes) > 0:
         for x, y in gt_bboxes[:, :2]:
             cv2.circle(image_rgb, (int(x), int(y)), marker_radius, gt_color, marker_thickness)
-    
+
     if len(detections) > 0:
-        for det in detections:
+        for i, det in enumerate(detections):
             x, y = det[0], det[1]
             cv2.circle(image_rgb, (int(x), int(y)), marker_radius, det_color, marker_thickness)
-    
+            if orientations is not None and i < len(orientations) and np.isfinite(orientations[i]):
+                phi = float(orientations[i])
+                dx = arrow_length * np.cos(phi)
+                dy = arrow_length * np.sin(phi)
+                cv2.arrowedLine(
+                    image_rgb, (int(x), int(y)),
+                    (int(x + dx), int(y + dy)),
+                    det_color, max(1, marker_thickness), tipLength=0.3,
+                )
+
     cv2.imwrite(save_path, cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
 
 
-def create_video_from_detections(images_dir: str, output_path: str, fps: int = 10, 
+def draw_orientation_arrow(ax, x: float, y: float, phi: float, scale: float = 15.0,
+                           color: str = 'red') -> None:
+    dx = scale * np.cos(phi)
+    dy = scale * np.sin(phi)
+    ax.arrow(x, y, dx, dy, head_width=scale * 0.3, head_length=scale * 0.2,
+             fc=color, ec=color, linewidth=1.5)
+    ax.plot(x, y, 'o', color=color, markersize=4)
+
+
+def refine_position_to_center(image: np.ndarray, x: float, y: float,
+                              search_radius: int = 25, min_radius: int = 3,
+                              max_radius: int = None) -> tuple:
+    img = image if image.ndim == 2 else np.dot(image[..., :3], [0.299, 0.587, 0.114])
+    img = np.asarray(img, dtype=np.float64)
+    h, w = img.shape[:2]
+    x_int, y_int = int(round(x)), int(round(y))
+    r = max(search_radius, (max_radius or search_radius) + 2)
+    x0 = max(0, x_int - r)
+    x1 = min(w, x_int + r + 1)
+    y0 = max(0, y_int - r)
+    y1 = min(h, y_int + r + 1)
+    patch = img[y0:y1, x0:x1]
+    if patch.size == 0:
+        return x, y
+    ph, pw = patch.shape[:2]
+    pmin, pmax = float(patch.min()), float(patch.max())
+    if pmax <= pmin:
+        return x, y
+    cx_in = x_int - x0
+    cy_in = y_int - y0
+    patch_uint8 = np.clip((patch - pmin) / (pmax - pmin) * 255, 0, 255).astype(np.uint8)
+    max_r = max_radius if max_radius is not None else min(ph, pw) // 2 - 1
+    max_r = max(min_radius + 1, max_r)
+    circles = cv2.HoughCircles(
+        patch_uint8, cv2.HOUGH_GRADIENT, dp=1, minDist=1,
+        param1=50, param2=18, minRadius=min_radius, maxRadius=max_r,
+    )
+    if circles is not None and circles.size > 0:
+        circles = np.squeeze(circles, axis=0)
+        if circles.ndim == 1:
+            circles = circles[np.newaxis, :]
+        best, best_d2 = None, float('inf')
+        for row in circles:
+            cx_p, cy_p = float(row[0]), float(row[1])
+            d2 = (cx_p - cx_in) ** 2 + (cy_p - cy_in) ** 2
+            if d2 < best_d2:
+                best_d2, best = d2, (cx_p, cy_p)
+        if best is not None:
+            return float(x0 + best[0]), float(y0 + best[1])
+    r_disk = min(search_radius, min(ph, pw) // 2)
+    yy, xx = np.mgrid[0:ph, 0:pw]
+    dist = np.sqrt((xx - cx_in) ** 2 + (yy - cy_in) ** 2)
+    mask = dist <= r_disk
+    if np.any(mask):
+        intensity = np.maximum(patch - patch[mask].min(), 0.0)
+        intensity = np.where(mask, intensity, 0.0)
+        total = intensity.sum() + 1e-9
+        com_x = np.sum(xx * intensity) / total
+        com_y = np.sum(yy * intensity) / total
+        return float(x0 + com_x), float(y0 + com_y)
+    return x, y
+
+
+def _estimate_annular_mask(template_2d: np.ndarray) -> tuple:
+    h, w = template_2d.shape
+    cy, cx = h // 2, w // 2
+    yy, xx = np.mgrid[:h, :w]
+    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    max_r = min(h, w) // 2 - 1
+    bg = template_2d[dist > max_r * 0.9].mean() if np.any(dist > max_r * 0.9) else 0.0
+    peak = template_2d.max()
+    threshold = bg + (peak - bg) * 0.15
+    profile = np.zeros(max_r + 1)
+    for r_i in range(max_r + 1):
+        ring = (dist >= r_i - 0.5) & (dist <= r_i + 0.5)
+        if ring.any():
+            profile[r_i] = template_2d[ring].mean()
+    r_inner = 0
+    for r_i in range(max_r):
+        if profile[r_i] > threshold:
+            r_inner = max(0, r_i - 1)
+            break
+    r_outer = max_r
+    for r_i in range(max_r, 0, -1):
+        if profile[r_i] > threshold:
+            r_outer = min(max_r, r_i + 1)
+            break
+    return int(r_inner), int(r_outer)
+
+
+def build_template_bank(sample_path: str, angle_step: int = 2,
+                        template_phi_deg: float = None) -> dict:
+    if angle_step <= 0:
+        raise ValueError("angle_step must be > 0")
+    if template_phi_deg is None:
+        m = re.search(r'phi(\d+\.?\d*)', os.path.basename(sample_path))
+        if m is None:
+            raise ValueError(f"Template filename must contain phi<angle> or template_phi_deg must be set: {sample_path}")
+        template_phi_deg = float(m.group(1))
+    img = cv2.imread(sample_path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise FileNotFoundError(f"Could not read template: {sample_path}")
+    if img.ndim == 3:
+        img = np.dot(img[..., :3], [0.114, 0.587, 0.299])
+    template_2d = img.astype(np.float64)
+    th, tw = template_2d.shape
+    cy, cx = th // 2, tw // 2
+    r_inner, r_outer = _estimate_annular_mask(template_2d)
+    yy, xx = np.mgrid[:th, :tw]
+    dist2 = (xx - cx) ** 2 + (yy - cy) ** 2
+    mask = (dist2 >= r_inner ** 2) & (dist2 <= r_outer ** 2)
+    angles_arr = np.arange(0, 360, angle_step)
+    normed = []
+    for a in angles_arr:
+        rot = ndimage.rotate(template_2d, float(a), reshape=False, mode='reflect')
+        rm = rot[mask] - rot[mask].mean()
+        nrm = np.sqrt(np.sum(rm ** 2))
+        if nrm < 1e-6:
+            normed.append(np.zeros_like(rm))
+            continue
+        normed.append(rm / nrm)
+    return {
+        'normed_templates': np.array(normed),
+        'angles_arr': angles_arr,
+        'mask': mask,
+        'template_phi_deg': template_phi_deg,
+        'th': th,
+        'tw': tw,
+        'r_inner': r_inner,
+        'r_outer': r_outer,
+    }
+
+
+def match_orientations(image: np.ndarray, positions: np.ndarray,
+                       template_bank: dict, search_r: int = 5) -> np.ndarray:
+    if len(positions) == 0:
+        return np.empty((0, 2), dtype=np.float64)
+    img = preprocess_image(image).astype(np.float64)
+    th = template_bank['th']
+    tw = template_bank['tw']
+    mask = template_bank['mask']
+    normed_templates = template_bank['normed_templates']
+    angles_arr = template_bank['angles_arr']
+    template_phi_deg = template_bank['template_phi_deg']
+    padded_img = np.pad(img, ((th, th), (tw, tw)), mode='reflect')
+    out = np.full((len(positions), 2), np.nan, dtype=np.float64)
+    for i in range(len(positions)):
+        x = float(positions[i, 0])
+        y = float(positions[i, 1])
+        best_ncc, best_angle = -2.0, 0
+        found = False
+        for dx in range(-search_r, search_r + 1):
+            for dy in range(-search_r, search_r + 1):
+                x0 = int(round(x + dx - tw / 2)) + tw
+                y0 = int(round(y + dy - th / 2)) + th
+                patch = padded_img[y0:y0 + th, x0:x0 + tw]
+                if patch.shape[0] != th or patch.shape[1] != tw:
+                    continue
+                pm = patch[mask] - patch[mask].mean()
+                pnorm = np.sqrt(np.sum(pm ** 2))
+                if pnorm < 1e-6:
+                    continue
+                scores = normed_templates @ (pm / pnorm)
+                local_best = int(np.argmax(scores))
+                if scores[local_best] > best_ncc:
+                    best_ncc = float(scores[local_best])
+                    best_angle = local_best
+                    found = True
+        if found:
+            out[i, 0] = float(np.radians(template_phi_deg - float(angles_arr[best_angle])))
+            out[i, 1] = best_ncc
+    return out
+
+
+def orientation_postprocess(image: np.ndarray, detections: np.ndarray,
+                            template_bank: dict, refine_radius: int = 25,
+                            search_r: int = 5) -> np.ndarray:
+    if refine_radius <= 0:
+        raise ValueError("refine_radius must be > 0")
+    if search_r < 0:
+        raise ValueError("search_r must be >= 0")
+    if len(detections) == 0:
+        return np.empty((0, 4), dtype=np.float64)
+    refined = np.array([
+        refine_position_to_center(image, float(d[0]), float(d[1]), search_radius=refine_radius)
+        for d in detections
+    ], dtype=np.float64)
+    phi_ncc = match_orientations(image, refined, template_bank, search_r=search_r)
+    return np.column_stack([refined, phi_ncc])
+
+
+def create_video_from_detections(images_dir: str, output_path: str, fps: int = 10,
                                   extensions: tuple = ('.jpg', '.png', '.tif', '.tiff')) -> str:
     image_files = sorted([f for f in os.listdir(images_dir) if f.lower().endswith(extensions)])
     

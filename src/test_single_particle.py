@@ -45,7 +45,9 @@ def load_trained_model(model_path, config):
     lodestar.eval()
     return lodestar
 
-def detect_particles(model, image, config, particle_type=None, detection_mode='standard'):
+def detect_particles(model, image, config, particle_type=None, detection_mode='standard',
+                     template_bank=None, template_refine_radius: int = 25,
+                     template_search_radius: int = 5):
     image = utils.preprocess_image(image)
     h, w = image.shape
     
@@ -63,6 +65,8 @@ def detect_particles(model, image, config, particle_type=None, detection_mode='s
             weights = None
             prediction = model_output[0].detach().numpy() if len(model_output.shape) == 4 else model_output.detach().numpy()
         
+        orientations = None
+        orientation_ncc = None
         if detection_mode == 'area':
             area_config = config.get('area_detection', {})
             clustered_detections = utils.detect_by_area(
@@ -71,6 +75,39 @@ def detect_particles(model, image, config, particle_type=None, detection_mode='s
                 min_area=area_config.get('min_area', 100),
                 max_area=area_config.get('max_area', 2500)
             )
+        elif detection_mode == 'watershed':
+            ws_config = config.get('watershed_detection', {})
+            clustered_detections = utils.detect_by_watershed(
+                weights,
+                cutoff=config.get('cutoff', 0.3),
+                min_distance=ws_config.get('min_distance', 10),
+                min_area=ws_config.get('min_area', 20),
+            )
+        elif detection_mode == 'template':
+            if template_bank is None:
+                raise ValueError("template_bank is required for detection_mode='template'")
+            detections = model.detect(
+                image_tensor,
+                alpha=config.get('alpha', 0.2),
+                beta=config.get('beta', 0.8),
+                mode=config.get('mode', 'constant'),
+                cutoff=config.get('cutoff', 0.2)
+            )[0]
+            if len(detections) > 0:
+                detections_xy = detections[:, [1, 0]]
+                clustered_detections = utils.cluster_nearby_detections(detections_xy, distance_threshold=20)
+                oriented = utils.orientation_postprocess(
+                    image=image,
+                    detections=clustered_detections,
+                    template_bank=template_bank,
+                    refine_radius=template_refine_radius,
+                    search_r=template_search_radius,
+                )
+                clustered_detections = oriented[:, :2]
+                orientations = oriented[:, 2]
+                orientation_ncc = oriented[:, 3]
+            else:
+                clustered_detections = np.empty((0, 2))
         else:
             try:
                 detections = model.detect(
@@ -97,6 +134,9 @@ def detect_particles(model, image, config, particle_type=None, detection_mode='s
         detections_with_confidence = np.empty((0, 3))
         detection_labels = []
     
+    if isinstance(prediction, dict):
+        prediction['orientations'] = orientations
+        prediction['orientation_ncc'] = orientation_ncc
     return detections_with_confidence, prediction, detection_labels, model_output
 
 
@@ -122,13 +162,20 @@ def save_detections_to_csv(detection_results, save_dir):
             detections_by_video[video_id] = []
         
         if len(result['detections']) > 0:
-            for det in result['detections']:
-                detections_by_video[video_id].append({
+            orientations = result.get('orientations')
+            orientation_ncc = result.get('orientation_ncc')
+            for idx, det in enumerate(result['detections']):
+                det_row = {
                     'x': det[0],
                     'y': det[1],
                     'confidence': det[2] if len(det) > 2 else 1.0,
                     'frame': frame_idx
-                })
+                }
+                if orientations is not None and idx < len(orientations):
+                    det_row['phi'] = float(orientations[idx])
+                if orientation_ncc is not None and idx < len(orientation_ncc):
+                    det_row['orientation_ncc'] = float(orientation_ncc[idx])
+                detections_by_video[video_id].append(det_row)
     
     csv_dir = os.path.join(save_dir, 'csv')
     os.makedirs(csv_dir, exist_ok=True)
@@ -142,7 +189,9 @@ def save_detections_to_csv(detection_results, save_dir):
             logger.info(f"Saved detections CSV: {csv_path} ({len(df)} detections)")
 
 
-def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detection_mode='standard'):
+def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detection_mode='standard',
+                              template_bank=None, template_refine_radius: int = 25,
+                              template_search_radius: int = 5):
     logger.info(f"\n=== Evaluating {particle_type} model on generated dataset ===")
     
     images_dir = os.path.join(dataset_dir, 'images')
@@ -208,7 +257,10 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detecti
                     gt_labels = []
         
         detections, prediction, detection_labels, model_output = detect_particles(
-            model, image, config, particle_type=particle_type, detection_mode=detection_mode
+            model, image, config, particle_type=particle_type, detection_mode=detection_mode,
+            template_bank=template_bank,
+            template_refine_radius=template_refine_radius,
+            template_search_radius=template_search_radius,
         )
         
         metrics = utils.calculate_detection_metrics(gt_bboxes, detections, gt_labels=gt_labels, detection_labels=detection_labels)
@@ -223,7 +275,9 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detecti
             'prediction': prediction,  
             'metrics': metrics,
             'snr': snr,
-            'model_output': model_output
+            'model_output': model_output,
+            'orientations': prediction.get('orientations') if isinstance(prediction, dict) else None,
+            'orientation_ncc': prediction.get('orientation_ncc') if isinstance(prediction, dict) else None,
         })
         
         snr_str = f"SNR={snr:.2f}" if snr is not None else "SNR=N/A"
@@ -291,6 +345,14 @@ def visualize_detection_results(image, gt_bboxes, detections, prediction, title=
     if len(detections) > 0:
         axes[2].plot(detections[:, 0], detections[:, 1], 'ro', markersize=5, 
                      markeredgecolor='white', markeredgewidth=1, label='Det')
+        if isinstance(prediction, dict) and prediction.get('orientations') is not None:
+            phis = prediction.get('orientations')
+            n_phi = min(len(phis), len(detections))
+            for i in range(n_phi):
+                utils.draw_orientation_arrow(
+                    axes[2], float(detections[i, 0]), float(detections[i, 1]),
+                    float(phis[i]), scale=12.0, color='red'
+                )
     
     if metrics:
         metrics_text = f"F1: {metrics['f1_score']:.3f}\nP: {metrics['precision']:.3f}\nR: {metrics['recall']:.3f}\nTP: {metrics['tp']} FP: {metrics['fp']} FN: {metrics['fn']}"
@@ -310,11 +372,15 @@ def visualize_detection_results(image, gt_bboxes, detections, prediction, title=
     plt.close()
     
     det_only_path = os.path.join(detections_dir, f'{title.replace(" ", "_")}.png')
-    utils.save_image_with_detections(image, detections, det_only_path, gt_bboxes=gt_bboxes)
+    orientations = prediction.get('orientations') if isinstance(prediction, dict) else None
+    utils.save_image_with_detections(image, detections, det_only_path, gt_bboxes=gt_bboxes,
+                                     orientations=orientations)
 
 
 def test_single_particle_model(particle_type, model_path, config, visualize=False, 
-                               detection_mode='standard', generate_video=False):
+                               detection_mode='standard', generate_video=False,
+                               template_bank=None, template_refine_radius: int = 25,
+                               template_search_radius: int = 5):
     logger.info(f"\n=== Testing {particle_type} model (mode: {detection_mode}) ===")
     
     model = load_trained_model(model_path, config)
@@ -338,7 +404,10 @@ def test_single_particle_model(particle_type, model_path, config, visualize=Fals
         if os.path.exists(dataset_dir):
             logger.info(f"\n--- Testing on {dataset_type} dataset ---")
             metrics, results = evaluate_model_on_dataset(
-                model, dataset_dir, particle_type, config, detection_mode=detection_mode
+                model, dataset_dir, particle_type, config, detection_mode=detection_mode,
+                template_bank=template_bank,
+                template_refine_radius=template_refine_radius,
+                template_search_radius=template_search_radius,
             )
             
             if metrics:
@@ -378,8 +447,13 @@ def main():
     parser.add_argument('--particle', type=str, help='Specific particle type to test')
     parser.add_argument('--model', type=str, help='Path to specific model file to test')
     parser.add_argument('--config', type=str, default='src/config.yaml', help='Path to configuration file')
-    parser.add_argument('--detection-mode', type=str, default='standard', choices=['standard', 'area'],
-                        help='Detection mode: standard (local maxima) or area (area-based filtering)')
+    parser.add_argument('--detection-mode', type=str, default='standard', choices=['standard', 'area', 'watershed', 'template'],
+                        help='Detection mode: standard (local maxima), area, watershed (touching particles), or template orientation')
+    parser.add_argument('--orientation-template', type=str, default=None, help='Template image path for template mode')
+    parser.add_argument('--template-angle-step', type=int, default=2, help='Template rotation step in degrees')
+    parser.add_argument('--template-phi-deg', type=float, default=None, help='Template reference phi in degrees')
+    parser.add_argument('--template-refine-radius', type=int, default=25, help='Center refine radius in pixels')
+    parser.add_argument('--template-search-radius', type=int, default=5, help='Template local search radius in pixels')
     parser.add_argument('--video', action='store_true', help='Generate video from detection results')
     args = parser.parse_args()
     
@@ -392,8 +466,23 @@ def main():
     if detection_mode == 'area':
         area_cfg = config.get('area_detection', {})
         logger.info(f"Area params: min_area={area_cfg.get('min_area', 100)}, max_area={area_cfg.get('max_area', 2500)}, cutoff={config.get('cutoff', 0.9)}")
+        template_bank = None
+    elif detection_mode == 'watershed':
+        ws_cfg = config.get('watershed_detection', {})
+        logger.info(f"Watershed params: min_distance={ws_cfg.get('min_distance', 10)}, min_area={ws_cfg.get('min_area', 20)}, cutoff={config.get('cutoff', 0.3)}")
+        template_bank = None
+    elif detection_mode == 'template':
+        if not args.orientation_template:
+            raise ValueError("--orientation-template is required for --detection-mode template")
+        template_bank = utils.build_template_bank(
+            sample_path=args.orientation_template,
+            angle_step=args.template_angle_step,
+            template_phi_deg=args.template_phi_deg,
+        )
+        logger.info(f"Template mode: template={args.orientation_template}, angle_step={args.template_angle_step}, refine_radius={args.template_refine_radius}, search_radius={args.template_search_radius}")
     else:
         logger.info(f"Detection params: alpha={config.get('alpha', 0.2)}, beta={config.get('beta', 0.8)}, cutoff={config.get('cutoff', 0.2)}")
+        template_bank = None
     
     # Load training summary
     summary_path = 'trained_models_summary.yaml'
@@ -419,7 +508,10 @@ def main():
         test_results = {}
         metrics = test_single_particle_model(args.particle, args.model, config, 
                                              visualize=config.get('visualize', False),
-                                             detection_mode=detection_mode, generate_video=generate_video)
+                                             detection_mode=detection_mode, generate_video=generate_video,
+                                             template_bank=template_bank,
+                                             template_refine_radius=args.template_refine_radius,
+                                             template_search_radius=args.template_search_radius)
         if metrics:
             test_results[args.particle] = metrics
             logger.info(f"Successfully tested {args.particle} model")
@@ -441,7 +533,10 @@ def main():
         if os.path.exists(model_path):
             metrics = test_single_particle_model(args.particle, model_path, config, 
                                                  visualize=config.get('visualize', False),
-                                                 detection_mode=detection_mode, generate_video=generate_video)
+                                                 detection_mode=detection_mode, generate_video=generate_video,
+                                                 template_bank=template_bank,
+                                                 template_refine_radius=args.template_refine_radius,
+                                                 template_search_radius=args.template_search_radius)
             if metrics:
                 test_results[args.particle] = metrics
                 logger.info(f"Successfully tested {args.particle} model")
@@ -473,7 +568,10 @@ def main():
         test_results = {}
         metrics = test_single_particle_model(particle_type, args.model, config, 
                                              visualize=config.get('visualize', False),
-                                             detection_mode=detection_mode, generate_video=generate_video)
+                                             detection_mode=detection_mode, generate_video=generate_video,
+                                             template_bank=template_bank,
+                                             template_refine_radius=args.template_refine_radius,
+                                             template_search_radius=args.template_search_radius)
         if metrics:
             test_results[particle_type] = metrics
             logger.info(f"Successfully tested {particle_type} model")
@@ -491,7 +589,10 @@ def main():
             if os.path.exists(model_path):
                 metrics = test_single_particle_model(particle_type, model_path, config, 
                                                      visualize=config.get('visualize', False),
-                                                     detection_mode=detection_mode, generate_video=generate_video)
+                                                     detection_mode=detection_mode, generate_video=generate_video,
+                                                     template_bank=template_bank,
+                                                     template_refine_radius=args.template_refine_radius,
+                                                     template_search_radius=args.template_search_radius)
                 if metrics:
                     test_results[particle_type] = metrics
                     logger.info(f"Successfully tested {particle_type} model")

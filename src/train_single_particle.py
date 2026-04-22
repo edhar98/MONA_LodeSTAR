@@ -46,34 +46,56 @@ def create_circular_mask(image, radius, soft_edge=0):
     return mask
 
 
+def _load_sample_image(path):
+    img = np.array(dt.LoadImage(path).resolve()).astype(np.float32)
+    if len(img.shape) == 3 and img.shape[-1] == 3:
+        img = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    if len(img.shape) == 2:
+        img = img[..., np.newaxis]
+    return img
+
+
+def _build_sample_pool(config, particle_type):
+    """Return a list of pre-loaded sample images for this particle type.
+
+    If a Samples/ subdirectory exists alongside the canonical sample image,
+    all PNG/JPG images in it are loaded into the pool. Otherwise falls back
+    to the single canonical sample.
+    """
+    base_dir = os.path.join(config['data_dir'], 'Samples', particle_type)
+    pool_dir = os.path.join(base_dir, 'Samples')
+
+    # Prefer the pool directory if it has images
+    if os.path.isdir(pool_dir):
+        exts = ('.png', '.jpg', '.jpeg', '.tif', '.tiff')
+        paths = [os.path.join(pool_dir, f) for f in sorted(os.listdir(pool_dir))
+                 if f.lower().endswith(exts)]
+        if paths:
+            pool = [_load_sample_image(p) for p in paths]
+            logger.info(f"Multi-crop pool: loaded {len(pool)} samples from {pool_dir}")
+            return pool
+
+    # Fall back to single canonical sample
+    for ext in ('jpg', 'png'):
+        p = os.path.join(base_dir, f'{particle_type}.{ext}')
+        if os.path.exists(p):
+            logger.info(f"Single-sample training: {p}")
+            return [_load_sample_image(p)]
+
+    raise FileNotFoundError(f"No sample found for {particle_type} in {base_dir}")
+
+
 def create_single_particle_pipeline(config, particle_type):
     """Create training pipeline for a specific particle type"""
-    
-    # Try both .jpg and .png as possible sample image extensions
-    possible_extensions = ['jpg', 'png']
-    sample_path = None
-    for ext in possible_extensions:
-        candidate_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.{ext}')
-        if os.path.exists(candidate_path):
-            sample_path = candidate_path
-            break
-    if sample_path is None:
-        # Default to .jpg for error message if neither exists
-        sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')
-    
-    if not os.path.exists(sample_path):
-        raise FileNotFoundError(f"Sample not found: {sample_path}")
-    
-    training_image = np.array(dt.LoadImage(sample_path).resolve()).astype(np.float32)
-    
-    if len(training_image.shape) == 3 and training_image.shape[-1] == 3:
-        training_image = np.dot(training_image[..., :3], [0.299, 0.587, 0.114])
-    
-    if len(training_image.shape) == 2:
-        training_image = training_image[..., np.newaxis]
-    
+    sample_pool = _build_sample_pool(config, particle_type)
+
+    # Randomly pick a crop each time the pipeline resolves
+    def sample_fn():
+        img = random.choice(sample_pool)
+        return img
+
     training_pipeline = (
-        dt.Value(training_image)
+        dt.Value(sample_fn)
         #>> dt.AveragePooling(ksize=(config['downsample'], config['downsample'], 3))
         >> dt.Affine(
             scale=lambda: np.random.uniform(config['scale_min'], config['scale_max']),
@@ -93,29 +115,11 @@ def create_single_particle_pipeline(config, particle_type):
 
 def create_validation_pipeline(config, particle_type):
     """Create validation pipeline for a specific particle type"""
-    
-    # Try both .jpg and .png as possible sample image extensions
-    possible_extensions = ['jpg', 'png']
-    sample_path = None
-    for ext in possible_extensions:
-        candidate_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.{ext}')
-        if os.path.exists(candidate_path):
-            sample_path = candidate_path
-            break
-    if sample_path is None:
-        # Default to .jpg for error message if neither exists
-        sample_path = os.path.join(config['data_dir'], 'Samples', particle_type, f'{particle_type}.jpg')    
-    if not os.path.exists(sample_path):
-        raise FileNotFoundError(f"Sample not found: {sample_path}")
-    
-    validation_image = np.array(dt.LoadImage(sample_path).resolve()).astype(np.float32)
-    
-    if len(validation_image.shape) == 3 and validation_image.shape[-1] == 3:
-        validation_image = np.dot(validation_image[..., :3], [0.299, 0.587, 0.114])
-    
-    if len(validation_image.shape) == 2:
-        validation_image = validation_image[..., np.newaxis]
-    
+    sample_pool = _build_sample_pool(config, particle_type)
+
+    def sample_fn():
+        return random.choice(sample_pool)
+
     # Use validation-specific augmentation parameters
     val_mul_min = config.get('val_mul_min', config['mul_min'])
     val_mul_max = config.get('val_mul_max', config['mul_max'])
@@ -125,11 +129,9 @@ def create_validation_pipeline(config, particle_type):
     val_scale_max = config.get('val_scale_max', config['scale_max'])
     val_rotation_range = config.get('val_rotation_range', config['rotation_range'])
     val_translation_range = config.get('val_translation_range', config['translation_range'])
-    val_sigma_min = config.get('val_sigma_min', config['sigma_min'])
-    val_sigma_max = config.get('val_sigma_max', config['sigma_max'])
 
     validation_pipeline = (
-        dt.Value(validation_image)
+        dt.Value(sample_fn)
         #>> dt.AveragePooling(ksize=(config['downsample'], config['downsample'], 3))
         >> dt.Affine(
             scale=lambda: np.random.uniform(val_scale_min, val_scale_max),

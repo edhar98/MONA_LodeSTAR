@@ -41,7 +41,7 @@ length: 512  # Training samples per epoch (paper: 5000 mini-batches × 8 samples
 
 # training
 seed: 37
-n_transforms: 4  
+n_transforms: 8  
 max_epochs: 200
 devices: 1
 strategy: "ddp"
@@ -54,7 +54,7 @@ lr: 0.0001
 # detection
 alpha: 1  # Object similarity metric (0.1-0.3 range)
 beta: 0   # 1 - alpha
-cutoff: 0.9  # Detection threshold (0.1-0.3 range)
+cutoff: 0.8  # Detection threshold
 mode: constant
 visualize: True
 
@@ -62,6 +62,18 @@ visualize: True
 area_detection:
   min_area: 200
   max_area: 500
+
+# watershed-based detection (for touching/overlapping particles)
+watershed_detection:
+  min_distance: 15   # minimum pixel distance between two particle centres (~half particle diameter)
+  min_area: 20       # minimum region area in pixels (filters noise)
+
+# orientation detection (template-matching, post-inference)
+orientation:
+  template_sample: null          # path to a cropped particle PNG with phi in filename (e.g. f000_d000_phi0245.9.png)
+  angle_step: 2                  # rotation step in degrees (smaller = finer but slower)
+  refine_radius: 25              # HoughCircles search radius for position refinement (pixels)
+  ncc_search_r: 5               # ±pixel search window for NCC matching
 
 # testing
 testing_type: 'JP_FE/wf_2_40'

@@ -40,8 +40,11 @@ def load_trained_model(model_path: str, config: dict):
 
 
 
-def detect_particles(model, image: np.ndarray, config: dict, 
-                     detection_mode: str = 'standard') -> tuple:
+def detect_particles(model, image: np.ndarray, config: dict,
+                     detection_mode: str = 'standard',
+                     template_bank: dict = None,
+                     template_refine_radius: int = 25,
+                     template_search_radius: int = 5) -> tuple:
     image = utils.preprocess_image(image)
     h, w = image.shape
     
@@ -57,6 +60,8 @@ def detect_particles(model, image: np.ndarray, config: dict,
         else:
             weights = None
         
+        orientations = None
+        orientation_ncc = None
         if detection_mode == 'area':
             area_config = config.get('area_detection', {})
             clustered_detections = utils.detect_by_area(
@@ -66,6 +71,40 @@ def detect_particles(model, image: np.ndarray, config: dict,
                 max_area=area_config.get('max_area', 2500)
             )
             logger.info(f"Area detection: found {len(clustered_detections)} particles")
+        elif detection_mode == 'watershed':
+            ws_config = config.get('watershed_detection', {})
+            clustered_detections = utils.detect_by_watershed(
+                weights,
+                cutoff=config.get('cutoff', 0.3),
+                min_distance=ws_config.get('min_distance', 10),
+                min_area=ws_config.get('min_area', 20),
+            )
+            logger.info(f"Watershed detection: found {len(clustered_detections)} particles")
+        elif detection_mode == 'template':
+            if template_bank is None:
+                raise ValueError("template_bank is required for detection_mode='template'")
+            detections = model.detect(
+                image_tensor,
+                alpha=config.get('alpha', 0.2),
+                beta=config.get('beta', 0.8),
+                mode=config.get('mode', 'constant'),
+                cutoff=config.get('cutoff', 0.2)
+            )[0]
+            if len(detections) > 0:
+                detections_xy = detections[:, [1, 0]]
+                clustered_detections = utils.cluster_nearby_detections(detections_xy, distance_threshold=20)
+                oriented = utils.orientation_postprocess(
+                    image=image,
+                    detections=clustered_detections,
+                    template_bank=template_bank,
+                    refine_radius=template_refine_radius,
+                    search_r=template_search_radius,
+                )
+                clustered_detections = oriented[:, :2]
+                orientations = oriented[:, 2]
+                orientation_ncc = oriented[:, 3]
+            else:
+                clustered_detections = np.empty((0, 2))
         else:
             try:
                 detections = model.detect(
@@ -84,20 +123,22 @@ def detect_particles(model, image: np.ndarray, config: dict,
             except AttributeError:
                 logger.error("Model detect method not available")
                 clustered_detections = np.empty((0, 2))
-    
-    return clustered_detections, weights, model_output
+
+    return clustered_detections, weights, model_output, orientations, orientation_ncc
 
 
 def save_image_with_detections(image: np.ndarray, detections: np.ndarray, save_path: str,
-                               marker_color: tuple = (255, 0, 0), marker_radius: int = 3, 
-                               marker_thickness: int = 1):
+                               marker_color: tuple = (255, 0, 0), marker_radius: int = 3,
+                               marker_thickness: int = 1,
+                               orientations: np.ndarray = None):
     utils.save_image_with_detections(image, detections, save_path, 
                                       det_color=marker_color, marker_radius=marker_radius,
-                                      marker_thickness=marker_thickness)
+                                      marker_thickness=marker_thickness,
+                                      orientations=orientations)
     logger.info(f"Saved image with detections: {save_path}")
 
 
-def visualize_detections(image: np.ndarray, detections: np.ndarray, weights: np.ndarray, 
+def visualize_detections(image: np.ndarray, detections: np.ndarray, weights: np.ndarray,
                          title: str, save_path: str, cutoff: float = 0.9):
     image = utils.preprocess_image(image)
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
@@ -134,7 +175,10 @@ def visualize_detections(image: np.ndarray, detections: np.ndarray, weights: np.
 def process_directory(model, input_dir: str, output_dir: str, config: dict, 
                       particle_type: str = 'Unknown',
                       extensions: tuple = ('.jpg', '.png', '.tif', '.tiff'),
-                      detection_mode: str = 'standard'):
+                      detection_mode: str = 'standard',
+                      template_bank: dict = None,
+                      template_refine_radius: int = 25,
+                      template_search_radius: int = 5):
     base_output = os.path.join(output_dir, particle_type)
     detections_dir = os.path.join(base_output, 'detections')
     weight_maps_dir = os.path.join(base_output, 'detections_with_weight_maps')
@@ -156,7 +200,12 @@ def process_directory(model, input_dir: str, output_dir: str, config: dict,
         image_path = os.path.join(input_dir, image_file)
         image = np.array(dt.LoadImage(image_path).resolve()).astype(np.float32)
         
-        detections, weights, _ = detect_particles(model, image, config, detection_mode)
+        detections, weights, _, orientations, orientation_ncc = detect_particles(
+            model, image, config, detection_mode,
+            template_bank=template_bank,
+            template_refine_radius=template_refine_radius,
+            template_search_radius=template_search_radius,
+        )
         
         base_name = os.path.splitext(image_file)[0]
         
@@ -165,13 +214,18 @@ def process_directory(model, input_dir: str, output_dir: str, config: dict,
                              cutoff=config.get('cutoff', 0.9))
         
         detection_path = os.path.join(detections_dir, f"{base_name}.png")
-        save_image_with_detections(image, detections, detection_path)
+        save_image_with_detections(image, detections, detection_path, orientations=orientations)
         
-        results.append({
+        row = {
             'image': image_file,
             'num_detections': len(detections),
             'detections': detections.tolist() if len(detections) > 0 else []
-        })
+        }
+        if orientations is not None:
+            row['orientations'] = orientations.tolist()
+        if orientation_ncc is not None:
+            row['orientation_ncc'] = orientation_ncc.tolist()
+        results.append(row)
         
         logger.info(f"  {image_file}: {len(detections)} detections")
     
@@ -180,7 +234,10 @@ def process_directory(model, input_dir: str, output_dir: str, config: dict,
 
 def process_single_image(model, image_path: str, output_dir: str, config: dict, 
                          particle_type: str = 'Unknown',
-                         detection_mode: str = 'standard'):
+                         detection_mode: str = 'standard',
+                         template_bank: dict = None,
+                         template_refine_radius: int = 25,
+                         template_search_radius: int = 5):
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
     
@@ -192,7 +249,12 @@ def process_single_image(model, image_path: str, output_dir: str, config: dict,
     os.makedirs(weight_maps_dir, exist_ok=True)
     
     image = np.array(dt.LoadImage(image_path).resolve()).astype(np.float32)
-    detections, weights, _ = detect_particles(model, image, config, detection_mode)
+    detections, weights, _, orientations, _ = detect_particles(
+        model, image, config, detection_mode,
+        template_bank=template_bank,
+        template_refine_radius=template_refine_radius,
+        template_search_radius=template_search_radius,
+    )
     
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     
@@ -201,7 +263,7 @@ def process_single_image(model, image_path: str, output_dir: str, config: dict,
                          cutoff=config.get('cutoff', 0.9))
     
     detection_path = os.path.join(detections_dir, f"{base_name}.png")
-    save_image_with_detections(image, detections, detection_path)
+    save_image_with_detections(image, detections, detection_path, orientations=orientations)
     
     logger.info(f"Detected {len(detections)} particles in {image_path} (mode: {detection_mode})")
     return detections, base_output
@@ -216,8 +278,13 @@ def main():
     parser.add_argument('--config', type=str, default='src/config.yaml', help='Path to configuration file')
     parser.add_argument('--fps', type=float, default=30.0, help='Frames per second for output video')
     parser.add_argument('--no-video', action='store_true', help='Disable video generation')
-    parser.add_argument('--detection-mode', type=str, default='standard', choices=['standard', 'area'],
-                        help='Detection mode: standard (local maxima) or area (area-based filtering)')
+    parser.add_argument('--detection-mode', type=str, default='standard', choices=['standard', 'area', 'watershed', 'template'],
+                        help='Detection mode: standard (local maxima), area, watershed (touching particles), or template orientation')
+    parser.add_argument('--orientation-template', type=str, default=None, help='Template image path for template mode')
+    parser.add_argument('--template-angle-step', type=int, default=2, help='Template rotation step in degrees')
+    parser.add_argument('--template-phi-deg', type=float, default=None, help='Template reference phi in degrees')
+    parser.add_argument('--template-refine-radius', type=int, default=25, help='Center refine radius in pixels')
+    parser.add_argument('--template-search-radius', type=int, default=5, help='Template local search radius in pixels')
     args = parser.parse_args()
     
     config = utils.load_yaml(args.config)
@@ -230,15 +297,33 @@ def main():
     if args.detection_mode == 'area':
         area_cfg = config.get('area_detection', {})
         logger.info(f"Area params: min_area={area_cfg.get('min_area', 100)}, max_area={area_cfg.get('max_area', 2500)}")
+        template_bank = None
+    elif args.detection_mode == 'watershed':
+        ws_cfg = config.get('watershed_detection', {})
+        logger.info(f"Watershed params: min_distance={ws_cfg.get('min_distance', 10)}, min_area={ws_cfg.get('min_area', 20)}, cutoff={config.get('cutoff', 0.3)}")
+        template_bank = None
+    elif args.detection_mode == 'template':
+        if not args.orientation_template:
+            raise ValueError("--orientation-template is required for --detection-mode template")
+        template_bank = utils.build_template_bank(
+            sample_path=args.orientation_template,
+            angle_step=args.template_angle_step,
+            template_phi_deg=args.template_phi_deg,
+        )
+        logger.info(f"Template mode: template={args.orientation_template}, angle_step={args.template_angle_step}, refine_radius={args.template_refine_radius}, search_radius={args.template_search_radius}")
     else:
         logger.info(f"Detection params: alpha={config.get('alpha', 0.2)}, beta={config.get('beta', 0.8)}, cutoff={config.get('cutoff', 0.2)}")
+        template_bank = None
     
     model = load_trained_model(args.model, config)
     
     if os.path.isdir(args.input):
         results, base_output = process_directory(model, args.input, args.output, config, 
                                                   particle_type=args.particle,
-                                                  detection_mode=args.detection_mode)
+                                                  detection_mode=args.detection_mode,
+                                                  template_bank=template_bank,
+                                                  template_refine_radius=args.template_refine_radius,
+                                                  template_search_radius=args.template_search_radius)
         total = sum(r['num_detections'] for r in results)
         logger.info(f"\n=== Summary ===")
         logger.info(f"Processed {len(results)} images")
@@ -256,7 +341,10 @@ def main():
     else:
         detections, base_output = process_single_image(model, args.input, args.output, config, 
                                                         particle_type=args.particle,
-                                                        detection_mode=args.detection_mode)
+                                                        detection_mode=args.detection_mode,
+                                                        template_bank=template_bank,
+                                                        template_refine_radius=args.template_refine_radius,
+                                                        template_search_radius=args.template_search_radius)
         logger.info(f"\n=== Result ===")
         logger.info(f"Detected {len(detections)} particles")
         

@@ -145,10 +145,13 @@ class TrainingMetricsCallback(Callback):
                 import numpy as np
                 batch = next(iter(self.train_dataloader))
                 images = batch[0] if isinstance(batch, (list, tuple)) else batch
+                sample_subset = images[:4]
+                global_min = sample_subset.min().item()
+                global_max = sample_subset.max().item()
                 sample_images = []
-                for i, img in enumerate(images[:4]):
+                for i, img in enumerate(sample_subset):
                     arr = img.squeeze().cpu().numpy()
-                    arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-8)
+                    arr = (arr - global_min) / (global_max - global_min + 1e-8)
                     sample_images.append(wandb.Image(arr, caption=f"Augmented {i}"))
                 log_images("augmented_samples", sample_images, step=0)
             except Exception as e:
