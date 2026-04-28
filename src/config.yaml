@@ -81,6 +81,13 @@ dataset_types: ['04']
 gt_from_csv: False
 fps: 30
 
+# tracking (track_particles.py)
+tracking:
+  min_det_distance: 20    # within-frame NMS radius (px)
+  max_link_distance: 30   # max cross-frame linking distance (px)
+  min_track_length: 5     # discard tracks shorter than N frames
+  max_gap_frames: 10      # max interpolatable gap length (frames)
+
 lightning:
   accelerator: 'gpu'
   precision: '16-mixed'
