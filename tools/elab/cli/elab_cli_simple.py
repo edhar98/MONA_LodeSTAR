@@ -238,6 +238,21 @@ def cmd_link_resources(experiment_id: int, experiment_links: Optional[List[int]]
     return 0 if not results["errors"] else 2
 
 
+def cmd_patch_item(item_id: int, body: Optional[str] = None, body_file: Optional[str] = None) -> int:
+    """Patch an elab item's body."""
+    if body_file:
+        with open(body_file) as f:
+            body = f.read()
+    if not body:
+        print("No body provided (use --body or --body-file)", file=sys.stderr)
+        return 1
+    api_client: elabapi_python.ApiClient = build_api_client()
+    items_api: elabapi_python.ItemsApi = elabapi_python.ItemsApi(api_client)
+    items_api.patch_item(item_id, body={"body": body})
+    print(f"Item {item_id} updated successfully.")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(prog="elab-cli-simple")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -272,7 +287,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_test.add_argument("--items", dest="item_links", type=int, nargs="*", default=None,
                        help="List of item IDs to link")
 
-    p_link = subparsers.add_parser("link-resources", 
+    p_patch = subparsers.add_parser("patch-item",
+                                   help="Update an item's body text")
+    p_patch.add_argument("--item-id", dest="item_id", type=int, required=True,
+                        help="ID of the item to update")
+    p_patch.add_argument("--body", dest="body", type=str, default=None,
+                        help="HTML body string")
+    p_patch.add_argument("--body-file", dest="body_file", type=str, default=None,
+                        help="Path to file containing the HTML body")
+
+    p_link = subparsers.add_parser("link-resources",
                                   help="Link resources to an existing experiment")
     p_link.add_argument("--experiment-id", dest="experiment_id", type=int, required=True,
                        help="ID of the experiment to link resources to")
@@ -300,6 +324,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             team=args.team,
             experiment_links=args.experiment_links,
             item_links=args.item_links
+        )
+    elif args.command == "patch-item":
+        return cmd_patch_item(
+            item_id=args.item_id,
+            body=args.body,
+            body_file=args.body_file,
         )
     elif args.command == "link-resources":
         return cmd_link_resources(
