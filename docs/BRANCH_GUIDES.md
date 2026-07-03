@@ -86,7 +86,7 @@ This document provides detailed guides for each of the 6 branches in MONA_LodeST
    - User directories created: `uploads/`, `samples/`, `models/`, `results/`, `masks/`
 
 2. **File Upload**
-   - TDMS files: Extracted using `tools/tdms_to_png.py`
+   - TDMS files: handled through the installed `tdms_explorer.TDMSFileExplorer`
    - Images: Direct storage
    - Settings: Image dimensions, channel index, normalization
 
@@ -102,7 +102,7 @@ This document provides detailed guides for each of the 6 branches in MONA_LodeST
    - Single-model detection only; no `src/composite_model` or `trained_models_summary.yaml`
 
 ### Dependencies
-- **Imports:** `src/utils` (e.g. `load_yaml` for config defaults), `tools/tdms_to_png` (`extract_images_from_tdms`, `list_tdms_structure`, `save_images`, `save_video`). Committed code only; no branch-local paths.
+- **Imports:** `src/utils` (e.g. `load_yaml` for config defaults), `tdms_explorer.TDMSFileExplorer` from the MONA Python environment. Committed code only; no branch-local paths.
 - **External:** FastAPI, uvicorn, PIL, numpy, torch, cv2, matplotlib
 - **No modifications to Core code**
 
@@ -166,6 +166,10 @@ Baseline and compatibility notes: **BASELINE_REPORT.md** (path conventions, trai
   - Command-line detection interface
   - Supports batch processing
 
+- **`benchmark_trackpy.py`** - Trackpy linking baseline from existing detection CSVs
+
+- **`benchmark_trackpy_locate.py`** - `trackpy.locate` detector baseline against LodeSTAR detection CSVs
+
 #### Models
 - **`custom_lodestar.py`** - Paper-accurate LodeSTAR implementation
   - Follows exact architecture from research paper
@@ -208,6 +212,7 @@ Main training configuration:
 - Training parameters (epochs, batch size, learning rate)
 - Augmentation settings (multiplicative, additive noise)
 - Detection settings (alpha, beta, cutoff, mode)
+- Future detection-engine selection should expose `--detection-engine lodestar|trackpy`. On the JP benchmark frame, LodeSTAR `model.detect` took 180.1 ms on CUDA and 758.2 ms on CPU; `trackpy.locate(diameter=41)` took 265.1 ms on CPU.
 - Model architecture (n_transforms, lodestar_version)
 - Particle samples list
 
@@ -393,11 +398,10 @@ python debug/inspection/simple_architecture_diagram.py
 ### Key Files
 
 #### Data Processing Tools
-- **`tdms_to_png.py`** - TDMS to PNG/MP4 converter
-  - Converts TDMS files to PNG images or MP4 videos
-  - Parallel processing support
-  - Pattern matching for batch processing
-  - Automatic dtype conversion
+- **installed `tdms_explorer` package** - TDMS inspection/export package
+  - Exports TDMS images
+  - Creates MP4 animations
+  - Provides file/channel inspection and statistics
 
 - **`crop.py`** - Interactive image cropping
   - GUI for cropping images
@@ -480,13 +484,10 @@ python tools/elab_cli.py simple upload-test
 #### TDMS Conversion
 ```bash
 # Single file
-python tools/tdms_to_png.py input.tdms -o output_dir
-
-# Batch processing
-python tools/tdms_to_png.py "file_{:03d}.tdms" -o output --start-index 1 --num-files 10
+tdms-explorer export input.tdms output_dir
 
 # To MP4
-python tools/tdms_to_png.py input.tdms -o output --to-mp4 --fps 30
+tdms-explorer animate input.tdms output.mp4 --fps 30
 ```
 
 #### Image Cropping
@@ -518,7 +519,7 @@ python tools/merge_mp4.py video_dir/ -o merged.mp4
 
 ```bash
 # Convert TDMS to PNG
-python tools/tdms_to_png.py experiment.tdms -o output/
+tdms-explorer export experiment.tdms output/
 
 # Upload training results to ELAB
 export ELAB_HOST_URL="https://elab.example.com"

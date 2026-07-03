@@ -1,6 +1,6 @@
 # Quick Reference Guide
 
-**Last Updated:** 2026-01-27  
+**Last Updated:** 2026-05-16  
 **Branch:** Documentation & Reporting
 
 Quick reference for common commands, file locations, and import patterns in MONA_LodeSTAR.
@@ -61,9 +61,32 @@ python src/image_generator.py
 ### Detection
 
 ```bash
-# Detect particles in image
-python src/detect_particles.py --image input.png --model models/<run_id>/Janus_weights.pth --output output.png
+# Detect particles in image or image directory
+python src/detect_particles.py --model models/<run_id>/Janus_weights.pth --input input.png --output results/
+
+# Template-matching orientation detection
+python src/detect_particles.py --model models/<run_id>/Janus_weights.pth --input input.png --output results/ \
+  --detection-mode template --orientation-template crops/f000_d000_phi0245.9.png
 ```
+
+### Detection Engine Benchmarks
+
+```bash
+# Trackpy linking baseline from an existing LodeSTAR detection CSV
+python src/benchmark_trackpy.py \
+  --input detection_results/.../csv/<name>_detections.csv \
+  --output detection_results/.../tracks/trackpy_tracks.csv \
+  --min-dist 20 --search-range 30 --memory 10 --min-track 5
+
+# Compare trackpy.locate detections against a LodeSTAR detection CSV
+python src/benchmark_trackpy_locate.py \
+  --lodestar detection_results/.../csv/<name>_detections.csv \
+  --images data/.../images \
+  --output detection_results/.../benchmark/trackpy_locate \
+  --diameter 41 --min-dist 20 --match-distance 20
+```
+
+Single-frame timing result on `JP_Fe_wf_2_40_slm075_574_001.png`: LodeSTAR `model.detect` took 180.1 ms on CUDA and 758.2 ms on CPU; `trackpy.locate(diameter=41)` took 265.1 ms on CPU. LodeSTAR wins with CUDA; trackpy wins on CPU-only detection.
 
 ### Web Interface
 
@@ -97,14 +120,11 @@ python tools/elab_cli.py simple upload-test
 ### Data Processing Tools
 
 ```bash
-# Convert TDMS to PNG
-python tools/tdms_to_png.py input.tdms -o output_dir
+# Export TDMS images
+tdms-explorer export input.tdms output_dir
 
 # Convert TDMS to MP4
-python tools/tdms_to_png.py input.tdms -o output --to-mp4 --fps 30
-
-# Batch TDMS conversion
-python tools/tdms_to_png.py "file_{:03d}.tdms" -o output --start-index 1 --num-files 10
+tdms-explorer animate input.tdms output.mp4 --fps 30
 
 # Crop image
 python tools/crop.py input.png output_cropped.png
@@ -149,7 +169,9 @@ python cleanup_lightning_logs.py
 | Training | `src/train_single_particle.py` | Main training script |
 | Testing | `src/test_single_particle.py` | Single model testing |
 | Composite Testing | `src/test_composite_model.py` | Composite model testing |
-| Detection | `src/detect_particles.py` | Particle detection |
+| Detection | `src/detect_particles.py` | LodeSTAR particle detection |
+| Trackpy Linking Benchmark | `src/benchmark_trackpy.py` | Trackpy baseline from detection CSV |
+| Trackpy Locate Benchmark | `src/benchmark_trackpy_locate.py` | Compare `trackpy.locate` against LodeSTAR detections |
 | Composite Model | `src/composite_model.py` | Multi-class detection |
 | Custom LodeSTAR | `src/custom_lodestar.py` | Paper-accurate implementation |
 | Image Generator | `src/image_generator.py` | Synthetic image generation |
@@ -177,7 +199,7 @@ python cleanup_lightning_logs.py
 
 | File | Location | Purpose |
 |------|----------|---------|
-| TDMS Converter | `tools/tdms_to_png.py` | TDMS to PNG/MP4 |
+| TDMS Explorer | installed `tdms_explorer` package | TDMS export, animation, inspection package |
 | Image Cropper | `tools/crop.py` | Interactive cropping |
 | Mask Tool | `tools/mask.py` | Circular ROI masking |
 | Video Merger | `tools/merge_mp4.py` | MP4 merging |
@@ -218,16 +240,15 @@ python cleanup_lightning_logs.py
 import sys
 from pathlib import Path
 
-# Add src and tools to path (resolves to repo root via __file__)
+# Add src to path (resolves to repo root via __file__)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
 # Import from committed code only
-from tdms_to_png import extract_images_from_tdms
+from tdms_explorer import TDMSFileExplorer
 import utils
 ```
 
-Web uses from `tdms_to_png`: `extract_images_from_tdms(tdms_path, image_width, image_height, channel_index, group_name)`, `list_tdms_structure(tdms_path)`, `save_images(images, output_dir, base_name, ...)`, `save_video(images, output_path, fps, ...)`. See `tools/tdms_to_png.py` and TOOLS_VERIFICATION.md.
+Web currently imports `TDMSFileExplorer` from the installed `tdms_explorer` package, plus `src/utils.py`. In the MONA JupyterHub environment, use `/opt/mona_jupyterhub_env` or the `mona_env` alias and verify with `tdms-explorer --help` before starting `web.app`.
 
 ### Core Imports (src/*.py)
 

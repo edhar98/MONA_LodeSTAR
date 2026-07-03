@@ -1,0 +1,223 @@
+Ellipse:
+  additional_models:
+  - checkpoint_path: lightning_logs/kr669xun/checkpoints/Ellipse_final_epoch.ckpt
+    model_path: models/kr669xun/Ellipse_weights.pth
+    models_dir: models/kr669xun
+  - checkpoint_path: lightning_logs/16kr5vcc/checkpoints/Ellipse_final_epoch.ckpt
+    model_path: models/16kr5vcc/Ellipse_weights.pth
+    models_dir: models/16kr5vcc
+  - checkpoint_path: lightning_logs/9vh50zcq/checkpoints/Ellipse_final_epoch.ckpt
+    model_path: models/9vh50zcq/Ellipse_weights.pth
+    models_dir: models/9vh50zcq
+  checkpoint_path: lightning_logs/e767fhbg/checkpoints/Ellipse_final_epoch.ckpt
+  model_path: models/e767fhbg/Ellipse_weights.pth
+  models_dir: models/e767fhbg
+JP_1_5um_laser_2_35:
+  checkpoint_path: lightning_logs/bz4m949k/checkpoints/JP_1_5um_laser_2_35_final_epoch.ckpt
+  model_path: models/bz4m949k/JP_1_5um_laser_2_35_weights.pth
+  models_dir: models/bz4m949k
+JP_Fe_wf_2_40:
+  additional_models:
+  - checkpoint_path: lightning_logs/josunq7t/checkpoints/JP_Fe_wf_2_40_final_epoch.ckpt
+    model_path: models/josunq7t/JP_Fe_wf_2_40_weights.pth
+    models_dir: models/josunq7t
+  - checkpoint_path: lightning_logs/l8b863it/checkpoints/JP_Fe_wf_2_40_final_epoch.ckpt
+    model_path: models/l8b863it/JP_Fe_wf_2_40_weights.pth
+    models_dir: models/l8b863it
+  - checkpoint_path: lightning_logs/tf0alibs/checkpoints/JP_Fe_wf_2_40_final_epoch.ckpt
+    model_path: models/tf0alibs/JP_Fe_wf_2_40_weights.pth
+    models_dir: models/tf0alibs
+  - checkpoint_path: lightning_logs/4fafybof/checkpoints/JP_Fe_wf_2_40_final_epoch.ckpt
+    model_path: models/4fafybof/JP_Fe_wf_2_40_weights.pth
+    models_dir: models/4fafybof
+  checkpoint_path: lightning_logs/5m4rtzfx/checkpoints/JP_Fe_wf_2_40_final_epoch.ckpt
+  model_path: models/5m4rtzfx/JP_Fe_wf_2_40_weights.pth
+  models_dir: models/5m4rtzfx
+JP_Fe_wf_2_40_large:
+  checkpoint_path: lightning_logs/8970pkr9/checkpoints/JP_Fe_wf_2_40_large_final_epoch.ckpt
+  model_path: models/8970pkr9/JP_Fe_wf_2_40_large_weights.pth
+  models_dir: models/8970pkr9
+Janus:
+  additional_models:
+  - checkpoint_path: lightning_logs/hqqkquhk/checkpoints/Janus_final_epoch.ckpt
+    model_path: models/hqqkquhk/Janus_weights.pth
+    models_dir: models/hqqkquhk
+  - checkpoint_path: lightning_logs/j6mk3mw0/checkpoints/Janus_final_epoch.ckpt
+    model_path: models/j6mk3mw0/Janus_weights.pth
+    models_dir: models/j6mk3mw0
+  - checkpoint_path: lightning_logs/wshr2w3q/checkpoints/Janus_final_epoch.ckpt
+    model_path: models/wshr2w3q/Janus_weights.pth
+    models_dir: models/wshr2w3q
+  checkpoint_path: lightning_logs/euk2wnni/checkpoints/Janus_final_epoch.ckpt
+  model_path: models/euk2wnni/Janus_weights.pth
+  models_dir: models/euk2wnni
+PusherPuller:
+  additional_models:
+  - checkpoint_path: lightning_logs/w2ajwv2t/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/w2ajwv2t/PusherPuller_weights.pth
+    models_dir: models/w2ajwv2t
+  - checkpoint_path: lightning_logs/m677ww2u/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/m677ww2u/PusherPuller_weights.pth
+    models_dir: models/m677ww2u
+  - checkpoint_path: lightning_logs/pb2ov50e/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/pb2ov50e/PusherPuller_weights.pth
+    models_dir: models/pb2ov50e
+  - checkpoint_path: lightning_logs/3xmtzf1t/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/3xmtzf1t/PusherPuller_weights.pth
+    models_dir: models/3xmtzf1t
+  - checkpoint_path: lightning_logs/mpiclvmq/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/mpiclvmq/PusherPuller_weights.pth
+    models_dir: models/mpiclvmq
+  - checkpoint_path: lightning_logs/y31d8dme/checkpoints/PusherPuller_final_epoch.ckpt
+    model_path: models/y31d8dme/PusherPuller_weights.pth
+    models_dir: models/y31d8dme
+  checkpoint_path: lightning_logs/4p38uxku/checkpoints/PusherPuller_final_epoch.ckpt
+  model_path: models/4p38uxku/PusherPuller_weights.pth
+  models_dir: models/4p38uxku
+Ring:
+  additional_models:
+  - checkpoint_path: lightning_logs/f6hcei30/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/f6hcei30/Ring_weights.pth
+    models_dir: models/f6hcei30
+  - checkpoint_path: lightning_logs/jqc63ccs/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/jqc63ccs/Ring_weights.pth
+    models_dir: models/jqc63ccs
+  - checkpoint_path: lightning_logs/yhcbtljv/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/yhcbtljv/Ring_weights.pth
+    models_dir: models/yhcbtljv
+  - checkpoint_path: lightning_logs/0qnajzvh/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/0qnajzvh/Ring_weights.pth
+    models_dir: models/0qnajzvh
+  - checkpoint_path: lightning_logs/9ne6i5jr/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/9ne6i5jr/Ring_weights.pth
+    models_dir: models/9ne6i5jr
+  - checkpoint_path: lightning_logs/6sk59whi/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/6sk59whi/Ring_weights.pth
+    models_dir: models/6sk59whi
+  - checkpoint_path: lightning_logs/7npmh9jc/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/7npmh9jc/Ring_weights.pth
+    models_dir: models/7npmh9jc
+  - checkpoint_path: lightning_logs/szug75j1/checkpoints/Ring_final_epoch.ckpt
+    model_path: models/szug75j1/Ring_weights.pth
+    models_dir: models/szug75j1
+  checkpoint_path: lightning_logs/d9baytr5/checkpoints/Ring_final_epoch.ckpt
+  model_path: models/d9baytr5/Ring_weights.pth
+  models_dir: models/d9baytr5
+Rod:
+  additional_models:
+  - checkpoint_path: lightning_logs/5z4h6luk/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/5z4h6luk/Rod_weights.pth
+    models_dir: models/5z4h6luk
+  - checkpoint_path: lightning_logs/qfh9ov82/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/qfh9ov82/Rod_weights.pth
+    models_dir: models/qfh9ov82
+  - checkpoint_path: lightning_logs/nzexvpbk/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/nzexvpbk/Rod_weights.pth
+    models_dir: models/nzexvpbk
+  - checkpoint_path: lightning_logs/je99n0vr/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/je99n0vr/Rod_weights.pth
+    models_dir: models/je99n0vr
+  - checkpoint_path: lightning_logs/q47j36s7/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/q47j36s7/Rod_weights.pth
+    models_dir: models/q47j36s7
+  - checkpoint_path: lightning_logs/5kme5mtf/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/5kme5mtf/Rod_weights.pth
+    models_dir: models/5kme5mtf
+  - checkpoint_path: lightning_logs/i9joiq67/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/i9joiq67/Rod_weights.pth
+    models_dir: models/i9joiq67
+  - checkpoint_path: lightning_logs/ppthmjfn/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/ppthmjfn/Rod_weights.pth
+    models_dir: models/ppthmjfn
+  - checkpoint_path: lightning_logs/ep09y9bt/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/ep09y9bt/Rod_weights.pth
+    models_dir: models/ep09y9bt
+  - checkpoint_path: lightning_logs/gwmnlh7g/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/gwmnlh7g/Rod_weights.pth
+    models_dir: models/gwmnlh7g
+  - checkpoint_path: lightning_logs/xm5sw3sn/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/xm5sw3sn/Rod_weights.pth
+    models_dir: models/xm5sw3sn
+  - checkpoint_path: lightning_logs/8n990wh2/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/8n990wh2/Rod_weights.pth
+    models_dir: models/8n990wh2
+  - checkpoint_path: lightning_logs/8svgbb4g/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/8svgbb4g/Rod_weights.pth
+    models_dir: models/8svgbb4g
+  - checkpoint_path: lightning_logs/u9i99zvl/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/u9i99zvl/Rod_weights.pth
+    models_dir: models/u9i99zvl
+  - checkpoint_path: lightning_logs/39g7rcno/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/39g7rcno/Rod_weights.pth
+    models_dir: models/39g7rcno
+  - checkpoint_path: lightning_logs/ehc57fof/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/ehc57fof/Rod_weights.pth
+    models_dir: models/ehc57fof
+  - checkpoint_path: lightning_logs/2ksz5pl3/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/2ksz5pl3/Rod_weights.pth
+    models_dir: models/2ksz5pl3
+  - checkpoint_path: lightning_logs/p5a87b5n/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/p5a87b5n/Rod_weights.pth
+    models_dir: models/p5a87b5n
+  - checkpoint_path: lightning_logs/vi1y7cso/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/vi1y7cso/Rod_weights.pth
+    models_dir: models/vi1y7cso
+  - checkpoint_path: lightning_logs/ekhk4o9l/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/ekhk4o9l/Rod_weights.pth
+    models_dir: models/ekhk4o9l
+  - checkpoint_path: lightning_logs/8f592a27/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/8f592a27/Rod_weights.pth
+    models_dir: models/8f592a27
+  - checkpoint_path: lightning_logs/3rd5sifo/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/3rd5sifo/Rod_weights.pth
+    models_dir: models/3rd5sifo
+  - checkpoint_path: lightning_logs/v1oac5as/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/v1oac5as/Rod_weights.pth
+    models_dir: models/v1oac5as
+  - checkpoint_path: lightning_logs/qq6gdl4e/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/qq6gdl4e/Rod_weights.pth
+    models_dir: models/qq6gdl4e
+  - checkpoint_path: lightning_logs/l7kbn37q/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/l7kbn37q/Rod_weights.pth
+    models_dir: models/l7kbn37q
+  - checkpoint_path: lightning_logs/ssnp0dbm/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/ssnp0dbm/Rod_weights.pth
+    models_dir: models/ssnp0dbm
+  - checkpoint_path: lightning_logs/sk8p3ipf/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/sk8p3ipf/Rod_weights.pth
+    models_dir: models/sk8p3ipf
+  - checkpoint_path: lightning_logs/if1fmu2t/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/if1fmu2t/Rod_weights.pth
+    models_dir: models/if1fmu2t
+  - checkpoint_path: lightning_logs/361c2yyf/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/361c2yyf/Rod_weights.pth
+    models_dir: models/361c2yyf
+  - checkpoint_path: lightning_logs/i5c4qb4k/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/i5c4qb4k/Rod_weights.pth
+    models_dir: models/i5c4qb4k
+  - checkpoint_path: lightning_logs/91gq350d/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/91gq350d/Rod_weights.pth
+    models_dir: models/91gq350d
+  - checkpoint_path: lightning_logs/9trovxtl/checkpoints/Rod_final_epoch.ckpt
+    model_path: models/9trovxtl/Rod_weights.pth
+    models_dir: models/9trovxtl
+  checkpoint_path: lightning_logs/uaqqndn3/checkpoints/Rod_final_epoch.ckpt
+  model_path: models/uaqqndn3/Rod_weights.pth
+  models_dir: models/uaqqndn3
+Spot:
+  additional_models:
+  - checkpoint_path: lightning_logs/2rjgh6lu/checkpoints/Spot_final_epoch.ckpt
+    model_path: models/2rjgh6lu/Spot_weights.pth
+    models_dir: models/2rjgh6lu
+  - checkpoint_path: lightning_logs/62yabuqy/checkpoints/Spot_final_epoch.ckpt
+    model_path: models/62yabuqy/Spot_weights.pth
+    models_dir: models/62yabuqy
+  - checkpoint_path: lightning_logs/i56t2133/checkpoints/Spot_final_epoch.ckpt
+    model_path: models/i56t2133/Spot_weights.pth
+    models_dir: models/i56t2133
+  - checkpoint_path: lightning_logs/w4mrwg80/checkpoints/Spot_final_epoch.ckpt
+    model_path: models/w4mrwg80/Spot_weights.pth
+    models_dir: models/w4mrwg80
+  checkpoint_path: lightning_logs/g0phqk6l/checkpoints/Spot_final_epoch.ckpt
+  model_path: models/g0phqk6l/Spot_weights.pth
+  models_dir: models/g0phqk6l

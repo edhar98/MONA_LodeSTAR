@@ -1,6 +1,6 @@
 # MONA_LodeSTAR Architecture Overview
 
-**Last Updated:** 2026-01-27  
+**Last Updated:** 2026-05-16  
 **Branch:** Documentation & Reporting
 
 ## 6-Branch Workflow Structure
@@ -24,7 +24,7 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 
 **Dependencies:**
 - Uses: `src/utils.py` (committed code only)
-- Uses: `tools/tdms_to_png.py` (committed code only)
+- Uses: installed `tdms_explorer.TDMSFileExplorer`
 - External: FastAPI, uvicorn, jupyter-server-proxy
 
 **Coordination Rules:**
@@ -118,6 +118,7 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 - **Training:** `train_single_particle.py`, `train_enhanced.py`
 - **Testing:** `test_single_particle.py`, `test_composite_model.py`
 - **Detection:** `detect_particles.py`
+- **Detection Benchmarks:** `benchmark_trackpy.py`, `benchmark_trackpy_locate.py`
 - **Models:** `custom_lodestar.py`, `composite_model.py`
 - **Data Generation:** `image_generator.py`, `generate_samples.py`
 - **Utilities:** `utils.py`
@@ -129,7 +130,7 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 - **Data:** `data/<username>/` (runtime, gitignored)
 
 ### Tools (`tools/`)
-- **Data Processing:** `tdms_to_png.py`, `crop.py`, `mask.py`, `merge_mp4.py`
+- **Data Processing:** installed `tdms_explorer`, `crop.py`, `mask.py`, `merge_mp4.py`
 - **ELAB Integration:** `elab/` directory
 - **Logging:** `wandb_logging.py`
 
@@ -166,7 +167,7 @@ src/composite_model.py
 ### Web Dependencies
 ```
 web/app.py
-  ├─ Imports: tools/tdms_to_png (extract_images_from_tdms)
+  ├─ Imports: tdms_explorer.TDMSFileExplorer
   └─ Imports: src/utils
 ```
 
@@ -182,6 +183,12 @@ tools/wandb_logging.py
 ```
 
 ## Coordination Rules
+
+### Detection Engine Direction
+- Current production detector is LodeSTAR via `src/detect_particles.py`
+- `trackpy.locate` is a strong classical baseline for position-only detection and should be exposed through a future `--detection-engine lodestar|trackpy` flag
+- Single-frame benchmark on `JP_Fe_wf_2_40_slm075_574_001.png`: LodeSTAR `model.detect` took 180.1 ms on CUDA and 758.2 ms on CPU; `trackpy.locate(diameter=41)` took 265.1 ms on CPU
+- Downstream orientation, tracking, gap interpolation, and ABP analysis should consume a shared detection CSV schema regardless of engine
 
 ### Git Strategy
 - Two branches: `dev` (active development) and `main` (stable releases)

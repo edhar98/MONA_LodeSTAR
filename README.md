@@ -24,6 +24,8 @@ MONA_LodeSTAR/
 │   ├── image_generator.py         # Synthetic image generation
 │   ├── train_single_particle.py   # Training pipeline
 │   ├── test_single_particle.py    # Testing and evaluation
+│   ├── benchmark_trackpy.py       # Trackpy linking baseline
+│   ├── benchmark_trackpy_locate.py # Trackpy locate vs LodeSTAR comparison
 │   ├── composite_model.py         # Composite model for multi-class detection
 │   ├── custom_lodestar.py         # Paper-accurate LodeSTAR implementation
 │   ├── config.yaml                # Configuration file
@@ -35,7 +37,6 @@ MONA_LodeSTAR/
 │   ├── templates/index.html        # Web UI
 │   └── data/                      # User data (runtime)
 ├── tools/                         # Data processing utilities
-│   ├── tdms_to_png.py             # TDMS to PNG/MP4 converter
 │   ├── crop.py                    # Interactive image cropping
 │   ├── mask.py                    # Circular ROI masking
 │   ├── merge_mp4.py               # MP4 video merger
@@ -201,6 +202,21 @@ The system generates four types of test datasets:
 - **Orientation Accuracy**: Angular error for oriented particles
 - **Processing Speed**: Frames per second
 
+### Detection Engine Baseline
+
+LodeSTAR is the learned detector. `trackpy.locate` is now used as a classical microscopy baseline for position-only detection and should be available through a future engine flag such as `--detection-engine lodestar|trackpy`.
+
+Benchmark on one 1024x1024 JP frame (`JP_Fe_wf_2_40_slm075_574_001.png`, detector call only, warmup excluded):
+
+| Engine | Hardware | Detections | Mean time |
+|--------|----------|------------|-----------|
+| LodeSTAR `model.detect` | CUDA | 120 | 180.1 ms |
+| `trackpy.locate(diameter=41)` | CPU | 117 | 265.1 ms |
+| LodeSTAR `model.detect` | CPU | 120 | 758.2 ms |
+| `trackpy.locate(diameter=41)` | CPU | 117 | 265.7 ms |
+
+Use LodeSTAR when GPU inference or learned morphology is required. Use `trackpy.locate` as a strong CPU baseline for clean blob-like particles.
+
 ## Composite Model Approach
 
 The composite model enables **multi-class particle detection and classification** by combining multiple specialized single-particle models.
@@ -305,10 +321,10 @@ The system integrates with Weights & Biases for:
 
 ## Performance
 
-- **Training Time**: ~2-4 hours per particle type (200 epochs)
-- **Inference Speed**: 100+ FPS on GPU
-- **Memory Usage**: 2-4 GB VRAM during training
-- **Model Size**: ~1MB per trained model
+- **Training Time**: depends on particle type, crop pool, epochs, and GPU availability
+- **Detection Speed**: on one 1024x1024 JP frame, LodeSTAR took 180.1 ms on CUDA and 758.2 ms on CPU; `trackpy.locate(diameter=41)` took 265.1 ms on CPU
+- **Memory Usage**: depends on architecture, image size, batch size, and transforms
+- **Model Size**: typically small single-particle `.pth` weights
 
 ## Troubleshooting
 

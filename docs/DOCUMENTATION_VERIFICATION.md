@@ -1,6 +1,6 @@
 # Documentation Verification Report
 
-**Date:** 2026-01-27  
+**Date:** 2026-05-16  
 **Branch:** Documentation & Reporting
 
 ## Summary
@@ -36,7 +36,7 @@ Verification of existing documentation files to ensure they are current and accu
 **Status:** Updated
 
 **Verification:**
-- ✅ Documents data processing tools (tdms_to_png, crop, mask, merge_mp4)
+- ✅ Documents data processing tools (TDMSExplorer, crop, mask, merge_mp4)
 - ✅ Documents wandb_logging
 - ⚠️ Missing ELAB integration documentation
 
