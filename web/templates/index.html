@@ -131,11 +131,11 @@
             <div id="loginError" class="login-error hidden"></div>
             <div class="form-group">
                 <label>Username</label>
-                <input type="text" id="loginUsername" placeholder="Enter username">
+                <input type="text" id="loginUsername" placeholder="Enter username" autocomplete="off">
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="loginPassword" placeholder="Enter password">
+                <input type="password" id="loginPassword" placeholder="Enter password" autocomplete="off">
             </div>
             <div class="btn-group">
                 <button class="btn btn-primary" id="loginBtn">Login</button>
@@ -551,27 +551,46 @@
         const weightmapCanvas = document.getElementById('weightmapCanvas');
         const weightmapCtx = weightmapCanvas ? weightmapCanvas.getContext('2d') : null;
 
-        // Auth
+        const LOGIN_TIMEOUT_MS = 15000;
+        function setLoginError(msg) {
+            const el = document.getElementById('loginError');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+        }
+        function setLoginButtonsEnabled(enabled) {
+            document.getElementById('loginBtn').disabled = !enabled;
+            document.getElementById('registerBtn').disabled = !enabled;
+            document.getElementById('loginBtn').textContent = enabled ? 'Login' : 'Signing in…';
+            document.getElementById('registerBtn').textContent = enabled ? 'Register' : 'Registering…';
+        }
+
         document.getElementById('loginBtn').onclick = async () => {
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
             if (!username || !password) return;
-            
+            setLoginButtonsEnabled(false);
+            document.getElementById('loginError').classList.add('hidden');
             try {
+                const ctrl = new AbortController();
+                const t = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
                 const res = await fetch(`${API_BASE}/auth/login`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username, password})
+                    body: JSON.stringify({username, password}),
+                    signal: ctrl.signal
                 });
+                clearTimeout(t);
                 const data = await res.json();
                 if (data.error) {
-                    document.getElementById('loginError').textContent = data.error;
-                    document.getElementById('loginError').classList.remove('hidden');
+                    setLoginError(data.error);
                 } else {
                     loginSuccess(username);
                 }
             } catch (e) {
-                document.getElementById('loginError').textContent = 'Login failed';
-                document.getElementById('loginError').classList.remove('hidden');
+                setLoginError(e.name === 'AbortError' ? 'Connection timed out' : 'Login failed');
+            } finally {
+                setLoginButtonsEnabled(true);
+                document.getElementById('loginBtn').textContent = 'Login';
+                document.getElementById('registerBtn').textContent = 'Register';
             }
         };
 
@@ -579,22 +598,29 @@
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
             if (!username || !password) return;
-            
+            setLoginButtonsEnabled(false);
+            document.getElementById('loginError').classList.add('hidden');
             try {
+                const ctrl = new AbortController();
+                const t = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
                 const res = await fetch(`${API_BASE}/auth/register`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username, password})
+                    body: JSON.stringify({username, password}),
+                    signal: ctrl.signal
                 });
+                clearTimeout(t);
                 const data = await res.json();
                 if (data.error) {
-                    document.getElementById('loginError').textContent = data.error;
-                    document.getElementById('loginError').classList.remove('hidden');
+                    setLoginError(data.error);
                 } else {
                     loginSuccess(username);
                 }
             } catch (e) {
-                document.getElementById('loginError').textContent = 'Registration failed';
-                document.getElementById('loginError').classList.remove('hidden');
+                setLoginError(e.name === 'AbortError' ? 'Connection timed out' : 'Registration failed');
+            } finally {
+                setLoginButtonsEnabled(true);
+                document.getElementById('loginBtn').textContent = 'Login';
+                document.getElementById('registerBtn').textContent = 'Register';
             }
         };
 
@@ -644,16 +670,17 @@
             } catch (e) {}
         }
 
-        // Check saved user
         (async function() {
             const saved = localStorage.getItem('mona_user');
-            if (saved) {
-                try {
-                    const res = await fetch(`${API_BASE}/auth/check/${saved}`);
-                    const data = await res.json();
-                    if (data.exists) loginSuccess(saved);
-                } catch (e) {}
-            }
+            if (!saved) return;
+            try {
+                const ctrl = new AbortController();
+                const t = setTimeout(() => ctrl.abort(), 5000);
+                const res = await fetch(`${API_BASE}/auth/check/${saved}`, { signal: ctrl.signal });
+                clearTimeout(t);
+                const data = await res.json();
+                if (data.exists) loginSuccess(saved);
+            } catch (e) {}
         })();
 
         // Navigation

@@ -2,41 +2,41 @@
 
 Utilities for MONA LodeSTAR data processing and image manipulation.
 
-## `tdms_to_png.py`
+## TDMS Explorer
 
-Converts TDMS files to PNG images with optional MP4 video output.
+TDMS inspection/export is provided by the installed `tdms_explorer` package in the MONA Python environment, not by a vendored copy under `tools/`.
 
-- Parallel processing
-- Pattern matching for batch processing
-- Automatic dtype conversion (uint8, uint16, float32)
-- Normalization control (`--normed` / `--no-normed`)
-- Skip existing files (resume capability)
-- TDMS structure inspection
-
-```bash
-pip install nptdms pillow numpy
-pip install imageio imageio-ffmpeg  # for MP4
-```
+- File/channel inspection
+- Image export
+- MP4 animation export
+- Raw data access
+- Statistics
 
 ```bash
-python tools/tdms_to_png.py input.tdms -o output_dir
-python tools/tdms_to_png.py "file_{:03d}.tdms" -o output --start-index 1 --num-files 10
-python tools/tdms_to_png.py input.tdms --list-structure
-python tools/tdms_to_png.py input.tdms -o output --to-mp4 --fps 30
-python tools/tdms_to_png.py input.tdms -o output --no-normed  # preserve raw values
+tdms-explorer info input.tdms
+tdms-explorer export input.tdms output_dir
+tdms-explorer export input.tdms output_dir --start 0 --end 99 --prefix frame_
+tdms-explorer export input.tdms output_dir --dtype float32 --format tiff
+tdms-explorer export input.tdms output_dir --to-mp4 --fps 30
+tdms-explorer animate input.tdms output.mp4 --fps 30
 ```
+
+`convert` is deprecated; use `export` instead.
 
 Jupyter:
 ```python
-!python tools/tdms_to_png.py data/experiment.tdms -o output --to-mp4 --fps 30
+!tdms-explorer animate data/experiment.tdms output.mp4 --fps 30
 ```
 
-Standalone executable (build with `./build_tdms_to_png.sh`):
+The web app imports `TDMSFileExplorer` from the installed `tdms_explorer` package.
+
+If JupyterLab shows two TDMS Explorer launcher tiles, check for stale package metadata:
+
 ```bash
-./tdms_to_png input.tdms -o output --to-mp4 --fps 30
+/opt/mona_jupyterhub_env/bin/python -c "import importlib.metadata as md; print([f'{ep.name} {ep.dist.version}' for ep in md.entry_points(group='jupyter_serverproxy_servers') if ep.name == 'tdms-explorer'])"
 ```
 
-See [tdms_to_png_README.md](tdms_to_png_README.md) for full documentation.
+In the current JupyterHub image, the duplicate is caused by old `~dms_explorer-1.0.0.dist-info` metadata next to the active `tdms_explorer-1.1.0.dist-info`. Removing it requires write access to `/opt/mona_jupyterhub_env`.
 
 ---
 

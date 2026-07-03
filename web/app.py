@@ -26,9 +26,8 @@ from starlette.requests import Request
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
-from tdms_to_png import extract_images_from_tdms
+from tdms_explorer import TDMSFileExplorer
 import utils
 
 WEB_DIR = Path(__file__).parent
@@ -131,10 +130,6 @@ class MaskRequest(BaseModel):
     mask_data: str
 
 class TdmsSettings(BaseModel):
-    image_width: int = 1024
-    image_height: int = 1024
-    channel_index: int = 0
-    group_name: Optional[str] = None
     normalize: bool = True
 
 @asynccontextmanager
@@ -178,17 +173,16 @@ async def general_exception_handler(request, exc):
 def extract_frame(file_path: Path, file_info: dict, index: int):
     if file_info["type"] == "tdms":
         settings = file_info.get("tdms_settings", {})
-        width = settings.get("image_width", 1024)
-        height = settings.get("image_height", 1024)
-        channel = settings.get("channel_index", 0)
-        group = settings.get("group_name")
         normalize = settings.get("normalize", True)
-        
-        images = extract_images_from_tdms(file_path, image_width=width, image_height=height, channel_index=channel, group_name=group)
-        
+
+        explorer = TDMSFileExplorer(str(file_path))
+        images = explorer.extract_images()
+        if images is None:
+            raise ValueError(f"No image data found in {file_path}")
+
         if index < 0 or index >= len(images):
             raise ValueError(f"Frame index {index} out of range")
-        
+
         frame = images[index].astype(np.float32)
         if normalize:
             fmin, fmax = frame.min(), frame.max()
@@ -201,7 +195,7 @@ def extract_frame(file_path: Path, file_info: dict, index: int):
                 frame = (images[index] >> 8).astype(np.uint8)
             else:
                 frame = np.clip(frame, 0, 255).astype(np.uint8)
-        
+
         return Image.fromarray(frame, mode='L'), len(images)
     else:
         img = Image.open(file_path)
@@ -277,9 +271,6 @@ class ChunkUploadStart(BaseModel):
     username: str
     filename: str
     total_size: int
-    image_width: int = 1024
-    image_height: int = 1024
-    channel_index: int = 0
     normalize: bool = True
 
 @app.post("/upload/start")
@@ -303,9 +294,6 @@ async def upload_start(data: ChunkUploadStart):
         "upload_id": file_id,
         "file_path": str(file_path),
         "settings": {
-            "image_width": data.image_width,
-            "image_height": data.image_height,
-            "channel_index": data.channel_index,
             "normalize": data.normalize
         }
     }
@@ -339,9 +327,6 @@ class ChunkUploadComplete(BaseModel):
     username: str
     upload_id: str
     filename: str
-    image_width: int = 1024
-    image_height: int = 1024
-    channel_index: int = 0
     normalize: bool = True
 
 @app.post("/upload/complete")
@@ -366,28 +351,18 @@ async def upload_complete(data: ChunkUploadComplete):
         "type": "tdms" if ext == ".tdms" else "image",
         "frame_count": 1,
         "tdms_settings": {
-            "image_width": data.image_width,
-            "image_height": data.image_height,
-            "channel_index": data.channel_index,
             "normalize": data.normalize
         }
     }
-    
+
     if ext == ".tdms":
         try:
-            from nptdms import TdmsFile
-            tdms_file = TdmsFile.read(str(file_path))
-            groups = tdms_file.groups()
-            if groups:
-                channels = groups[0].channels()
-                if data.channel_index < len(channels):
-                    raw_data = channels[data.channel_index][:]
-                    total_pixels = raw_data.size
-                    image_size = data.image_width * data.image_height
-                    if total_pixels % image_size == 0:
-                        file_info["frame_count"] = total_pixels // image_size
-                        file_info["width"] = data.image_width
-                        file_info["height"] = data.image_height
+            explorer = TDMSFileExplorer(str(file_path))
+            images = explorer.extract_images()
+            if images is not None:
+                file_info["frame_count"] = images.shape[0]
+                file_info["width"] = images.shape[2]
+                file_info["height"] = images.shape[1]
         except Exception as e:
             print(f"TDMS parse error: {e}")
     else:
@@ -413,23 +388,13 @@ async def upload_file(request: Request):
     
     username = form.get("username")
     file = form.get("file")
-    image_width = form.get("image_width", "1024")
-    image_height = form.get("image_height", "1024")
-    channel_index = form.get("channel_index", "0")
     normalize = form.get("normalize", "true")
-    
+
     if not username:
         return JSONResponse(status_code=400, content={"error": "Missing username"})
     if not file:
         return JSONResponse(status_code=400, content={"error": "Missing file"})
-    
-    try:
-        image_width = int(image_width)
-        image_height = int(image_height)
-        channel_index = int(channel_index)
-    except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": f"Invalid number: {e}"})
-    
+
     normalize_bool = str(normalize).lower() in ("true", "1", "yes")
     try:
         if username not in users:
@@ -458,27 +423,20 @@ async def upload_file(request: Request):
             "path": str(file_path),
             "type": "tdms" if ext == ".tdms" else "image",
             "frame_count": 1,
-            "tdms_settings": {"image_width": image_width, "image_height": image_height, "channel_index": channel_index, "normalize": normalize_bool}
+            "tdms_settings": {"normalize": normalize_bool}
         }
-        
+
         if ext == ".tdms":
             try:
-                from nptdms import TdmsFile
-                tdms_file = TdmsFile.read(str(file_path))
-                groups = tdms_file.groups()
-                if groups:
-                    channels = groups[0].channels()
-                    if channel_index < len(channels):
-                        data = channels[channel_index][:]
-                        total_pixels = data.size
-                        image_size = image_width * image_height
-                        if total_pixels % image_size == 0:
-                            file_info["frame_count"] = total_pixels // image_size
-                            file_info["width"] = image_width
-                            file_info["height"] = image_height
-                            file_info["dtype"] = str(data.dtype)
-                        else:
-                            file_info["error"] = f"Data size {total_pixels} not divisible by {image_size}"
+                explorer = TDMSFileExplorer(str(file_path))
+                images = explorer.extract_images()
+                if images is not None:
+                    file_info["frame_count"] = images.shape[0]
+                    file_info["width"] = images.shape[2]
+                    file_info["height"] = images.shape[1]
+                    file_info["dtype"] = str(images.dtype)
+                else:
+                    file_info["error"] = "Could not auto-detect image dimensions"
             except Exception as e:
                 file_info["error"] = str(e)
         else:
@@ -855,67 +813,50 @@ def run_detection_on_image(lodestar, img: Image.Image, alpha: float, beta: float
 async def upload_detect_file(
     username: str = Form(None),
     file: UploadFile = File(None),
-    image_width: str = Form("1024"),
-    image_height: str = Form("1024"),
-    channel_index: str = Form("0"),
     normalize: str = Form("true")
 ):
     if not username:
         return JSONResponse(status_code=400, content={"error": "Missing username"})
     if not file:
         return JSONResponse(status_code=400, content={"error": "Missing file"})
-    
-    try:
-        image_width = int(image_width)
-        image_height = int(image_height)
-        channel_index = int(channel_index)
-    except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": f"Invalid number: {e}"})
-    
+
     normalize_bool = normalize.lower() in ("true", "1", "yes")
     if username not in users:
         return JSONResponse(status_code=401, content={"error": "User not found"})
-    
+
     file_id = str(uuid.uuid4())[:8]
     filename = file.filename or f"detect_{file_id}"
     ext = Path(filename).suffix.lower()
-    
+
     if ext not in [".tdms", ".jpg", ".jpeg", ".png", ".tif", ".tiff"]:
         return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
-    
+
     user_dir = get_user_dir(username)
     file_path = user_dir / "uploads" / f"detect_{file_id}{ext}"
-    
+
     content = await file.read()
     with open(file_path, "wb") as f:
         f.write(content)
-    
+
     file_info = {
         "id": file_id,
         "filename": filename,
         "path": str(file_path),
         "type": "tdms" if ext == ".tdms" else "image",
         "frame_count": 1,
-        "tdms_settings": {"image_width": image_width, "image_height": image_height, "channel_index": channel_index, "normalize": normalize_bool}
+        "tdms_settings": {"normalize": normalize_bool}
     }
-    
+
     if ext == ".tdms":
         try:
-            from nptdms import TdmsFile
-            tdms_file = TdmsFile.read(str(file_path))
-            groups = tdms_file.groups()
-            if groups:
-                channels = groups[0].channels()
-                if channel_index < len(channels):
-                    data = channels[channel_index][:]
-                    total_pixels = data.size
-                    image_size = image_width * image_height
-                    if total_pixels % image_size == 0:
-                        file_info["frame_count"] = total_pixels // image_size
-                        file_info["width"] = image_width
-                        file_info["height"] = image_height
-                    else:
-                        file_info["error"] = f"Data size {total_pixels} not divisible by {image_size}"
+            explorer = TDMSFileExplorer(str(file_path))
+            images = explorer.extract_images()
+            if images is not None:
+                file_info["frame_count"] = images.shape[0]
+                file_info["width"] = images.shape[2]
+                file_info["height"] = images.shape[1]
+            else:
+                file_info["error"] = "Could not auto-detect image dimensions"
         except Exception as e:
             file_info["error"] = str(e)
     else:
@@ -1001,9 +942,8 @@ async def get_tdms_structure(username: str, file_id: str):
     if file_info["type"] != "tdms":
         raise HTTPException(status_code=400, detail="Not a TDMS file")
     
-    from tdms_to_png import list_tdms_structure
-    structure = list_tdms_structure(Path(file_info["path"]))
-    return {"structure": structure}
+    explorer = TDMSFileExplorer(str(file_info["path"]))
+    return {"structure": explorer.list_contents()}
 
 class TdmsExportRequest(BaseModel):
     username: str
@@ -1028,54 +968,49 @@ async def export_tdms(request: TdmsExportRequest):
     if file_info["type"] != "tdms":
         raise HTTPException(status_code=400, detail="Not a TDMS file")
     
-    from tdms_to_png import extract_images_from_tdms, save_images, save_video
     import zipfile
-    
-    settings = file_info.get("tdms_settings", {})
-    images = extract_images_from_tdms(
-        Path(file_info["path"]),
-        image_width=settings.get("image_width", 1024),
-        image_height=settings.get("image_height", 1024),
-        channel_index=settings.get("channel_index", 0)
-    )
-    
+
+    explorer = TDMSFileExplorer(str(file_info["path"]))
+    if explorer.extract_images() is None:
+        raise HTTPException(status_code=400, detail="Could not extract images from TDMS file")
+
     start = request.start_frame
-    end = request.end_frame if request.end_frame is not None else len(images)
-    images = images[start:end]
-    
+    end = request.end_frame
     dtype_map = {"uint8": np.uint8, "uint16": np.uint16}
     dtype = dtype_map.get(request.dtype, np.uint8)
-    
+
     user_dir = get_user_dir(request.username)
     base_name = request.output_name or Path(file_info["filename"]).stem
-    
+    frame_count = (end if end is not None else explorer.extract_images().shape[0]) - start
+
     if request.output_format == "mp4":
         output_path = user_dir / "results" / f"{base_name}.mp4"
-        save_video(images, output_path, fps=request.fps, dtype=dtype, force=True, normed=request.normalize)
-        
+        explorer.write_video(str(output_path), start_frame=start, end_frame=end,
+                             fps=request.fps, dtype=dtype, force=True, normed=request.normalize)
+
         if request.save_to_server:
-            return {"status": "saved", "path": str(output_path), "frames": len(images)}
-        
+            return {"status": "saved", "path": str(output_path), "frames": frame_count}
+
         with open(output_path, "rb") as f:
             video_data = base64.b64encode(f.read()).decode()
-        return {"status": "ready", "data": video_data, "filename": f"{base_name}.mp4", "frames": len(images)}
-    
+        return {"status": "ready", "data": video_data, "filename": f"{base_name}.mp4", "frames": frame_count}
+
     else:
         export_dir = user_dir / "results" / base_name
-        export_dir.mkdir(parents=True, exist_ok=True)
-        save_images(images, export_dir, base_name, dtype=dtype, force=True, normed=request.normalize)
-        
+        explorer.write_images(str(export_dir), base_name=base_name, start_frame=start,
+                              end_frame=end, dtype=dtype, force=True, normed=request.normalize)
+
         if request.save_to_server:
-            return {"status": "saved", "path": str(export_dir), "frames": len(images)}
-        
+            return {"status": "saved", "path": str(export_dir), "frames": frame_count}
+
         zip_path = user_dir / "results" / f"{base_name}.zip"
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for img_file in export_dir.glob("*.png"):
                 zf.write(img_file, img_file.name)
-        
+
         with open(zip_path, "rb") as f:
             zip_data = base64.b64encode(f.read()).decode()
-        return {"status": "ready", "data": zip_data, "filename": f"{base_name}.zip", "frames": len(images)}
+        return {"status": "ready", "data": zip_data, "filename": f"{base_name}.zip", "frames": frame_count}
 
 class CircularMaskRequest(BaseModel):
     username: str
