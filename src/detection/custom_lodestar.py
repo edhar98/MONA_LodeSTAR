@@ -1,3 +1,10 @@
+"""
+Paper-accurate LodeSTAR architecture for self-supervised particle detection.
+
+customLodeSTAR subclasses the DeepTrack LodeSTAR base and replaces the default
+backbone with the architecture from Midtvedt et al. 2022 (Nature Communications):
+3×Conv2D(3×3,32)+ReLU → MaxPool2D → 8×Conv2D(3×3,32)+ReLU → Conv2D(1×1,3).
+"""
 import torch.nn as nn
 import deeptrack.deeplay as dl
 from deeplay.components import ConvolutionalNeuralNetwork

@@ -1,3 +1,10 @@
+"""
+Primary LodeSTAR training script for single-particle self-supervised detection.
+
+Trains one LodeSTAR model per particle type using the DeepTrack self-supervised
+objective. Reads augmentation and architecture settings from config.yaml, logs
+metrics via WandB (optional), and saves weights to models/<run_id>/.
+"""
 import os
 import sys
 import shutil
@@ -11,11 +18,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tools')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tools')))
 from wandb_logging import (
     WANDB_AVAILABLE, get_logger, get_run_id, set_summary, finish_run, TrainingMetricsCallback
 )

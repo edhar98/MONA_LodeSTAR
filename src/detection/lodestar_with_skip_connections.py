@@ -1,3 +1,10 @@
+"""
+LodeSTAR variant with full U-Net-style skip connections.
+
+Adds residual skip connections from each encoder block to the corresponding
+decoder block, potentially improving localisation on low-contrast particles.
+Select via trained_models_summary.yaml or by importing directly in experiments.
+"""
 import torch
 import torch.nn as nn
 import deeptrack.deeplay as dl

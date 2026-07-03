@@ -1,3 +1,10 @@
+"""
+Quick sanity-test for a single trained LodeSTAR model on synthetic data.
+
+Generates a test image using image_generator, runs the loaded model checkpoint,
+and prints detection counts with a matplotlib visualisation. Intended as a fast
+interactive check after training, not a full benchmark.
+"""
 import os
 import sys
 import torch
@@ -6,6 +13,7 @@ import matplotlib.pyplot as plt
 from deeplay import LodeSTAR
 import deeptrack.deeplay as dl
 import deeptrack as dt
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 from image_generator import generateImage, Object
 

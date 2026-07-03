@@ -1,6 +1,15 @@
+"""
+Generate synthetic particle sample images for LodeSTAR self-supervised training.
+
+Reads particle and augmentation parameters from samples.yaml and config.yaml,
+produces one sample image per particle type, and saves them under data/Samples/.
+Run this before training whenever new particle types are added or parameters change.
+"""
 import matplotlib.pyplot as plt
 import os
 import argparse
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import _load_config
 from datetime import datetime
 from image_generator import generateImage, Object

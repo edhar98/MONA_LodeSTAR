@@ -27,21 +27,29 @@ from scipy.optimize import curve_fit
 # MSD computation
 # ---------------------------------------------------------------------------
 
-def compute_msd(tracks: pd.DataFrame, max_lag: int, min_track: int = 50) -> pd.DataFrame:
+def compute_msd(
+    tracks: pd.DataFrame,
+    max_lag: int,
+    min_track: int = 50,
+    include_interpolated: bool = False,
+) -> pd.DataFrame:
     """
     Ensemble-averaged translational MSD over lag times 1..max_lag.
-    Only uses real (non-interpolated) detections from tracks longer than min_track.
+    Uses real detections by default; optionally includes interpolated rows.
     Returns DataFrame with columns: lag, msd, n_samples.
     """
     long_tracks = tracks.groupby("track_id").filter(
-        lambda g: (~g["is_interpolated"]).sum() >= min_track
+        lambda g: (len(g) if include_interpolated else (~g["is_interpolated"]).sum()) >= min_track
     )
 
     msd_accum = np.zeros(max_lag)
     counts = np.zeros(max_lag, dtype=int)
 
     for tid, group in long_tracks.groupby("track_id"):
-        g = group[~group["is_interpolated"]].sort_values("frame")
+        if include_interpolated:
+            g = group.sort_values("frame")
+        else:
+            g = group[~group["is_interpolated"]].sort_values("frame")
         x = g["x"].values
         y = g["y"].values
         n = len(x)
@@ -57,20 +65,31 @@ def compute_msd(tracks: pd.DataFrame, max_lag: int, min_track: int = 50) -> pd.D
     return pd.DataFrame({"lag": lags, "msd": msd, "n_samples": counts})
 
 
-def compute_angular_msd(tracks: pd.DataFrame, max_lag: int, min_track: int = 50) -> pd.DataFrame:
+def compute_angular_msd(
+    tracks: pd.DataFrame,
+    max_lag: int,
+    min_track: int = 50,
+    include_interpolated: bool = False,
+) -> pd.DataFrame:
     """
     Ensemble-averaged angular MSD <(Δφ)²> vs lag time.
     Uses circular difference to handle angle wrapping.
     """
-    long_tracks = tracks.groupby("track_id").filter(
-        lambda g: (~g["is_interpolated"] & g["phi"].notna()).sum() >= min_track
-    )
+    def has_enough_rows(group):
+        if include_interpolated:
+            return group["phi"].notna().sum() >= min_track
+        return (~group["is_interpolated"] & group["phi"].notna()).sum() >= min_track
+
+    long_tracks = tracks.groupby("track_id").filter(has_enough_rows)
 
     amsd_accum = np.zeros(max_lag)
     counts = np.zeros(max_lag, dtype=int)
 
     for tid, group in long_tracks.groupby("track_id"):
-        g = group[~group["is_interpolated"] & group["phi"].notna()].sort_values("frame")
+        if include_interpolated:
+            g = group[group["phi"].notna()].sort_values("frame")
+        else:
+            g = group[~group["is_interpolated"] & group["phi"].notna()].sort_values("frame")
         phi = np.unwrap(g["phi"].values)
         n = len(phi)
         for lag in range(1, min(max_lag + 1, n)):
@@ -239,6 +258,8 @@ def main():
     parser.add_argument("--px-size",   type=float, default=0.078,
                         help="Pixel size in µm/px (default: 0.078)")
     parser.add_argument("--output",    required=True, help="Output directory")
+    parser.add_argument("--include-interpolated", action="store_true",
+                        help="Include interpolated/refined rows in MSD/ABP analysis")
     args = parser.parse_args()
 
     px = args.px_size  # µm/px
@@ -248,15 +269,27 @@ def main():
 
     n_tracks = tracks["track_id"].nunique()
     n_real = (~tracks["is_interpolated"]).sum()
-    print(f"Loaded {n_tracks} tracks, {n_real} real detections, "
-          f"dt={args.dt:.4f}s, px={px} µm/px")
+    n_interp = tracks["is_interpolated"].sum()
+    mode = "all rows including interpolated" if args.include_interpolated else "real detections only"
+    print(f"Loaded {n_tracks} tracks, {n_real} real detections, {n_interp} interpolated rows, "
+          f"dt={args.dt:.4f}s, px={px} µm/px, mode={mode}")
 
     # MSD (computed in pixels, converted to µm² after fitting)
     print("Computing translational MSD...")
-    msd_df = compute_msd(tracks, args.max_lag, args.min_track)
+    msd_df = compute_msd(
+        tracks,
+        args.max_lag,
+        args.min_track,
+        include_interpolated=args.include_interpolated,
+    )
 
     print("Computing angular MSD...")
-    amsd_df = compute_angular_msd(tracks, args.max_lag, args.min_track)
+    amsd_df = compute_angular_msd(
+        tracks,
+        args.max_lag,
+        args.min_track,
+        include_interpolated=args.include_interpolated,
+    )
 
     # Fit in pixel space, then convert
     fit_params_px = fit_msd(msd_df, args.dt)

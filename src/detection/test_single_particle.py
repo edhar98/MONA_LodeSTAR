@@ -1,3 +1,11 @@
+"""
+Evaluate a single-particle LodeSTAR model on real or synthetic datasets.
+
+Runs detection (standard, area, watershed, or template-NCC mode) across all
+dataset stacks defined in config.yaml, computes precision/recall against ground
+truth, writes per-frame detection CSVs, and optionally merges them into a
+global-frame run CSV for downstream tracking.
+"""
 import os
 import torch
 import argparse
@@ -7,6 +15,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import deeptrack.deeplay as dl
 import deeptrack as dt
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 import cv2
 
@@ -191,7 +201,10 @@ def save_detections_to_csv(detection_results, save_dir):
 
 def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detection_mode='standard',
                               template_bank=None, template_refine_radius: int = 25,
-                              template_search_radius: int = 5):
+                              template_search_radius: int = 5,
+                              save_dir: str = None,
+                              visualize: bool = False,
+                              incremental_save: bool = False):
     logger.info(f"\n=== Evaluating {particle_type} model on generated dataset ===")
     
     images_dir = os.path.join(dataset_dir, 'images')
@@ -222,13 +235,24 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detecti
     
     all_metrics = []
     detection_results = []
+    current_video_id = None
+    current_video_results = []
+
+    def flush_current_video():
+        nonlocal current_video_results
+        if save_dir and current_video_results:
+            save_detections_to_csv(current_video_results, save_dir)
+            current_video_results = []
     
     for image_file in image_files:
         image_path = os.path.join(images_dir, image_file)
         image = np.array(dt.LoadImage(image_path).resolve()).astype(np.float32)
+        video_id, frame_idx = parse_image_filename(image_file)
+        if incremental_save and current_video_id is not None and video_id != current_video_id:
+            flush_current_video()
+        current_video_id = video_id
         
         if gt_from_csv:
-            video_id, frame_idx = parse_image_filename(image_file)
             if video_id and video_id in csv_gt_by_video and frame_idx in csv_gt_by_video[video_id]:
                 gt_bboxes = csv_gt_by_video[video_id][frame_idx]['positions']
                 gt_labels = [particle_type] * len(gt_bboxes)
@@ -266,7 +290,7 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detecti
         metrics = utils.calculate_detection_metrics(gt_bboxes, detections, gt_labels=gt_labels, detection_labels=detection_labels)
         all_metrics.append(metrics)
         
-        detection_results.append({
+        result = {
             'image_file': image_file,
             'gt_bboxes': gt_bboxes,
             'gt_labels': gt_labels,
@@ -278,12 +302,27 @@ def evaluate_model_on_dataset(model, dataset_dir, particle_type, config, detecti
             'model_output': model_output,
             'orientations': prediction.get('orientations') if isinstance(prediction, dict) else None,
             'orientation_ncc': prediction.get('orientation_ncc') if isinstance(prediction, dict) else None,
-        })
+        }
+
+        if incremental_save:
+            current_video_results.append(result)
+            if visualize and save_dir:
+                base_filename = os.path.splitext(image_file)[0]
+                metrics_title = f"{particle_type}_{os.path.basename(dataset_dir)}_{base_filename}"
+                visualize_detection_results(
+                    image, gt_bboxes, detections, prediction, metrics_title, save_dir,
+                    snr, gt_labels, detection_labels, metrics, model_output, model
+                )
+        else:
+            detection_results.append(result)
         
         snr_str = f"SNR={snr:.2f}" if snr is not None else "SNR=N/A"
         logger.info(f"  {image_file}: TP={metrics['tp']}, FP={metrics['fp']}, FN={metrics['fn']}, "
               f"Precision={metrics['precision']:.3f}, Recall={metrics['recall']:.3f}, {snr_str}, "
               f"GT_{particle_type}={len(gt_bboxes)}")
+
+    if incremental_save:
+        flush_current_video()
     
     # Calculate average metrics
     if all_metrics:
@@ -380,7 +419,9 @@ def visualize_detection_results(image, gt_bboxes, detections, prediction, title=
 def test_single_particle_model(particle_type, model_path, config, visualize=False, 
                                detection_mode='standard', generate_video=False,
                                template_bank=None, template_refine_radius: int = 25,
-                               template_search_radius: int = 5):
+                               template_search_radius: int = 5,
+                               merge_detections: bool = False,
+                               frames_per_stack: int = 100):
     logger.info(f"\n=== Testing {particle_type} model (mode: {detection_mode}) ===")
     
     model = load_trained_model(model_path, config)
@@ -408,14 +449,29 @@ def test_single_particle_model(particle_type, model_path, config, visualize=Fals
                 template_bank=template_bank,
                 template_refine_radius=template_refine_radius,
                 template_search_radius=template_search_radius,
+                save_dir=save_dir,
+                visualize=visualize,
+                incremental_save=True,
             )
             
             if metrics:
                 all_results[dataset_type] = {'metrics': metrics}
                 
-                save_detections_to_csv(results, save_dir)
+                if merge_detections:
+                    _, merge_summary = utils.merge_detection_csvs(
+                        input_dir=os.path.join(save_dir, "csv"),
+                        frames_per_stack=frames_per_stack,
+                    )
+                    logger.info(
+                        "Merged detection CSV: %s (%d files, %d rows, frames %s..%s)",
+                        merge_summary["output_path"],
+                        merge_summary["n_files"],
+                        merge_summary["n_rows"],
+                        merge_summary["frame_min"],
+                        merge_summary["frame_max"],
+                    )
                 
-                if visualize:
+                if visualize and results:
                     for result in results:
                         image_path = os.path.join(dataset_dir, 'images', result['image_file'])
                         image = np.array(dt.LoadImage(image_path).resolve())
@@ -454,12 +510,22 @@ def main():
     parser.add_argument('--template-phi-deg', type=float, default=None, help='Template reference phi in degrees')
     parser.add_argument('--template-refine-radius', type=int, default=25, help='Center refine radius in pixels')
     parser.add_argument('--template-search-radius', type=int, default=5, help='Template local search radius in pixels')
+    parser.add_argument('--merge-detections', action='store_true',
+                        help='Merge per-stack detection CSVs into one global-frame run CSV after each dataset')
+    parser.add_argument('--frames-per-stack', type=int, default=100,
+                        help='Frame offset used by --merge-detections (default: 100)')
+    parser.add_argument('--visualize', dest='visualize_override', action='store_true',
+                        help='Force saving per-frame detection/weightmap visualizations')
+    parser.add_argument('--no-visualize', dest='visualize_override', action='store_false',
+                        help='Disable per-frame detection/weightmap visualizations for faster runs')
+    parser.set_defaults(visualize_override=None)
     parser.add_argument('--video', action='store_true', help='Generate video from detection results')
     args = parser.parse_args()
     
     config = utils.load_yaml(args.config)
     detection_mode = args.detection_mode
     generate_video = args.video
+    visualize = config.get('visualize', False) if args.visualize_override is None else args.visualize_override
     
     logger.info(f"=== LodeSTAR Testing Started ===")
     logger.info(f"Detection mode: {detection_mode}")
@@ -507,11 +573,13 @@ def main():
         logger.info(f"Testing {args.particle} with specific model: {args.model}")
         test_results = {}
         metrics = test_single_particle_model(args.particle, args.model, config, 
-                                             visualize=config.get('visualize', False),
+                                             visualize=visualize,
                                              detection_mode=detection_mode, generate_video=generate_video,
                                              template_bank=template_bank,
                                              template_refine_radius=args.template_refine_radius,
-                                             template_search_radius=args.template_search_radius)
+                                             template_search_radius=args.template_search_radius,
+                                             merge_detections=args.merge_detections,
+                                             frames_per_stack=args.frames_per_stack)
         if metrics:
             test_results[args.particle] = metrics
             logger.info(f"Successfully tested {args.particle} model")
@@ -529,14 +597,16 @@ def main():
         test_results = {}
         model_info = trained_models[args.particle]
         model_path = model_info['model_path']
-        
+            
         if os.path.exists(model_path):
             metrics = test_single_particle_model(args.particle, model_path, config, 
-                                                 visualize=config.get('visualize', False),
+                                                 visualize=visualize,
                                                  detection_mode=detection_mode, generate_video=generate_video,
                                                  template_bank=template_bank,
                                                  template_refine_radius=args.template_refine_radius,
-                                                 template_search_radius=args.template_search_radius)
+                                                 template_search_radius=args.template_search_radius,
+                                                 merge_detections=args.merge_detections,
+                                                 frames_per_stack=args.frames_per_stack)
             if metrics:
                 test_results[args.particle] = metrics
                 logger.info(f"Successfully tested {args.particle} model")
@@ -567,11 +637,13 @@ def main():
         logger.info(f"Testing {particle_type} with model: {args.model}")
         test_results = {}
         metrics = test_single_particle_model(particle_type, args.model, config, 
-                                             visualize=config.get('visualize', False),
+                                             visualize=visualize,
                                              detection_mode=detection_mode, generate_video=generate_video,
                                              template_bank=template_bank,
                                              template_refine_radius=args.template_refine_radius,
-                                             template_search_radius=args.template_search_radius)
+                                             template_search_radius=args.template_search_radius,
+                                             merge_detections=args.merge_detections,
+                                             frames_per_stack=args.frames_per_stack)
         if metrics:
             test_results[particle_type] = metrics
             logger.info(f"Successfully tested {particle_type} model")
@@ -588,11 +660,13 @@ def main():
             
             if os.path.exists(model_path):
                 metrics = test_single_particle_model(particle_type, model_path, config, 
-                                                     visualize=config.get('visualize', False),
+                                                     visualize=visualize,
                                                      detection_mode=detection_mode, generate_video=generate_video,
                                                      template_bank=template_bank,
                                                      template_refine_radius=args.template_refine_radius,
-                                                     template_search_radius=args.template_search_radius)
+                                                     template_search_radius=args.template_search_radius,
+                                                     merge_detections=args.merge_detections,
+                                                     frames_per_stack=args.frames_per_stack)
                 if metrics:
                     test_results[particle_type] = metrics
                     logger.info(f"Successfully tested {particle_type} model")

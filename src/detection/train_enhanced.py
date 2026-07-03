@@ -1,3 +1,10 @@
+"""
+Enhanced LodeSTAR training script with WandB logging and multi-particle support.
+
+Extends the base training loop with configurable backbone selection, cosine LR
+scheduling, and optional Weights & Biases experiment tracking. Supports both
+single-particle and simultaneous multi-particle training runs.
+"""
 import os
 import sys
 from deeplay import LodeSTAR
@@ -10,6 +17,7 @@ import wandb
 import lightning as L
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 import random
 from torch.optim.lr_scheduler import CosineAnnealingLR

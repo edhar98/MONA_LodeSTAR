@@ -1,3 +1,10 @@
+"""
+Crop square patches around LodeSTAR detections for template preparation.
+
+Reads detection CSVs and the corresponding images from a data directory,
+crops a fixed-size patch around each detected centre, and saves the patches
+with the ground-truth phi angle encoded in the filename (e.g. f000_d003_phi0245.9.png).
+"""
 import argparse
 import sys
 from pathlib import Path

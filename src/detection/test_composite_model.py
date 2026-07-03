@@ -1,3 +1,10 @@
+"""
+Evaluate the composite LodeSTAR model on multi-class detection benchmarks.
+
+Loads all trained models via trained_models_summary.yaml, runs CompositeLodeSTAR
+on each dataset type defined in config.yaml, and writes per-class precision/recall
+metrics and a summary YAML to the results directory.
+"""
 import os
 import torch
 import argparse
@@ -5,6 +12,8 @@ from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import deeptrack as dt
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 from composite_model import CompositeLodeSTAR
 

@@ -12,8 +12,9 @@ import numpy as np
 import yaml
 import tempfile
 
-# Add src directory to path for imports
+# Add src and src/detection to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'detection'))
 
 from image_generator import generateImage, Object
 import utils

@@ -1,3 +1,10 @@
+"""
+Experimental LodeSTAR variant with simplified skip connections.
+
+An alternative backbone that adds lateral skip connections between the encoder
+and decoder branches. Not imported by default; compare against custom_lodestar.py
+and lodestar_with_skip_connections.py using compare_models.py.
+"""
 import torch
 import torch.nn as nn
 import deeptrack.deeplay as dl

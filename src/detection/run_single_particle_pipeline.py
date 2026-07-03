@@ -12,6 +12,7 @@ from datetime import datetime
 from train_single_particle import main as train_main
 from test_single_particle import main as test_main
 import yaml
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 
 # Setup logger with file output

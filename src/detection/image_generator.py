@@ -1,9 +1,18 @@
+"""
+Synthetic image generator for LodeSTAR training datasets.
+
+Defines particle shape primitives (Janus, Ring, Spot, Ellipse, Rod, etc.) and
+composites them onto randomised backgrounds with configurable SNR, intensity,
+rotation, and scale augmentation. Called by generate_samples.py and train scripts.
+"""
 import numpy as np
 pi = np.pi
 import matplotlib.pyplot as plt
 import os
 import argparse
 from tqdm import tqdm
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils import Writer, _load_config
 import configparser
 from scipy import ndimage

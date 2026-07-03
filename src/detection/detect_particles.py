@@ -1,3 +1,10 @@
+"""
+Single-image particle detection script with multiple detection modes.
+
+Runs a trained LodeSTAR model on one input image and writes detected positions
+to a CSV. Supports constant (local maxima), area-based, watershed, and
+template-matching NCC modes; the last also outputs per-detection orientation.
+"""
 import os
 import torch
 import argparse
@@ -6,6 +13,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import deeptrack.deeplay as dl
 import deeptrack as dt
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 import cv2
 from custom_lodestar import customLodeSTAR

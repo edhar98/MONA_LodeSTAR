@@ -23,25 +23,35 @@ import pandas as pd
 from PIL import Image
 
 
-def load_frame(images_dir: str, frame_idx: int) -> np.ndarray:
-    """Load a frame by index (1-based filenames)."""
+def list_frame_images(images_dir: str) -> list[str]:
     candidates = sorted(os.listdir(images_dir))
-    # Filter to PNG/JPG only
-    candidates = [f for f in candidates
-                  if re.search(r'\.(png|jpg|jpeg|tif|tiff)$', f, re.I)]
-    # Frame index is 0-based in tracks CSV; filenames are 1-based
+    return [
+        os.path.join(images_dir, f)
+        for f in candidates
+        if re.search(r'\.(png|jpg|jpeg|tif|tiff)$', f, re.I)
+    ]
+
+
+def load_frame(images_dir: str, frame_idx: int) -> np.ndarray:
+    """Load a frame by the 0-based global frame index used in tracks CSV."""
+    candidates = list_frame_images(images_dir)
+    return load_frame_from_paths(candidates, frame_idx)
+
+
+def load_frame_from_paths(candidates: list[str], frame_idx: int) -> np.ndarray:
+    """Load a frame from a precomputed sorted image path list."""
+    # For flattened stack exports, sorted image order is the global frame order.
+    if 0 <= frame_idx < len(candidates):
+        return np.array(Image.open(candidates[frame_idx]).convert("L"))
+
+    # Fallback for simple single-stack names where only the local frame number
+    # is available in the filename.
     filename_idx = frame_idx + 1
-    # Try exact match on trailing number
-    for fname in candidates:
+    for path in candidates:
+        fname = os.path.basename(path)
         m = re.search(r'_(\d+)\.\w+$', fname)
         if m and int(m.group(1)) == filename_idx:
-            path = os.path.join(images_dir, fname)
-            img = np.array(Image.open(path).convert("L"))
-            return img
-    # Fallback: positional
-    if 0 <= frame_idx < len(candidates):
-        path = os.path.join(images_dir, candidates[frame_idx])
-        return np.array(Image.open(path).convert("L"))
+            return np.array(Image.open(path).convert("L"))
     return None
 
 
@@ -68,7 +78,11 @@ def make_overview(df: pd.DataFrame, images_dir: str, output_path: str):
         bg = np.zeros((1024, 1024), dtype=np.uint8)
 
     fig, ax = plt.subplots(figsize=(12, 12))
-    ax.imshow(bg, cmap="gray", vmin=0, vmax=255)
+    h, w = bg.shape[:2]
+    lo, hi = np.percentile(bg, [1, 99.5])
+    if hi <= lo:
+        lo, hi = 0, 255
+    ax.imshow(bg, cmap="gray", vmin=lo, vmax=hi)
 
     track_ids = df["track_id"].unique()
     cmap = cm.get_cmap("hsv", len(track_ids))
@@ -97,6 +111,8 @@ def make_overview(df: pd.DataFrame, images_dir: str, output_path: str):
         f"({int(df['is_interpolated'].sum())} interpolated)",
         fontsize=11,
     )
+    ax.set_xlim(0, w)
+    ax.set_ylim(h, 0)
     ax.axis("off")
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -115,13 +131,19 @@ def make_video(
     fps: int = 10,
     trail_frames: int = 20,
 ):
-    frames = sorted(df["frame"].unique())
+    image_paths = list_frame_images(images_dir)
+    df = df.sort_values(["frame", "track_id"]).reset_index(drop=True)
+    rows_by_frame = {
+        int(frame): group
+        for frame, group in df.groupby("frame", sort=True)
+    }
+    frames = sorted(rows_by_frame)
     track_ids = sorted(df["track_id"].unique())
     colors = track_colormap(len(track_ids))
     id_to_color = {tid: colors[i] for i, tid in enumerate(track_ids)}
 
     # Determine frame size from first image
-    first_bg = load_frame(images_dir, frames[0])
+    first_bg = load_frame_from_paths(image_paths, frames[0])
     if first_bg is not None:
         h, w = first_bg.shape[:2]
     else:
@@ -129,9 +151,13 @@ def make_video(
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not open video writer for {output_path}")
 
-    for frame_idx in frames:
-        bg = load_frame(images_dir, frame_idx)
+    frame_set = set(frames)
+    total_frames = len(frames)
+    for i, frame_idx in enumerate(frames, start=1):
+        bg = load_frame_from_paths(image_paths, frame_idx)
         if bg is None:
             canvas = np.zeros((h, w, 3), dtype=np.uint8)
         else:
@@ -139,10 +165,17 @@ def make_video(
 
         # Draw trail: last `trail_frames` frames up to current
         trail_start = max(frames[0], frame_idx - trail_frames)
-        trail_df = df[(df["frame"] >= trail_start) & (df["frame"] <= frame_idx)]
+        trail_parts = [
+            rows_by_frame[f]
+            for f in range(trail_start, frame_idx + 1)
+            if f in frame_set
+        ]
+        if trail_parts:
+            trail_df = pd.concat(trail_parts, ignore_index=True)
+        else:
+            trail_df = pd.DataFrame(columns=df.columns)
 
         for tid, group in trail_df.groupby("track_id"):
-            group = group.sort_values("frame")
             color = id_to_color.get(tid, (255, 255, 255))
             pts = group[["x", "y"]].values.astype(np.int32)
 
@@ -167,6 +200,8 @@ def make_video(
                     cv2.LINE_AA)
 
         writer.write(canvas)
+        if i == 1 or i % 100 == 0 or i == total_frames:
+            print(f"Rendered video frame {i}/{total_frames} (track frame {frame_idx})", flush=True)
 
     writer.release()
     print(f"Saved video   → {output_path}")
@@ -184,6 +219,8 @@ def main():
     parser.add_argument("--fps",     type=int, default=30, help="Video FPS (default: 30)")
     parser.add_argument("--trail",   type=int, default=20,
                         help="Trail length in frames for video (default: 20)")
+    parser.add_argument("--overview-only", action="store_true",
+                        help="Only write the static overview PNG; skip MP4 rendering")
     args = parser.parse_args()
 
     df = pd.read_csv(args.tracks)
@@ -198,13 +235,14 @@ def main():
         os.path.join(args.output, f"{base}_overview.png"),
     )
 
-    make_video(
-        df,
-        args.images,
-        os.path.join(args.output, f"{base}_video.mp4"),
-        fps=args.fps,
-        trail_frames=args.trail,
-    )
+    if not args.overview_only:
+        make_video(
+            df,
+            args.images,
+            os.path.join(args.output, f"{base}_video.mp4"),
+            fps=args.fps,
+            trail_frames=args.trail,
+        )
 
 
 if __name__ == "__main__":

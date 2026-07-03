@@ -1,9 +1,18 @@
+"""
+Composite LodeSTAR model for multi-class particle detection.
+
+CompositeLodeSTAR runs all particle-specific LodeSTAR models in parallel,
+clusters nearby detections by distance threshold, and assigns class labels
+based on which model contributes the highest confidence at each location.
+"""
 import os
 import torch
 import numpy as np
 import cv2
 import deeptrack.deeplay as dl
 from custom_lodestar import customLodeSTAR
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 
 

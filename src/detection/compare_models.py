@@ -1,7 +1,16 @@
+"""
+Compare single-particle and composite LodeSTAR model test results.
+
+Loads YAML result summaries written by test_single_particle.py and
+test_composite_model.py, then prints a side-by-side precision/recall table
+and generates comparison plots in the logs/ directory.
+"""
 import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 from datetime import datetime
 

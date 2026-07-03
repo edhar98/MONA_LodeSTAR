@@ -1,8 +1,16 @@
+"""
+End-to-end composite detection pipeline for multi-class particle datasets.
+
+Loads all particle-specific LodeSTAR models listed in trained_models_summary.yaml,
+runs CompositeLodeSTAR on a configurable image directory, and writes per-class
+detection results and optional visualisations to the output directory.
+"""
 import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import deeptrack as dt
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
 from composite_model import CompositeLodeSTAR
 
