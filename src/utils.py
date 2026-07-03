@@ -85,6 +85,89 @@ def save_yaml(dictionary, path_file):
         yaml.dump(dictionary, f, default_flow_style=False)
 
 
+def _parse_stack_detection_path(path, suffix="_detections.csv"):
+    name = os.path.basename(str(path))
+    pattern = rf"^(?P<prefix>.+)_(?P<stack>\d+){re.escape(suffix)}$"
+    match = re.match(pattern, name)
+    if not match:
+        return None
+    return match.group("prefix"), int(match.group("stack"))
+
+
+def merge_detection_csvs(
+    input_dir,
+    output_path=None,
+    pattern="*_detections.csv",
+    frames_per_stack=100,
+    add_stack_columns=True,
+):
+    """Merge per-stack detection CSVs into one global-frame detection CSV.
+
+    Per-stack filenames must end as ``_<stack>_detections.csv``. Local frame
+    values are offset by numeric stack order, so the first stack remains
+    0..frames_per_stack-1, the second becomes frames_per_stack..2*frames_per_stack-1,
+    matching the existing run-level detection CSV convention.
+    """
+    from pathlib import Path
+
+    input_dir = Path(input_dir)
+    parsed = []
+    for path in sorted(input_dir.glob(pattern)):
+        info = _parse_stack_detection_path(path)
+        if info is None:
+            continue
+        prefix, stack_id = info
+        parsed.append((stack_id, prefix, path))
+
+    if not parsed:
+        raise FileNotFoundError(
+            f"No per-stack detection CSVs matching '*_<stack>_detections.csv' in {input_dir}"
+        )
+
+    parsed.sort(key=lambda item: item[0])
+    prefixes = {prefix for _, prefix, _ in parsed}
+    if len(prefixes) != 1:
+        raise ValueError(f"Multiple detection filename prefixes found: {sorted(prefixes)}")
+    prefix = parsed[0][1]
+
+    rows = []
+    for stack_index, (stack_id, _, path) in enumerate(parsed):
+        df = pd.read_csv(path, index_col=0)
+        if "frame" not in df.columns:
+            raise ValueError(f"Missing required 'frame' column: {path}")
+        local_frame = pd.to_numeric(df["frame"], errors="raise").astype(int)
+        if add_stack_columns:
+            df["stack"] = int(stack_id)
+            df["frame_local"] = local_frame
+        df["frame"] = local_frame + stack_index * int(frames_per_stack)
+        rows.append(df)
+
+    merged = (
+        pd.concat(rows, ignore_index=True)
+        .sort_values(["frame", "x", "y"] if {"x", "y"}.issubset(rows[0].columns) else ["frame"])
+        .reset_index(drop=True)
+    )
+
+    if output_path is None:
+        output_path = input_dir / f"{prefix}_detections.csv"
+    else:
+        output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(output_path)
+
+    summary = {
+        "output_path": str(output_path),
+        "input_dir": str(input_dir),
+        "n_files": len(parsed),
+        "n_rows": int(len(merged)),
+        "frame_min": int(merged["frame"].min()) if len(merged) else None,
+        "frame_max": int(merged["frame"].max()) if len(merged) else None,
+        "stacks": [int(stack_id) for stack_id, _, _ in parsed],
+        "frames_per_stack": int(frames_per_stack),
+    }
+    return merged, summary
+
+
 def setup_logger(name, log_file=None, level=logging.INFO):
     """Set up logger with console and optional file handler"""
     
