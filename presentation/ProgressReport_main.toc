@@ -1,0 +1,9 @@
+\boolfalse {citerequest}\boolfalse {citetracker}\boolfalse {pagetracker}\boolfalse {backtracker}\relax 
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {1}{Single Particle Detection}{3}{0}{1}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {2}{Single Particle Model Results}{11}{0}{2}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {3}{Composite Model for Classification}{57}{0}{3}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {4}{Composite Model Results}{62}{0}{4}

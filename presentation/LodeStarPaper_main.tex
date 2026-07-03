@@ -1,0 +1,40 @@
+%------------- Defines the beamer size ------------------------
+%\def\BeamerAspectRatio{43} % Uncomment this line for 4to3 ratio
+\ifdefined\BeamerAspectRatio
+\else
+    \def\BeamerAspectRatio{169} % Default slide size ratio 16:9
+\fi
+
+%--------------- Defines beamer document ----------------------
+\documentclass[aspectratio=\BeamerAspectRatio]{beamer}
+
+\usepackage{ProjectSpecificAdditionalPackages}
+
+%%%%%%%%%% TITLE PAGE %%%%%%%%%%
+\title[LodeSTAR Project]{Single-shot Self-supervised Particle Detection in Microscopy}
+\subtitle[]{Paper Presentation} 
+\author{Edgar Harutyunyan}
+\institute
+{Molecular Nanophotonics Group\\
+Peter Debye Institute for Soft Matter Physics\\
+Universit\"at Leipzig}
+\date{\today}
+\GroupLogo{imglib/MonaLogo.png}
+
+\addbibresource{references.bib}
+
+
+
+%-------------- Start documents -------------------------------
+\begin{document}
+\maketitlepage
+%\maketableofcontents
+%\makesubsectionpopup %% This will show table of content slides before move to each subsection
+%\makesectionpopup
+
+\import{slides/}{LodeSTAR_Paper.tex}
+\begin{frame}[plain]{References}
+    \printbibliography
+\end{frame}
+
+\end{document}

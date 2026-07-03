@@ -1,0 +1,38 @@
+%------------- Defines the beamer size ------------------------
+%\def\BeamerAspectRatio{43} % Uncomment this line for 4to3 ratio
+\ifdefined\BeamerAspectRatio
+\else
+    \def\BeamerAspectRatio{169} % Default slide size ratio 16:9
+\fi
+
+%--------------- Defines beamer document ----------------------
+\documentclass[aspectratio=\BeamerAspectRatio]{beamer}
+
+\usepackage{ProjectSpecificAdditionalPackages}
+
+%%%%%%%%%% TITLE PAGE %%%%%%%%%%
+\title[LodeSTAR Project]{Single-shot Self-supervised Particle Detection in Microscopy}
+\subtitle[]{Tracking, Orientation \& Physics Analysis}
+\author{Edgar Harutyunyan}
+\institute
+{Molecular Nanophotonics Group\\
+Peter Debye Institute for Soft Matter Physics\\
+Universit\"at Leipzig}
+\date{\today}
+\GroupLogo{imglib/MonaLogo.png}
+
+\addbibresource{references.bib}
+
+%-------------- Start documents -------------------------------
+\begin{document}
+\maketitlepage
+\maketableofcontents
+\makesectionpopup
+
+\import{slides/tracking/}{Detection_Improvements.tex}
+\import{slides/tracking/}{Tracking_Pipeline.tex}
+\import{slides/tracking/}{Physics_Analysis.tex}
+\import{slides/tracking/}{LSTM_Tracking.tex}
+\import{slides/tracking/}{FurtherDevelopment.tex}
+
+\end{document}

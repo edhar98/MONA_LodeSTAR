@@ -1,0 +1,78 @@
+\section[Composite Model]{Composite Model for Classification}
+
+\begin{frame}{Composite Model Approach}
+\begin{itemize}
+    \item \textbf{Goal}: Multi-class particle detection and classification
+    \item \textbf{Concept}: Ensemble of specialized single-particle LodeSTAR models
+    \item \textbf{Mechanism}: 
+    \begin{itemize}
+        \item Train individual models for each particle type (Janus, Ring, Spot, etc.)
+        \item \textbf{Independently Tuned}: Each model uses optimized $\alpha, \beta$, and cutoff parameters
+        \item Run all models in parallel on the same input image
+        \item Combine detections and classify based on model confidence
+    \end{itemize}
+    \item \textbf{Key Advantage}: Leverages the high specialization of single-particle models without retraining a massive multi-class network
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Composite Architecture \& Workflow}
+\textbf{The Pipeline:}
+\begin{enumerate}
+    \item \textbf{Parallel Inference}: 
+    \begin{itemize}
+        \item Input image processed by $N$ models simultaneously
+        \item Each model outputs: $\Delta x$, $\Delta y$, and Weight Map ($\rho$)
+    \end{itemize}
+    \item \textbf{Detection Merging}:
+    \begin{itemize}
+        \item Extract detections from all models
+        \item Cluster detections within distance threshold (e.g., 20px)
+        \item Compute unified centroids for each object
+    \end{itemize}
+    \item \textbf{Classification}:
+    \begin{itemize}
+        \item At each unified centroid $(x, y)$, query weight maps of ALL models
+        \item Assign label corresponding to the model with the \textbf{highest weight}
+        \item $Class = \arg\max_{m} (\text{Weight}_m(x,y))$
+    \end{itemize}
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Visualization \& Interpretation}
+\begin{columns}
+\begin{column}{0.5\textwidth}
+\textbf{Visual Output:}
+\begin{itemize}
+    \item \textbf{Color Coding}:
+    \begin{itemize}
+        \item \textcolor{red}{Janus: Red}
+        \item \textcolor{blue}{Ring: Blue}
+        \item \textcolor{yellow}{Spot: Yellow}
+        \item \textcolor{cyan}{Ellipse: Cyan}
+        \item \textcolor{magenta}{Rod: Magenta}
+    \end{itemize}
+\end{itemize}
+\end{column}
+\begin{column}{0.5\textwidth}
+\textbf{Metric Tracking:}
+\begin{itemize}
+    \item Precision, Recall, F1-Score calculated per class
+    \item Confusion matrices to analyze misclassifications
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Advantages of Composite Approach}
+\begin{itemize}
+    \item \textbf{Modularity}: Easily add new particle types by training a new single model
+    \item \textbf{Interpretability}: Weight maps clearly show which model is confident where
+    \item \textbf{Flexibility}: 
+    \begin{itemize}
+        \item Can load a subset of models (e.g., only Ring and Spot) via config
+        \item Each model uses its own optimal detection parameters ($\alpha, \beta$, cutoff)
+    \end{itemize}
+    \item \textbf{Robustness}: Reduces false positives by requiring high specific model confidence
+\end{itemize}
+\end{frame}
+

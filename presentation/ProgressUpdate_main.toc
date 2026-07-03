@@ -1,0 +1,11 @@
+\boolfalse {citerequest}\boolfalse {citetracker}\boolfalse {pagetracker}\boolfalse {backtracker}\relax 
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {1}{Detection Benchmarks: trackpy vs LodeSTAR}{3}{0}{1}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {2}{Physics Model Selection: Is Plain ABP Enough?}{8}{0}{2}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {3}{BiLSTM Gap Filling vs Linear Interpolation}{17}{0}{3}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {4}{Reference-Calibrated Trajectory Correction}{21}{0}{4}
+\defcounter {refsection}{0}\relax 
+\beamer@sectionintoc {5}{Conclusions \& Next Steps}{28}{0}{5}

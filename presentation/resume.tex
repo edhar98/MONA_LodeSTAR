@@ -1,0 +1,305 @@
+%%%%%%%%%%%%%%%%%
+% This is an sample CV template created using altacv.cls
+% (v1.7.2, 28 Aug 2024) written by LianTze Lim (liantze@gmail.com), based on the
+% CV created by BusinessInsider at http://www.businessinsider.my/a-sample-resume-for-marissa-mayer-2016-7/?r=US&IR=T
+%
+%% It may be distributed and/or modified under the
+%% conditions of the LaTeX Project Public License, either version 1.3
+%% of this license or (at your option) any later version.
+%% The latest version of this license is in
+%%    http://www.latex-project.org/lppl.txt
+%% and version 1.3 or later is part of all distributions of LaTeX
+%% version 2003/12/01 or later.
+%%%%%%%%%%%%%%%%
+
+%% Use the "normalphoto" option if you want a normal photo instead of cropped to a circle
+% \documentclass[10pt,a4paper,normalphoto]{altacv}
+
+\documentclass[10pt,a4paper,ragged2e,withhyper]{altacv}
+%% AltaCV uses the fontawesome5 and simpleicons packages.
+%% See http://texdoc.net/pkg/fontawesome5 and http://texdoc.net/pkg/simpleicons for full list of symbols.
+
+% Change the page layout if you need to
+\geometry{left=1.25cm,right=1.25cm,top=1.5cm,bottom=1.5cm,columnsep=1.2cm}
+
+% The paracol package lets you typeset columns of text in parallel
+\usepackage{paracol}
+
+
+% Change the font if you want to, depending on whether
+% you're using pdflatex or xelatex/lualatex
+% WHEN COMPILING WITH XELATEX PLEASE USE
+% xelatex -shell-escape -output-driver="xdvipdfmx -z 0" mmayer.tex
+\iftutex
+  % If using xelatex or lualatex:
+  \setmainfont{Lato}
+\else
+  % If using pdflatex:
+  \usepackage[default]{lato}
+\fi
+
+% Change the colours if you want to
+\definecolor{VividPurple}{HTML}{28518f}
+\definecolor{SlateGrey}{HTML}{2E2E2E}
+\definecolor{LightGrey}{HTML}{666666}
+% \colorlet{name}{black}
+% \colorlet{tagline}{PastelRed}
+\colorlet{heading}{VividPurple}
+\colorlet{headingrule}{VividPurple}
+% \colorlet{subheading}{PastelRed}
+\colorlet{accent}{VividPurple}
+\colorlet{emphasis}{SlateGrey}
+\colorlet{body}{LightGrey}
+
+% Change some fonts, if necessary
+% \renewcommand{\namefont}{\Huge\rmfamily\bfseries}
+% \renewcommand{\personalinfofont}{\footnotesize}
+% \renewcommand{\cvsectionfont}{\LARGE\rmfamily\bfseries}
+% \renewcommand{\cvsubsectionfont}{\large\bfseries}
+
+% Change the bullets for itemize and rating marker
+% for \cvskill if you want to
+\renewcommand{\cvItemMarker}{{\small\textbullet}}
+\renewcommand{\cvRatingMarker}{\faCircle}
+% ...and the markers for the date/location for \cvevent
+% \renewcommand{\cvDateMarker}{\faCalendar*[regular]}
+% \renewcommand{\cvLocationMarker}{\faMapMarker*}
+
+
+% If your CV/résumé is in a language other than English,
+% then you probably want to change these so that when you
+% copy-paste from the PDF or run pdftotext, the location
+% and date marker icons for \cvevent will paste as correct
+% translations. For example Spanish:
+% \renewcommand{\locationname}{Ubicación}
+% \renewcommand{\datename}{Fecha}
+
+
+%% Use (and optionally edit if necessary) this .tex if you
+%% want to use an author-year reference style like APA(6)
+%% for your publication list
+% \input{pubs-authoryear.tex}
+
+%% Use (and optionally edit if necessary) this .tex if you
+%% want an originally numerical reference style like IEEE
+%% for your publication list
+\input{pubs-num.tex}
+
+%% sample.bib contains your publications
+\addbibresource{sample.bib}
+
+\begin{document}
+\name{Edgar Harutyunyan}
+%\tagline{Business Woman \& Proud Geek}
+% Cropped to square from https://en.wikipedia.org/wiki/Marissa_Mayer#/media/File:Marissa_Mayer_May_2014_(cropped).jpg, CC-BY 2.0
+%% You can add multiple photos on the left or right
+%\photoR{4cm}{edgar_photo}
+% \photoL{2cm}{Yacht_High,Suitcase_High}
+\personalinfo{%
+  % Not all of these are required!
+  % You can add your own with \printinfo{symbol}{detail}
+  \email{harutyunianedgar@gmail.com}
+  \phone{+49 (1523) 14-18-757}
+  \location{Leipzig, Saxony}
+  \mailaddress{Mainzer Str. 2, 04109 Germany}
+  %\homepage{marissamayr.tumblr.com}
+  % \twitter{@marissamayer}
+  %\xtwitter{@marissamayer}
+  \linkedin{edgar-harutyunian}
+   \github{edhar98} % I'm just making this up though.
+%   \orcid{0000-0000-0000-0000} % Obviously making this up too.
+  %% You can add your own arbitrary detail with
+  %% \printinfo{symbol}{detail}[optional hyperlink prefix]
+  % \printinfo{\faPaw}{Hey ho!}
+  %% Or you can declare your own field with
+  %% \NewInfoFiled{fieldname}{symbol}[optional hyperlink prefix] and use it:
+  % \NewInfoField{gitlab}{\faGitlab}[https://gitlab.com/]
+  % \gitlab{your_id}
+	%%
+  %% For services and platforms like Mastodon where there isn't a
+  %% straightforward relation between the user ID/nickname and the hyperlink,
+  %% you can use \printinfo directly e.g.
+  % \printinfo{\faMastodon}{@username@instace}[https://instance.url/@username]
+  %% But if you absolutely want to create new dedicated info fields for
+  %% such platforms, then use \NewInfoField* with a star:
+  % \NewInfoField*{mastodon}{\faMastodon}
+  %% then you can use \mastodon, with TWO arguments where the 2nd argument is
+  %% the full hyperlink.
+  % \mastodon{@username@instance}{https://instance.url/@username}
+}
+\makecvheader
+
+%% Depending on your tastes, you may want to make fonts of itemize environments slightly smaller
+\AtBeginEnvironment{itemize}{\small}
+
+%% Set the left/right column width ratio to 6:4.
+\columnratio{0.6}
+
+% Start a 2-column paracol. Both the left and right columns will automatically
+% break across pages if things get too long.
+\begin{paracol}{2}
+\cvsection{Education}
+
+\cvevent{Bachelor of Science in International Physics Studies Program (Honours)}{\href{https://www.uni-leipzig.de/}{Leipzig University}}{Oct 2022 -- Sep 2026}{Leipzig, Germany}
+
+\divider
+
+\cvevent{Bachelor of Informatics in Information Technologies}{\href{https://www.polytech.am/en}{National Polytechnic University of Armenia}}{Sep 2016 -- Jul 2020}{Gyumri, Armenia}
+
+\divider
+
+\cvevent{High School Diploma}{Gyumri Academic College}{Sep 2013 - Jul 2016}{Gyumri, Armenia}
+
+\cvsection{Experience}
+
+\cvevent{Student Assistant at Faculty of Physics and Earth System Sciences}{\href{https://www.physes.uni-leipzig.de/}{Leipzig University}}{Oct 2024 -- Current}{Leipzig, Germany}
+
+\divider
+
+\cvevent{Software Engineer}{\href{https://ggg.instigatedesign.com/}{Instigate Design CJSC}}{Oct 2021 -- Jan 2025}{Yerevan, Armenia}
+
+\textbf{\small{Remote since Feb 2023}}
+\begin{itemize}
+\item \textbf{Heterogeneous Computing and AI Applications}: Worked on a text semantic analysis project by deploying a classification algorithm on a hybrid system of FPGA accelerators and multi-core processors, achieving high-performance computation.
+\item \textbf{Chip-to-Chip Data Transfer}: Contributed to designing and implementing a high-throughput system for transferring raw camera image data between processing modules in a satellite system.
+\item \textbf{Satellite Image Analysis}: Developed an FPGA-based Ultra-High-Resolution (UHR) algorithm for real-time satellite image processing, facilitating advanced data analysis capabilities.
+\item \textbf{Thread Library and OS Kernel Development}: Enhanced a multi-threading library for an OS kernel project by adding assembly support for RISC-V architecture.
+\item \textbf{Custom Processor Design}: Designed and implemented custom CPU architecture, including stack-based and Von Neumann designs, with custom instruction set, debugging, and FPGA-based deployment.
+\end{itemize}
+
+\newpage
+\cvsection{Training}
+
+\cvevent{Participation in FPGA Conference 2024}{\href{https://www.fpga-conference.eu/}{ELEKTRONIKPRAXIS and the FPGA training center PLC2}}{02-04 Jul 2024}{Munich, Germany}
+
+\divider
+
+\cvevent{Machine Learning}{\href{https://bootcamps.aca.am/eng}{Armenian Code Academy}}{Dec 2020 -- April 2021}{Yerevan, Armenia}
+
+\divider
+
+\cvevent{Quality Engineering}{\href{https://www.bdg.am}{Business Development Group}}{Dec 2020 -- Feb 2021}{Yerevan, Armenia}
+
+% \divider
+
+% \cvevent{Product Engineer}{Google}{23 June 1999 -- 2001}{Palo Alto, CA}
+
+% \begin{itemize}
+% \item Joined the company as employe \#20 and female employee \#1
+% \item Developed targeted advertisement in order to use user's search queries and show them related ads
+% \end{itemize}
+
+% use ONLY \newpage if you want to force a page break for
+% ONLY the currentc column
+
+%% Switch to the right column. This will now automatically move to the second
+%% page if the content is too long.
+
+\switchcolumn
+
+\cvsection{Life Philosophy}
+\begin{quote}
+"You must accordingly be perfect, as your heavenly Father is perfect." - \\ Matthew 5:48
+
+\end{quote}
+
+\cvsection{Skills}
+\cvskill{C/C++}{4.5}
+\smallskip
+{\LaTeXraggedright
+\cvtag{STL}
+\cvtag{OOP}
+\cvtag{Gcc \& Gdb}
+\cvtag{Parallel Programming (Threads, Processes)}
+\par}
+\divider
+\cvskill{Python}{4}
+\smallskip
+{\LaTeXraggedright
+\cvtag{OOP}
+\cvtag{ML (Pandas, Scikit-learn, Etc.)}}
+\cvtag{Data Analysis (Numpy, Matplotlib, Etc.)}
+
+
+\divider
+\cvskill{MATLAB}{3}
+\divider
+\cvskill{Low-Level Programming}{3}
+\smallskip
+{\LaTeXraggedright
+\cvtag{x86/ARM}
+\cvtag{MIPS}
+\cvtag{RISC-V}
+\par}
+\divider\smallskip
+\cvskill{Hardware Design}{4}
+\smallskip
+{\LaTeXraggedright
+\cvtag{Verilog/VHDL}
+\cvtag{Xilinx Vivado/Vitis}}
+
+\divider\smallskip
+% Don't overuse these \cvtag boxes — they're just eye-candies and not essential. If something doesn't fit on a single line, it probably works better as part of an itemized list (probably inlined itemized list), or just as a comma-separated list of strengths.
+
+% The `ragged2e` document class option might cause automatic linebreaks between \cvtag to fail.
+% Either remove the ragged2e option; or 
+% add \LaTeXraggedright in the paragraph for these \cvtag
+\cvskill{Development Tools \& Environments}{0}
+\smallskip
+
+{\LaTeXraggedright
+\cvtag{Linux}
+\cvtag{Bash}
+\cvtag{GNU Make}
+\cvtag{Vim}
+
+\cvtag{Version control (Git, SVN)}
+}
+
+\divider\smallskip
+
+\cvskill{Office \& Publishing Tools}{0}
+\smallskip
+
+{\LaTeXraggedright
+\cvtag{MS Office Suite}
+\cvtag{LaTeX}
+\cvtag{OpenOffice / LibreOffice}
+
+\cvtag{Google Workspace}
+\cvtag{Adobe Acrobat}
+}
+
+\divider\smallskip
+
+\cvskill{Team \& Agile Collaboration}{0}
+\smallskip
+
+{\LaTeXraggedright
+\cvtag{TDD \& Code review}
+\cvtag{Collaboration}
+\cvtag{Communication}
+\cvtag{Planning \& estimation}
+\cvtag{Agile development practices}}
+
+\newpage
+\cvsection{Languages}
+
+\cvlangskill{Armenian}{5} %% supports X.5 values.
+
+\cvlangskill{English}{4}
+% \divider
+\cvlangskill{Russian}{4}
+\cvlangskill{German (learning actively)}{1.5}
+% \divider
+
+\cvsection{Certification}
+All certificates confirming the above data can be found by visiting the link below.
+
+\textbf{\href{https://drive.google.com/drive/folders/1sEL77PSKGdF_0kmJpEL1gvbUvp6qNePs?usp=sharing}{https://shorturl.at/WTfj1}}
+
+\end{paracol}
+
+\cvsection{~}
+
+\end{document}

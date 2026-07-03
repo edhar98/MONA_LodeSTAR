@@ -1,0 +1,4 @@
+\frametitle{2nd frame}
+$\bullet$ Here is the next section\footnote{This is a 2nd long footnote. Here I am. Who am I?}\\
+   $\bullet$ Here I used two \verb|\addfootspace{}|. Don't do \verb|\addfootspace{\vspace{1cm}}|.
+   \addfootspace{}\addfootspace{}

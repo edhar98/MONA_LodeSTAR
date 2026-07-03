@@ -1,0 +1,75 @@
+% ---------------------------------------------------------------
+% Section: LSTM trajectory model
+% ---------------------------------------------------------------
+
+\section[LSTM Tracking]{LSTM for Trajectory Prediction}
+
+\begin{frame}{Why Start With an LSTM?}
+\begin{columns}
+\begin{column}{0.52\textwidth}
+\textbf{Current tracker limitation:}
+\begin{itemize}\small
+    \item Hungarian linking is frame-local
+    \item Gap filling is linear in $x,y$ and circular-linear in $\varphi$
+    \item No memory of recent curvature or speed changes
+    \item Interpolated points are not uncertainty-aware
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{LSTM target:}
+\begin{itemize}\small
+    \item Learn short-time motion from existing tracks
+    \item Predict next state from recent history
+    \item Quantify prediction error before replacing interpolation
+    \item Later: use as proposal model for gap filling
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{First Baseline: Next-Step Prediction}
+\begin{columns}
+\begin{column}{0.52\textwidth}
+\textbf{Input sequence:}
+\begin{equation*}\small
+    \left[x_t, y_t, \sin\varphi_t, \cos\varphi_t\right]_{t-N+1:t}
+\end{equation*}
+\textbf{Model:}
+\begin{itemize}\small
+    \item 2-layer LSTM, hidden size 64
+    \item Smooth-L1 loss on normalised state
+    \item Train/validation split over windows
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Implemented starter script:}
+\begin{mynote}
+\footnotesize
+\texttt{python src/lstm\_track\_predictor.py train}\\
+\texttt{\ \ --tracks ...\_tracks.csv}\\
+\texttt{\ \ --model-out models/lstm\_track\_predictor.pt}
+\end{mynote}
+\smallskip
+\textbf{Validation metrics:}
+\begin{itemize}\small
+    \item RMSE in $x$ and $y$ (px)
+    \item mean/median position error (px)
+    \item mean angular error (deg)
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Path From Prediction to Gap Filling}
+\begin{enumerate}\small
+    \item \textbf{Train next-step predictor} on real detections only
+    \item \textbf{Benchmark} against linear interpolation by masking short observed segments
+    \item \textbf{Use bidirectional context}: forward LSTM from left endpoint + backward LSTM from right endpoint
+    \item \textbf{Blend with confidence}: prefer measured detections; use LSTM only for missing frames or low-NCC rows
+    \item \textbf{Feed physics}: compare downstream MSD and ABP parameters before/after LSTM filling
+\end{enumerate}
+\smallskip
+\begin{myalert}[Decision gate]
+\small LSTM replaces interpolation only if it reduces masked-gap error without biasing $D_t$, $v_0$, or $D_r$.
+\end{myalert}
+\end{frame}

@@ -1,0 +1,19 @@
+[0] Config.pm:304> INFO - This is Biber 2.14 (beta)
+[0] Config.pm:307> INFO - Logfile is 'LodeStarPaper_main.blg'
+[53] biber:322> INFO - === Fr Nov 28, 2025, 03:41:16
+[77] Biber.pm:415> INFO - Reading 'LodeStarPaper_main.bcf'
+[129] Biber.pm:943> INFO - Found 1 citekeys in bib section 0
+[137] Biber.pm:4256> INFO - Processing section 0
+[137] Utils.pm:75> INFO - Globbing data source 'references.bib'
+[137] Utils.pm:91> INFO - Globbed data source 'references.bib' to references.bib
+[155] Biber.pm:4455> INFO - Looking for bibtex format file 'references.bib' for section 0
+[156] bibtex.pm:1653> INFO - LaTeX decoding ...
+[162] bibtex.pm:1471> INFO - Found BibTeX data source 'references.bib'
+[190] Utils.pm:293> WARN - month field 'Dec' in entry 'Midtvedt2022' is not an integer - this will probably not sort properly.
+[195] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[195] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[195] Biber.pm:4084> INFO - Sorting list 'nty/global//global/global' of type 'entry' with template 'nty' and locale 'en-US'
+[195] Biber.pm:4090> INFO - No sort tailoring available for locale 'en-US'
+[200] bbl.pm:652> INFO - Writing 'LodeStarPaper_main.bbl' with encoding 'UTF-8'
+[201] bbl.pm:755> INFO - Output to LodeStarPaper_main.bbl
+[201] Biber.pm:128> INFO - WARNINGS: 1

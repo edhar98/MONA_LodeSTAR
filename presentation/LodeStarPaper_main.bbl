@@ -1,0 +1,119 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.1 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{nty/global//global/global}
+    \entry{Midtvedt2022}{article}{}
+      \name{author}{11}{}{%
+        {{hash=9d05e4b0e80fe0dc02061b19866d7c2d}{%
+           family={Midtvedt},
+           familyi={M\bibinitperiod},
+           given={Benjamin},
+           giveni={B\bibinitperiod}}}%
+        {{hash=6b5e64d38a4ccc3ee6e029de103ec2e0}{%
+           family={Pineda},
+           familyi={P\bibinitperiod},
+           given={Jes{ú}s},
+           giveni={J\bibinitperiod}}}%
+        {{hash=a2dc2bede35f9d6ee0857ab51413fa32}{%
+           family={Sk{ä}rberg},
+           familyi={S\bibinitperiod},
+           given={Fredrik},
+           giveni={F\bibinitperiod}}}%
+        {{hash=7352c6203cfd781fce4562cf174d1656}{%
+           family={Ols{é}n},
+           familyi={O\bibinitperiod},
+           given={Erik},
+           giveni={E\bibinitperiod}}}%
+        {{hash=0a74a469fd7dc8e1c49bfb8a11755ff9}{%
+           family={Bachimanchi},
+           familyi={B\bibinitperiod},
+           given={Harshith},
+           giveni={H\bibinitperiod}}}%
+        {{hash=51800cefa47fba3ccc32354645fbb571}{%
+           family={Wes{é}n},
+           familyi={W\bibinitperiod},
+           given={Emelie},
+           giveni={E\bibinitperiod}}}%
+        {{hash=a8f8b2cb199922d72eeadbcf72e4fec7}{%
+           family={Esbj{ö}rner},
+           familyi={E\bibinitperiod},
+           given={Elin\bibnamedelima K.},
+           giveni={E\bibinitperiod\bibinitdelim K\bibinitperiod}}}%
+        {{hash=f80111d83d8e6518196cb1e84f4850fc}{%
+           family={Selander},
+           familyi={S\bibinitperiod},
+           given={Erik},
+           giveni={E\bibinitperiod}}}%
+        {{hash=123f4ecdd19af0a4298d1188791105af}{%
+           family={H{ö}{ö}k},
+           familyi={H\bibinitperiod},
+           given={Fredrik},
+           giveni={F\bibinitperiod}}}%
+        {{hash=b09910867deea807ed6c2b476661394f}{%
+           family={Midtvedt},
+           familyi={M\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod}}}%
+        {{hash=1428577017aa20ae5b57b5c7895e901d}{%
+           family={Volpe},
+           familyi={V\bibinitperiod},
+           given={Giovanni},
+           giveni={G\bibinitperiod}}}%
+      }
+      \list{language}{1}{%
+        {english}%
+      }
+      \list{publisher}{1}{%
+        {Nature Publishing Group}%
+      }
+      \strng{namehash}{0319aa5ab0398edf1ec7995ce32dbdc1}
+      \strng{fullhash}{e0c244612578286ef935d577aba45739}
+      \strng{bibnamehash}{0319aa5ab0398edf1ec7995ce32dbdc1}
+      \strng{authorbibnamehash}{0319aa5ab0398edf1ec7995ce32dbdc1}
+      \strng{authornamehash}{0319aa5ab0398edf1ec7995ce32dbdc1}
+      \strng{authorfullhash}{e0c244612578286ef935d577aba45739}
+      \field{sortinit}{M}
+      \field{sortinithash}{2e5c2f51f7fa2d957f3206819bf86dc3}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{Object detection is a fundamental task in digital microscopy, where machine learning has made great strides in overcoming the limitations of classical approaches. The training of state-of-the-art machine-learning methods almost universally relies on vast amounts of labeled experimental data or the ability to numerically simulate realistic datasets. However, experimental data are often challenging to label and cannot be easily reproduced numerically. Here, we propose a deep-learning method, named LodeSTAR (Localization and detection from Symmetries, Translations And Rotations), that learns to detect microscopic objects with sub-pixel accuracy from a single unlabeled experimental image by exploiting the inherent roto-translational symmetries of this task. We demonstrate that LodeSTAR outperforms traditional methods in terms of accuracy, also when analyzing challenging experimental data containing densely packed cells or noisy backgrounds. Furthermore, by exploiting additional symmetries we show that LodeSTAR can measure other properties, e.g., vertical position and polarizability in holographic microscopy.}
+      \field{issn}{2041-1723}
+      \field{journaltitle}{Nature Communications}
+      \field{month}{12}
+      \field{number}{1}
+      \field{title}{Single-shot self-supervised object detection in microscopy}
+      \field{volume}{13}
+      \field{year}{2022}
+      \field{pages}{7492}
+      \range{pages}{1}
+      \verb{doi}
+      \verb 10.1038/s41467-022-35004-y
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1038/s41467-022-35004-y
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1038/s41467-022-35004-y
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+

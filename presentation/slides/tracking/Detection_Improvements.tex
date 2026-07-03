@@ -1,0 +1,137 @@
+% ---------------------------------------------------------------
+% Section: Detection & Orientation Improvements
+% ---------------------------------------------------------------
+
+\section[Detection Improvements]{Detection \& Orientation Improvements}
+
+\begin{frame}{Where We Left Off (Exp \#290)}
+\begin{columns}
+\begin{column}{0.55\textwidth}
+\textbf{Status after Exp \#290:}
+\begin{itemize}\small
+    \item LodeSTAR detects JP positions well
+    \item Orientation CNN: works with refined centres
+    \item Velocity-vector orientation: 85\% coverage
+    \item Single crop used for training
+    \item Tested on 100-frame subset only
+\end{itemize}
+\end{column}
+\begin{column}{0.45\textwidth}
+\textbf{Open issues:}
+\begin{itemize}\small
+    \item Low recall on full dataset ($\sim$0.72)
+    \item CNN orientation requires labelled data
+    \item No cross-frame identity (no tracking)
+    \item No quantitative physics output
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Multi-Crop Training}
+\begin{columns}
+\begin{column}{0.55\textwidth}
+\textbf{Problem:}
+\begin{itemize}\small
+    \item Single reference crop → over-fits one appearance
+    \item JP particles vary in orientation and lighting
+    \item Recall 0.72 — many particles missed
+\end{itemize}
+\smallskip
+\textbf{Solution:}
+\begin{itemize}\small
+    \item Pool of \textbf{15 cropped particle images} in\\
+          \texttt{data/Samples/JP\_Fe\_wf\_2\_40/Samples/}
+    \item Each training step samples randomly via \texttt{dt.Value(lambda)}
+    \item Self-supervised LodeSTAR objective unchanged
+\end{itemize}
+\end{column}
+\begin{column}{0.45\textwidth}
+\begin{center}
+\small\textbf{Recall improvement:}\\[0.3cm]
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Crops} & \textbf{Recall} \\
+\hline
+1 (single) & 0.72 \\
+\hline
+15 (pool)  & \textbf{0.97} \\
+\hline
+\end{tabular}
+\end{center}
+\smallskip
+\begin{mynote}[Key insight]
+\small Diverse crop pool exposes the model to the full range of appearances without changing the training objective.
+\end{mynote}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Orientation via Template-Matching NCC}
+\begin{columns}
+\begin{column}{0.50\textwidth}
+\textbf{Pipeline:}
+\begin{enumerate}\footnotesize
+    \item \textbf{Build template bank}:
+          load reference crop, apply annular mask,
+          pre-rotate at 2° steps (0–360°)
+    \item \textbf{Refine position}:
+          HoughCircles, fallback to CoM
+    \item \textbf{Best-angle match}:
+          $\hat{\varphi} = \arg\max_\theta\, \mathrm{NCC}(\text{crop}, T_\theta)$
+    \item \textbf{Output}: \texttt{phi}, \texttt{orientation\_ncc} in CSV
+\end{enumerate}
+\end{column}
+\begin{column}{0.50\textwidth}
+\textbf{Advantages over CNN:}
+\begin{itemize}\footnotesize
+    \item No labelled training data
+    \item One template crop → instant deployment
+    \item NCC score = per-detection confidence
+    \item Trivially generalises to new particle types
+\end{itemize}
+\begin{mynote}
+\footnotesize\texttt{--detection-mode template}\\
+\texttt{--orientation-template phi245.9.png}
+\end{mynote}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Full Dataset Test Results (JP\_Fe\_wf\_2\_40)}
+\begin{columns}
+\begin{column}{0.50\textwidth}
+\begin{itemize}\small
+    \item 11 videos $\times$ 100 frames = 1{,}100 frames total
+    \item Widefield microscopy, 30 fps, cutoff = 0.8
+    \item Ground truth from YOLO tracker
+\end{itemize}
+\begin{center}
+\small\begin{tabular}{|l|c|}
+\hline
+\textbf{Metric} & \textbf{Value} \\
+\hline
+Precision & 0.278 \\
+\hline
+Recall    & \textbf{0.822} \\
+\hline
+F1        & 0.457 \\
+\hline
+\end{tabular}
+\end{center}
+\end{column}
+\begin{column}{0.50\textwidth}
+\begin{myalert}[Note on low precision]
+\footnotesize GT from YOLO labels only centre-frame particles — many real detections counted as FP. \textbf{Recall is the meaningful metric}: 82\% of labelled particles found.
+\end{myalert}
+\smallskip
+\textbf{Detection modes:}
+\begin{itemize}\small
+    \item \texttt{constant} — local maxima (baseline)
+    \item \texttt{area} — blob area threshold
+    \item \texttt{watershed} — touching particles
+    \item \texttt{template} — NCC + orientation
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
