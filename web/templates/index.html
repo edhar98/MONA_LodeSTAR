@@ -1,1714 +1,1168 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MONA Track</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
-        
-        .login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-        .login-box { background: #1a1a1a; padding: 40px; border-radius: 12px; width: 100%; max-width: 400px; border: 1px solid #333; }
-        .login-box h1 { text-align: center; margin-bottom: 30px; font-size: 1.8rem; }
-        .login-box .form-group { margin-bottom: 20px; }
-        .login-box label { display: block; margin-bottom: 8px; color: #aaa; }
-        .login-box input { width: 100%; padding: 12px; border: 1px solid #333; border-radius: 6px; background: #222; color: #fff; font-size: 1rem; }
-        .login-box .btn-group { display: flex; gap: 10px; margin-top: 30px; }
-        .login-box .btn { flex: 1; }
-        .login-error { color: #ff4a4a; margin-bottom: 15px; text-align: center; }
-        
-        .app-container { display: none; }
-        .app-container.active { display: block; }
-        
-        header { background: #111; border-bottom: 1px solid #2a2a2a; padding: 0 20px; display: flex; align-items: center; height: 60px; }
-        .logo { font-size: 1.4rem; font-weight: 600; color: #fff; margin-right: 40px; }
-        .nav-menu { display: flex; gap: 5px; flex: 1; }
-        .nav-item { padding: 18px 24px; color: #888; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; font-weight: 500; }
-        .nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
-        .nav-item.active { color: #4a9eff; border-bottom-color: #4a9eff; }
-        .user-info { color: #888; font-size: 0.9rem; display: flex; align-items: center; gap: 15px; }
-        .user-info span { color: #fff; }
-        .btn-logout { padding: 8px 16px; background: #333; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
-        .btn-logout:hover { background: #444; }
-        
-        .main-content { padding: 30px; max-width: 1600px; margin: 0 auto; }
-        .page { display: none; }
-        .page.active { display: block; }
-        
-        .panel { background: #1a1a1a; border-radius: 12px; padding: 24px; border: 1px solid #2a2a2a; margin-bottom: 20px; }
-        .panel-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
-        .panel-header .badge { background: #4a9eff; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; }
-        
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-        
-        .upload-zone { border: 2px dashed #444; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; }
-        .upload-zone:hover { border-color: #4a9eff; background: rgba(74, 158, 255, 0.05); }
-        .upload-zone input { display: none; }
-        .upload-icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5; }
-        .upload-text { color: #888; }
-        .upload-text strong { color: #4a9eff; }
-        
-        .canvas-container { background: #000; border-radius: 8px; position: relative; min-height: 400px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        canvas { max-width: 100%; max-height: 500px; cursor: crosshair; }
-        
-        .form-group { margin-bottom: 16px; }
-        .form-group label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: #aaa; }
-        .form-group input, .form-group select { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #222; color: #fff; font-size: 0.9rem; }
-        .form-group input:focus { outline: none; border-color: #4a9eff; }
-        .form-group input[type="checkbox"] { width: auto; margin-right: 8px; }
-        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
-        .form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-        .form-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-        
-        .btn { padding: 12px 24px; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
-        .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
-        .btn-primary { background: #4a9eff; color: #fff; }
-        .btn-primary:hover { background: #3a8eef; }
-        .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
-        .btn-secondary { background: #333; color: #fff; }
-        .btn-secondary:hover { background: #444; }
-        .btn-danger { background: #ff4a4a; color: #fff; }
-        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        
-        .sample-item { display: flex; align-items: center; gap: 15px; padding: 12px; background: #222; border-radius: 8px; margin-bottom: 10px; }
-        .sample-preview { width: 50px; height: 50px; border-radius: 6px; background: #333; display: flex; align-items: center; justify-content: center; }
-        .sample-info { flex: 1; }
-        .sample-name { font-weight: 500; }
-        .sample-meta { font-size: 0.8rem; color: #888; }
-        
-        .model-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #222; border-radius: 8px; margin-bottom: 10px; }
-        
-        .progress-bar { height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 10px; }
-        .progress-fill { height: 100%; background: #4a9eff; transition: width 0.3s; }
-        
-        .status { padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-        .status-ready { background: rgba(74, 255, 128, 0.2); color: #4aff80; }
-        .status-training { background: rgba(74, 158, 255, 0.2); color: #4a9eff; }
-        
-        .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 15px; }
-        .alert-info { background: rgba(74, 158, 255, 0.1); border: 1px solid rgba(74, 158, 255, 0.3); color: #4a9eff; }
-        
-        .hidden { display: none !important; }
-        
-        .loader { width: 20px; height: 20px; border: 2px solid #333; border-top-color: #4a9eff; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        
-        .controls-bar { display: flex; gap: 15px; align-items: center; margin-top: 15px; flex-wrap: wrap; }
-        .frame-slider { flex: 1; min-width: 200px; }
-        input[type="range"] { width: 100%; height: 6px; border-radius: 3px; background: #333; -webkit-appearance: none; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #4a9eff; cursor: pointer; }
-        
-        .section-title { font-size: 0.9rem; color: #888; margin: 20px 0 10px; padding-bottom: 5px; border-bottom: 1px solid #333; }
-        
-        .tool-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
-        .tool-btn { padding: 10px 20px; background: #222; border: 1px solid #333; color: #aaa; cursor: pointer; border-radius: 6px; }
-        .tool-btn.active { background: #4a9eff; border-color: #4a9eff; color: #fff; }
-        
-        .weightmap-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .weightmap-container canvas { width: 100%; height: auto; }
-        
-        .postprocess-placeholder { text-align: center; padding: 60px; color: #666; }
-        .postprocess-placeholder h3 { margin-bottom: 10px; color: #888; }
-        
-        .sub-nav { display: flex; gap: 5px; margin-bottom: 20px; padding: 5px; background: #1a1a1a; border-radius: 8px; }
-        .sub-nav-btn { padding: 10px 20px; background: transparent; border: none; color: #888; cursor: pointer; border-radius: 6px; font-size: 0.9rem; transition: all 0.2s; }
-        .sub-nav-btn:hover { background: #222; color: #fff; }
-        .sub-nav-btn.active { background: #4a9eff; color: #fff; }
-        .subtab { display: none; }
-        .subtab.active { display: block; }
-        
-        .file-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: #333; border-radius: 4px; margin-bottom: 5px; }
-        .file-item input[type="checkbox"] { width: 18px; height: 18px; }
-        .file-item label { flex: 1; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <div class="login-container" id="loginContainer">
-        <div class="login-box">
-            <h1>MONA Track</h1>
-            <div id="loginError" class="login-error hidden"></div>
-            <div class="form-group">
-                <label>Username</label>
-                <input type="text" id="loginUsername" placeholder="Enter username" autocomplete="off">
-            </div>
-            <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="loginPassword" placeholder="Enter password" autocomplete="off">
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-primary" id="loginBtn">Login</button>
-                <button class="btn btn-secondary" id="registerBtn">Register</button>
-            </div>
+<title>MONA Track</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0f12;
+  --bg2: #161920;
+  --bg3: #1e2330;
+  --border: #2a3040;
+  --text: #c8d0e0;
+  --text2: #7a8499;
+  --accent: #3d8ef0;
+  --success: #3dca7a;
+  --warn: #e0943a;
+  --error: #e05555;
+  --mono: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+.sidebar {
+  width: 200px; flex-shrink: 0;
+  background: var(--bg2); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.logo {
+  padding: 18px 16px; font-size: 18px; font-weight: 700; letter-spacing: 2px;
+  color: var(--accent); border-bottom: 1px solid var(--border); user-select: none;
+}
+.logo span { font-size: 11px; color: var(--text2); font-weight: 400; letter-spacing: 1px; display: block; margin-top: 2px; }
+nav { flex: 1; padding: 8px 0; }
+.nav-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px;
+  background: none; border: none; cursor: pointer; color: var(--text2); font-size: 13px;
+  font-family: var(--sans); text-align: left; transition: background 0.12s, color 0.12s;
+}
+.nav-btn:hover { background: var(--bg3); color: var(--text); }
+.nav-btn.active { background: var(--bg3); color: var(--accent); border-right: 2px solid var(--accent); }
+.nav-btn .icon { font-size: 15px; width: 18px; text-align: center; }
+.sidebar-bottom { padding: 12px 16px; border-top: 1px solid var(--border); }
+.user-badge strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 12px; }
+.badge {
+  font-size: 11px; padding: 2px 7px; border-radius: 10px;
+  font-family: var(--mono); font-weight: 600; display: inline-block;
+}
+.badge-gpu { background: rgba(61,142,240,0.2); color: var(--accent); }
+.badge-cpu { background: rgba(224,147,58,0.2); color: var(--warn); }
+
+/* Main */
+main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar {
+  height: 48px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; flex-shrink: 0;
+}
+.topbar-title { font-size: 15px; font-weight: 600; }
+
+/* Panels */
+.panel { display: none; flex: 1; overflow-y: auto; padding: 20px; flex-direction: column; gap: 16px; }
+.panel.active { display: flex; }
+
+/* Cards */
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.card-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text2); margin-bottom: 12px;
+}
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 0; }
+
+/* Forms */
+label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; margin-top: 10px; }
+label:first-child { margin-top: 0; }
+input[type=text], input[type=password], input[type=number], select {
+  width: 100%; padding: 7px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 13px; font-family: var(--sans);
+  outline: none; transition: border-color 0.12s;
+}
+input:focus, select:focus { border-color: var(--accent); }
+input[type=file] { display: none; }
+input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: 4px; border: none; cursor: pointer;
+  font-size: 13px; font-family: var(--sans); font-weight: 500;
+  transition: opacity 0.12s, background 0.12s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { opacity: 0.88; }
+.btn-danger { background: var(--error); color: #fff; }
+.btn-danger:hover { opacity: 0.88; }
+.btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-outline:hover { background: var(--bg3); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Progress */
+.progress-bar-wrap { background: var(--bg3); border-radius: 4px; height: 6px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+
+/* Status alerts */
+.status { padding: 8px 12px; border-radius: 4px; font-size: 13px; }
+.status-ok { background: rgba(61,202,122,0.12); color: var(--success); border: 1px solid rgba(61,202,122,0.3); }
+.status-err { background: rgba(224,85,85,0.12); color: var(--error); border: 1px solid rgba(224,85,85,0.3); }
+.status-info { background: rgba(61,142,240,0.12); color: var(--accent); border: 1px solid rgba(61,142,240,0.3); }
+.status-warn { background: rgba(224,147,58,0.12); color: var(--warn); border: 1px solid rgba(224,147,58,0.3); }
+
+/* File list */
+.file-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.file-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: var(--bg3); border-radius: 4px; cursor: pointer;
+}
+.file-item:hover { background: #252c3d; }
+.file-item.selected { outline: 1px solid rgba(61,142,240,0.4); background: rgba(61,142,240,0.08); }
+.file-name { font-size: 13px; }
+.file-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.file-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Results table */
+.results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.results-table th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 600; }
+.results-table td { padding: 6px 10px; border-bottom: 1px solid rgba(42,48,64,0.5); }
+
+/* Mono */
+.mono { font-family: var(--mono); font-size: 12px; }
+
+/* Drop zone */
+.dropzone {
+  border: 2px dashed var(--border); border-radius: 6px; padding: 24px;
+  text-align: center; cursor: pointer; transition: border-color 0.12s, background 0.12s;
+}
+.dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: rgba(61,142,240,0.06); }
+.dropzone p { color: var(--text2); font-size: 13px; margin-top: 6px; }
+
+/* Spinner */
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none !important; }
+
+/* Login overlay */
+#login-overlay {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.login-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 32px; width: 340px; }
+.login-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.login-card p { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+.login-tabs { display: flex; margin-bottom: 20px; }
+.login-tab {
+  flex: 1; padding: 7px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); cursor: pointer; font-size: 13px;
+}
+.login-tab:first-child { border-radius: 4px 0 0 4px; border-right: none; }
+.login-tab:last-child { border-radius: 0 4px 4px 0; }
+.login-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+
+<!-- ===== Login overlay ===== -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>MONA Track</h2>
+    <p>Particle detection &amp; tracking</p>
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-login">Sign In</button>
+      <button class="login-tab" id="tab-register">Register</button>
+    </div>
+    <label>Username</label>
+    <input type="text" id="login-username" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="login-password" autocomplete="current-password">
+    <div id="login-msg" class="status status-err hidden" style="margin-top:10px"></div>
+    <button class="btn btn-primary" id="login-submit" style="width:100%;margin-top:16px">Sign In</button>
+  </div>
+</div>
+
+<!-- ===== App shell ===== -->
+<div class="app" id="app" style="display:none">
+  <aside class="sidebar">
+    <div class="logo">MONA<span>LodeSTAR</span></div>
+    <nav>
+      <button class="nav-btn active" data-panel="files"><span class="icon">&#128193;</span>Files</button>
+      <button class="nav-btn" data-panel="training"><span class="icon">&#128300;</span>Training</button>
+      <button class="nav-btn" data-panel="detection"><span class="icon">&#128269;</span>Detection</button>
+      <button class="nav-btn" data-panel="tracking"><span class="icon">&#128739;</span>Tracking</button>
+      <button class="nav-btn" data-panel="analysis"><span class="icon">&#128202;</span>Analysis</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="user-badge">
+        <strong id="sidebar-username"></strong>
+        <span id="gpu-badge" class="badge">&#8212;</span>
+        <button class="btn btn-outline btn-sm" id="logout-btn" style="margin-top:8px;width:100%">Sign Out</button>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <span class="topbar-title" id="panel-title">Files</span>
+    </div>
+
+    <!-- ===== FILES ===== -->
+    <div class="panel active" id="panel-files">
+      <div class="card">
+        <div class="card-title">Upload</div>
+        <div class="dropzone" id="drop-zone">
+          <div style="font-size:28px">&#128194;</div>
+          <p>Drop a TDMS or image file here, or click to browse</p>
+          <input type="file" id="file-input" accept=".tdms,.png,.jpg,.jpeg,.tif,.tiff">
         </div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:10px">
+          <label style="margin:0;white-space:nowrap">
+            <input type="checkbox" id="normalize-check" checked> Normalize TDMS
+          </label>
+          <div id="upload-progress" class="hidden" style="flex:1">
+            <div class="progress-bar-wrap"><div class="progress-bar" id="upload-bar" style="width:0%"></div></div>
+            <div id="upload-status-text" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Uploaded Files</div>
+        <div id="file-list" class="file-list"><div style="color:var(--text2)">No files uploaded</div></div>
+      </div>
+
+      <div class="row">
+        <div class="col card">
+          <div class="card-title">Frame Preview</div>
+          <div id="frame-preview-wrap" style="text-align:center;min-height:80px;display:flex;align-items:center;justify-content:center">
+            <span style="color:var(--text2)">Select a file to preview</span>
+          </div>
+          <div id="frame-nav" class="hidden" style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <button class="btn btn-outline btn-sm" id="frame-prev">&#9664;</button>
+            <span id="frame-counter" style="font-size:12px;color:var(--text2);flex:1;text-align:center"></span>
+            <button class="btn btn-outline btn-sm" id="frame-next">&#9654;</button>
+          </div>
+        </div>
+
+        <div class="col card">
+          <div class="card-title">TDMS Export</div>
+          <label>Format</label>
+          <select id="export-format">
+            <option value="png">PNG frames (zip)</option>
+            <option value="mp4">MP4 video</option>
+          </select>
+          <label>FPS (for MP4)</label>
+          <input type="number" id="export-fps" value="30" min="1" max="120">
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-primary btn-sm" id="export-download-btn">Export &amp; Download</button>
+            <button class="btn btn-outline btn-sm" id="export-save-btn">Save to Server</button>
+          </div>
+          <div id="export-status" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Video Merge</div>
+        <div class="row" style="align-items:flex-end">
+          <div class="col" style="max-width:200px">
+            <label>Output filename</label>
+            <input type="text" id="merge-name" value="merged">
+          </div>
+          <div class="col" style="max-width:80px">
+            <label>FPS</label>
+            <input type="number" id="merge-fps" value="30" min="1" max="120">
+          </div>
+          <button class="btn btn-primary btn-sm" id="merge-btn">Merge Videos</button>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">Place MP4 files in your results folder, then click Merge to concatenate them.</div>
+        <div id="merge-status" style="margin-top:8px"></div>
+      </div>
     </div>
 
-    <div class="app-container" id="appContainer">
-        <header>
-            <div class="logo">MONA Track</div>
-            <nav class="nav-menu">
-                <div class="nav-item active" data-page="preprocessing">00. Preprocessing</div>
-                <div class="nav-item" data-page="training">01. Training</div>
-                <div class="nav-item" data-page="detection">02. Detection</div>
-                <div class="nav-item" data-page="postprocessing">03. Postprocessing</div>
-            </nav>
-            <div class="user-info">
-                <span id="displayUsername">-</span>
-                <button class="btn-logout" id="logoutBtn">Logout</button>
+    <!-- ===== TRAINING ===== -->
+    <div class="panel" id="panel-training">
+      <div class="row">
+        <div class="col card" style="max-width:320px">
+          <div class="card-title">Sample</div>
+          <label>Particle name</label>
+          <input type="text" id="train-particle" placeholder="e.g. JP_Fe">
+          <label>Source file</label>
+          <select id="train-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+          <label>Frame index</label>
+          <input type="number" id="train-frame-idx" value="0" min="0">
+          <label>Crop (x, y, width, height)</label>
+          <div class="row" style="gap:6px">
+            <input type="number" id="sample-x" placeholder="x" style="flex:1">
+            <input type="number" id="sample-y" placeholder="y" style="flex:1">
+            <input type="number" id="sample-w" placeholder="w" value="64" style="flex:1">
+            <input type="number" id="sample-h" placeholder="h" value="64" style="flex:1">
+          </div>
+          <button class="btn btn-outline btn-sm" id="crop-sample-btn" style="margin-top:10px;width:100%">Crop Sample</button>
+          <div id="sample-preview-wrap" style="margin-top:8px;text-align:center"></div>
+          <div id="sample-status" style="margin-top:6px"></div>
+        </div>
+
+        <div class="col card">
+          <div class="card-title">Training Config</div>
+          <div class="row">
+            <div class="col">
+              <label>Epochs</label><input type="number" id="cfg-epochs" value="100" min="1">
+              <label>Batch size</label><input type="number" id="cfg-batch" value="8" min="1">
+              <label>Learning rate</label><input type="number" id="cfg-lr" value="0.0001" step="0.00001">
+              <label>Dataset length</label><input type="number" id="cfg-length" value="400" min="10">
+              <label>N transforms</label><input type="number" id="cfg-ntrans" value="4" min="1">
             </div>
-        </header>
-
-        <main class="main-content">
-            <!-- PREPROCESSING PAGE -->
-            <div class="page active" id="page-preprocessing">
-                <div class="sub-nav">
-                    <button class="sub-nav-btn active" data-subtab="upload">Upload & View</button>
-                    <button class="sub-nav-btn" data-subtab="export">TDMS Export</button>
-                    <button class="sub-nav-btn" data-subtab="crop">Crop Sample</button>
-                    <button class="sub-nav-btn" data-subtab="mask">Mask Sample</button>
-                    <button class="sub-nav-btn" data-subtab="merge">Video Merge</button>
-                </div>
-
-                <!-- UPLOAD SUBTAB -->
-                <div class="subtab active" id="subtab-upload">
-                    <div class="grid-2">
-                        <div>
-                            <div class="panel">
-                                <div class="panel-header">Upload Image / TDMS</div>
-                                <div class="upload-zone" id="uploadZone">
-                                    <input type="file" id="fileInput" accept=".tdms,.jpg,.jpeg,.png,.tif,.tiff">
-                                    <div class="upload-icon" id="uploadIcon">📁</div>
-                                    <div class="upload-text" id="uploadText">Drop file or <strong>click to browse</strong></div>
-                                    <div class="upload-progress hidden" id="uploadProgress">
-                                        <div class="progress-bar" style="height: 8px; margin-top: 10px;">
-                                            <div class="progress-fill" id="uploadProgressFill" style="width: 0%;"></div>
-                                        </div>
-                                        <div id="uploadProgressText" style="margin-top: 5px; font-size: 0.85rem; color: #888;">0%</div>
-                                    </div>
-                                </div>
-                                <div id="tdmsSettings" class="hidden" style="margin-top: 15px;">
-                                    <div class="section-title">TDMS Settings</div>
-                                    <div class="form-row-4">
-                                        <div class="form-group"><label>Width</label><input type="number" id="tdmsWidth" value="1024"></div>
-                                        <div class="form-group"><label>Height</label><input type="number" id="tdmsHeight" value="1024"></div>
-                                        <div class="form-group"><label>Channel</label><input type="number" id="tdmsChannel" value="0"></div>
-                                        <div class="form-group"><label>Normalize</label><select id="tdmsNormalize"><option value="true">Yes</option><option value="false">No</option></select></div>
-                                    </div>
-                                </div>
-                                <div id="fileInfo" class="hidden" style="margin-top: 15px; padding: 12px; background: #222; border-radius: 6px;">
-                                    <strong id="fileName">-</strong><br><small id="fileMeta" style="color: #888;">-</small>
-                                </div>
-                                <div id="frameControls" class="controls-bar hidden">
-                                    <span style="color: #888;">Frame:</span>
-                                    <input type="range" id="frameSlider" class="frame-slider" min="0" max="0" value="0">
-                                    <input type="number" id="frameInput" style="width: 70px; padding: 6px;" value="0">
-                                    <span style="color: #888;">/ <span id="frameTotal">0</span></span>
-                                </div>
-                            </div>
-                            <div class="panel">
-                                <div class="panel-header">Uploaded Files</div>
-                                <div id="uploadedFilesList"><div class="alert alert-info">No files uploaded yet</div></div>
-                            </div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header">Preview</div>
-                            <div class="canvas-container"><canvas id="previewCanvas"></canvas></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- EXPORT SUBTAB -->
-                <div class="subtab" id="subtab-export">
-                    <div class="grid-2">
-                        <div class="panel">
-                            <div class="panel-header">TDMS Export Settings</div>
-                            <div class="form-group">
-                                <label>Select TDMS File</label>
-                                <select id="exportFileSelect"><option value="">Upload a TDMS file first</option></select>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Output Format</label><select id="exportFormat"><option value="png">PNG Images (ZIP)</option><option value="mp4">MP4 Video</option></select></div>
-                                <div class="form-group"><label>Data Type</label><select id="exportDtype"><option value="uint8">8-bit</option><option value="uint16">16-bit</option></select></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Start Frame</label><input type="number" id="exportStart" value="0" min="0"></div>
-                                <div class="form-group"><label>End Frame (empty=all)</label><input type="number" id="exportEnd" placeholder="All"></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>FPS (for MP4)</label><input type="number" id="exportFps" value="30" step="1"></div>
-                                <div class="form-group"><label>Output Name</label><input type="text" id="exportName" placeholder="Auto"></div>
-                            </div>
-                            <div class="form-group"><label><input type="checkbox" id="exportNormalize" checked> Normalize to full range</label></div>
-                            <div class="btn-group">
-                                <button class="btn btn-primary" id="exportDownloadBtn" disabled>Download</button>
-                                <button class="btn btn-secondary" id="exportSaveBtn" disabled>Save to Server</button>
-                            </div>
-                            <div id="exportStatus" class="hidden" style="margin-top: 15px;"></div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header">Exported Files</div>
-                            <div id="exportedFilesList"><div class="alert alert-info">No exports yet</div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- CROP SUBTAB -->
-                <div class="subtab" id="subtab-crop">
-                    <div class="grid-2">
-                        <div class="panel">
-                            <div class="panel-header">Crop Sample</div>
-                            <div class="canvas-container"><canvas id="cropCanvas"></canvas></div>
-                            <div id="cropInfo" style="margin-top: 10px; color: #888; font-size: 0.85rem;">Draw a square on the image. Scroll to resize, drag to move.</div>
-                            <div class="form-row" style="margin-top: 15px;">
-                                <div class="form-group"><label>Particle Name</label><input type="text" id="particleName" placeholder="e.g., Janus"></div>
-                                <div class="form-group"><label>&nbsp;</label><button class="btn btn-primary" id="saveSampleBtn" style="width: 100%;" disabled>Save Sample</button></div>
-                            </div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header">Samples</div>
-                            <div id="samplesList"><div class="alert alert-info">No samples yet</div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- MASK SUBTAB -->
-                <div class="subtab" id="subtab-mask">
-                    <div class="grid-2">
-                        <div class="panel">
-                            <div class="panel-header">Mask Sample</div>
-                            <div class="tool-buttons">
-                                <button class="tool-btn active" id="maskCircular">Circular</button>
-                                <button class="tool-btn" id="maskPolygon">Polygon</button>
-                            </div>
-                            <div class="canvas-container"><canvas id="maskCanvas"></canvas></div>
-                            <div id="maskInfo" style="margin-top: 10px; color: #888; font-size: 0.85rem;">Draw a circle for ROI. Scroll to resize, drag to move.</div>
-                            <div class="form-row" style="margin-top: 15px;">
-                                <div class="form-group"><label>Particle Name</label><input type="text" id="maskParticleName" placeholder="e.g., Janus"></div>
-                                <div class="form-group"><label>&nbsp;</label><button class="btn btn-primary" id="saveMaskBtn" style="width: 100%;" disabled>Save Masked Sample</button></div>
-                            </div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header">Samples</div>
-                            <div id="maskSamplesList"><div class="alert alert-info">No samples yet</div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- MERGE SUBTAB -->
-                <div class="subtab" id="subtab-merge">
-                    <div class="grid-2">
-                        <div class="panel">
-                            <div class="panel-header">Video Merge</div>
-                            <div class="form-group"><label>Available Videos</label>
-                                <div id="mergeVideoList" style="max-height: 200px; overflow-y: auto; background: #222; border-radius: 6px; padding: 10px;"><div class="alert alert-info">No videos available</div></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Output Name</label><input type="text" id="mergeOutputName" placeholder="merged_video"></div>
-                                <div class="form-group"><label>FPS</label><input type="number" id="mergeFps" value="30"></div>
-                            </div>
-                            <div class="btn-group"><button class="btn btn-primary" id="mergeBtn" disabled>Merge Selected</button></div>
-                            <div id="mergeStatus" class="hidden" style="margin-top: 15px;"></div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header">Result Videos</div>
-                            <div id="mergedVideosList"><div class="alert alert-info">No merged videos yet</div></div>
-                        </div>
-                    </div>
-                </div>
+            <div class="col">
+              <label>Mul min / max</label>
+              <div class="row" style="gap:6px">
+                <input type="number" id="cfg-mul-min" value="0.9" step="0.01" style="flex:1">
+                <input type="number" id="cfg-mul-max" value="1.1" step="0.01" style="flex:1">
+              </div>
+              <label>Add min / max</label>
+              <div class="row" style="gap:6px">
+                <input type="number" id="cfg-add-min" value="-0.1" step="0.01" style="flex:1">
+                <input type="number" id="cfg-add-max" value="0.1" step="0.01" style="flex:1">
+              </div>
+              <label style="margin-top:10px"><input type="checkbox" id="cfg-affine"> Affine augmentation</label>
             </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn btn-primary" id="train-start-btn">&#9654; Start Training</button>
+            <button class="btn btn-danger hidden" id="train-cancel-btn">&#10005; Cancel</button>
+          </div>
+        </div>
+      </div>
 
-            <!-- TRAINING PAGE -->
-            <div class="page" id="page-training">
-                <div class="grid-2">
-                    <div>
-                        <div class="panel">
-                            <div class="panel-header">Training Configuration</div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Particle</label><select id="trainParticle"><option value="">Select sample</option></select></div>
-                                <div class="form-group"><label>Max Epochs</label><input type="number" id="maxEpochs" value="100"></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Batch Size</label><input type="number" id="batchSize" value="8"></div>
-                                <div class="form-group"><label>Learning Rate</label><input type="number" id="learningRate" value="0.0001" step="0.0001"></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>N Transforms</label><input type="number" id="nTransforms" value="4"></div>
-                                <div class="form-group"><label>Samples (length)</label><input type="number" id="trainLength" value="400"></div>
-                            </div>
-                            
-                            <div class="section-title">Intensity Augmentation</div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Multiply Min</label><input type="number" id="mulMin" value="0.9" step="0.05"></div>
-                                <div class="form-group"><label>Multiply Max</label><input type="number" id="mulMax" value="1.1" step="0.05"></div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group"><label>Add Min</label><input type="number" id="addMin" value="-0.1" step="0.05"></div>
-                                <div class="form-group"><label>Add Max</label><input type="number" id="addMax" value="0.1" step="0.05"></div>
-                            </div>
-                            
-                            <div class="section-title">Affine Augmentation</div>
-                            <div class="form-group">
-                                <label><input type="checkbox" id="useAffine"> Enable Affine Transforms</label>
-                            </div>
-                            <div id="affineParams">
-                                <div class="form-row">
-                                    <div class="form-group"><label>Scale Min</label><input type="number" id="scaleMin" value="0.9" step="0.05"></div>
-                                    <div class="form-group"><label>Scale Max</label><input type="number" id="scaleMax" value="1.1" step="0.05"></div>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group"><label>Rotation Min (0-1)</label><input type="number" id="rotationMin" value="0" step="0.1"></div>
-                                    <div class="form-group"><label>Rotation Max (0-1)</label><input type="number" id="rotationMax" value="1" step="0.1"></div>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group"><label>Translate Min (px)</label><input type="number" id="translateMin" value="-5"></div>
-                                    <div class="form-group"><label>Translate Max (px)</label><input type="number" id="translateMax" value="5"></div>
-                                </div>
-                            </div>
-                            
-                            <div class="btn-group">
-                                <button class="btn btn-primary" id="trainBtn" disabled>Start Training</button>
-                            </div>
-                            <div id="trainingStatus" class="hidden" style="margin-top: 15px;">
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                                    <span>Progress</span>
-                                    <span><span id="trainingEpoch">0</span> / <span id="trainingMaxEpoch">0</span> epochs (<span id="trainingProgress">0%</span>)</span>
-                                </div>
-                                <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%;"></div></div>
-                                <div id="trainingLive" style="margin-top: 10px; font-size: 0.85rem; color: #888;">
-                                    <span>Loss: <span id="trainingLoss">-</span></span>
-                                    <span style="margin-left: 15px;">Time: <span id="trainingTime">0:00</span></span>
-                                </div>
-                            </div>
-                            <div id="trainingSummary" class="hidden" style="margin-top: 15px; padding: 15px; background: #222; border-radius: 8px;">
-                                <div style="font-weight: 600; margin-bottom: 10px; color: #4aff80;">Training Complete</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
-                                    <div>Runtime: <strong id="summaryRuntime">-</strong></div>
-                                    <div>Device: <strong id="summaryDevice">-</strong></div>
-                                    <div>Final Loss: <strong id="summaryFinalLoss">-</strong></div>
-                                    <div>Min Loss: <strong id="summaryMinLoss">-</strong></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <div class="panel">
-                            <div class="panel-header">Trained Models</div>
-                            <div id="modelsList"><div class="alert alert-info">No models yet</div></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+      <div class="card" id="train-progress-card" style="display:none">
+        <div class="card-title">Progress</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span id="train-epoch-label" style="font-size:12px;color:var(--text2)">&#8212;</span>
+          <span id="train-loss-label" class="mono" style="font-size:12px"></span>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="train-bar" style="width:0%"></div></div>
+        <canvas id="loss-canvas" style="width:100%;height:100px;margin-top:12px;display:block"></canvas>
+        <div id="train-status" style="margin-top:8px"></div>
+      </div>
 
-            <!-- DETECTION PAGE -->
-            <div class="page" id="page-detection">
-                <div class="grid-2">
-                    <div>
-                        <div class="panel">
-                            <div class="panel-header">Detection Settings</div>
-                            <div class="form-group">
-                                <label>Model</label>
-                                <select id="detectModel"><option value="">Select model</option></select>
-                            </div>
-                            <div class="form-group">
-                                <label>Image / TDMS Video</label>
-                                <input type="file" id="detectImageInput" accept=".jpg,.jpeg,.png,.tif,.tiff,.tdms" style="display:none;">
-                                <div class="upload-zone" id="detectUploadZone" style="padding: 20px;">
-                                    <div class="upload-text" id="detectUploadText">Drop file or <strong>click to browse</strong></div>
-                                    <div class="upload-progress hidden" id="detectUploadProgress">
-                                        <div class="progress-bar" style="height: 8px; margin-top: 10px;">
-                                            <div class="progress-fill" id="detectUploadProgressFill" style="width: 0%;"></div>
-                                        </div>
-                                        <div id="detectUploadProgressText" style="margin-top: 5px; font-size: 0.85rem; color: #888;">0%</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="detectFileInfo" class="hidden" style="padding: 12px; background: #222; border-radius: 6px; margin-bottom: 15px;">
-                                <strong id="detectFileName">-</strong><br><small id="detectFileMeta" style="color: #888;">-</small>
-                            </div>
-                            <div id="detectTdmsSettings" class="hidden" style="margin-bottom: 15px;">
-                                <div class="section-title">TDMS Settings</div>
-                                <div class="form-row-4">
-                                    <div class="form-group"><label>Width</label><input type="number" id="detectTdmsWidth" value="1024"></div>
-                                    <div class="form-group"><label>Height</label><input type="number" id="detectTdmsHeight" value="1024"></div>
-                                    <div class="form-group"><label>Channel</label><input type="number" id="detectTdmsChannel" value="0"></div>
-                                    <div class="form-group"><label>Normalize</label><select id="detectTdmsNormalize"><option value="true">Yes</option><option value="false">No</option></select></div>
-                                </div>
-                            </div>
-                            <div id="detectFrameControls" class="controls-bar hidden" style="margin-bottom: 15px;">
-                                <span style="color: #888;">Frame:</span>
-                                <input type="range" id="detectFrameSlider" class="frame-slider" min="0" max="0" value="0">
-                                <input type="number" id="detectFrameInput" style="width: 70px; padding: 6px;" value="0">
-                                <span style="color: #888;">/ <span id="detectFrameTotal">0</span></span>
-                            </div>
-                            <div class="form-row-3">
-                                <div class="form-group"><label>Alpha</label><input type="number" id="detectAlpha" value="1.0" step="0.1"></div>
-                                <div class="form-group"><label>Beta</label><input type="number" id="detectBeta" value="0" step="0.1"></div>
-                                <div class="form-group"><label>Cutoff</label><input type="number" id="detectCutoff" value="0.8" step="0.05"></div>
-                            </div>
-                            <div class="form-group">
-                                <label><input type="checkbox" id="showWeightmap" checked> Show Weightmap</label>
-                            </div>
-                            <div class="btn-group">
-                                <button class="btn btn-primary" id="detectBtn" disabled>Detect Particles</button>
-                            </div>
-                            <div id="detectionResults" class="hidden" style="margin-top: 15px;">
-                                <div class="alert alert-info">Detected: <strong id="detectionCount">0</strong> particles | Frame: <strong id="detectionFrame">0</strong></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <div class="panel">
-                            <div class="panel-header">Results</div>
-                            <div class="weightmap-container">
-                                <div>
-                                    <div style="color: #888; margin-bottom: 10px; font-size: 0.85rem;">Detection</div>
-                                    <div class="canvas-container" style="min-height: 300px;"><canvas id="detectCanvas"></canvas></div>
-                                </div>
-                                <div id="weightmapPanel">
-                                    <div style="color: #888; margin-bottom: 10px; font-size: 0.85rem;">Weightmap</div>
-                                    <div class="canvas-container" style="min-height: 300px;"><canvas id="weightmapCanvas"></canvas></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- POSTPROCESSING PAGE -->
-            <div class="page" id="page-postprocessing">
-                <div class="grid-2">
-                    <div class="panel">
-                        <div class="panel-header">Video Merge</div>
-                        <div class="form-group"><label>Available Videos</label>
-                            <div id="postMergeVideoList" style="max-height: 200px; overflow-y: auto; background: #222; border-radius: 6px; padding: 10px;"><div class="alert alert-info">No videos available</div></div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group"><label>Output Name</label><input type="text" id="postMergeOutputName" placeholder="merged_video"></div>
-                            <div class="form-group"><label>FPS</label><input type="number" id="postMergeFps" value="30"></div>
-                        </div>
-                        <div class="btn-group"><button class="btn btn-primary" id="postMergeBtn" disabled>Merge Selected</button></div>
-                        <div id="postMergeStatus" class="hidden" style="margin-top: 15px;"></div>
-                    </div>
-                    <div class="panel">
-                        <div class="panel-header">Results & Downloads</div>
-                        <div id="postResultsList"><div class="alert alert-info">No results yet</div></div>
-                    </div>
-                </div>
-                <div class="panel" style="margin-top: 20px;">
-                    <div class="panel-header">Tracking & Analysis <span class="badge">Coming Soon</span></div>
-                    <div class="postprocess-placeholder">
-                        <h3>Future Features</h3>
-                        <p>Particle tracking, trajectory analysis, and data export will be available here.</p>
-                    </div>
-                </div>
-            </div>
-        </main>
+      <div class="card">
+        <div class="card-title">Models</div>
+        <div id="model-list" class="file-list"><div style="color:var(--text2)">No models trained yet</div></div>
+      </div>
     </div>
 
-    <script>
-        const API_BASE = (function() {
-            const path = window.location.pathname;
-            if (path.includes('/proxy/')) {
-                const match = path.match(/(.*\/proxy\/\d+)/);
-                if (match) return match[1];
-            }
-            return '';
-        })();
-        
-        (function() {
-            const link = document.createElement('link');
-            link.rel = 'icon';
-            link.type = 'image/svg+xml';
-            link.href = API_BASE + '/icon.svg';
-            document.head.appendChild(link);
-        })();
-        
-        let currentUser = null;
-        let currentFileId = null;
-        let currentFileType = null;
-        let currentFrameIndex = 0;
-        let currentImage = null;
-        let cropRect = null;
-        let maskCircle = null;
-        let isDrawing = false;
-        let isDragging = false;
-        let startX, startY, dragOffsetX, dragOffsetY;
-        let currentMaskTool = 'circular';
-        let maskPoints = [];
-        let trainPoll = null;
-        
-        const previewCanvas = document.getElementById('previewCanvas');
-        const previewCtx = previewCanvas ? previewCanvas.getContext('2d') : null;
-        const cropCanvas = document.getElementById('cropCanvas');
-        const cropCtx = cropCanvas ? cropCanvas.getContext('2d') : null;
-        const maskCanvas = document.getElementById('maskCanvas');
-        const maskCtx = maskCanvas ? maskCanvas.getContext('2d') : null;
-        const detectCanvas = document.getElementById('detectCanvas');
-        const detectCtx = detectCanvas ? detectCanvas.getContext('2d') : null;
-        const weightmapCanvas = document.getElementById('weightmapCanvas');
-        const weightmapCtx = weightmapCanvas ? weightmapCanvas.getContext('2d') : null;
-
-        const LOGIN_TIMEOUT_MS = 15000;
-        function setLoginError(msg) {
-            const el = document.getElementById('loginError');
-            el.textContent = msg;
-            el.classList.remove('hidden');
-        }
-        function setLoginButtonsEnabled(enabled) {
-            document.getElementById('loginBtn').disabled = !enabled;
-            document.getElementById('registerBtn').disabled = !enabled;
-            document.getElementById('loginBtn').textContent = enabled ? 'Login' : 'Signing in…';
-            document.getElementById('registerBtn').textContent = enabled ? 'Register' : 'Registering…';
-        }
-
-        document.getElementById('loginBtn').onclick = async () => {
-            const username = document.getElementById('loginUsername').value.trim();
-            const password = document.getElementById('loginPassword').value;
-            if (!username || !password) return;
-            setLoginButtonsEnabled(false);
-            document.getElementById('loginError').classList.add('hidden');
-            try {
-                const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
-                const res = await fetch(`${API_BASE}/auth/login`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username, password}),
-                    signal: ctrl.signal
-                });
-                clearTimeout(t);
-                const data = await res.json();
-                if (data.error) {
-                    setLoginError(data.error);
-                } else {
-                    loginSuccess(username);
-                }
-            } catch (e) {
-                setLoginError(e.name === 'AbortError' ? 'Connection timed out' : 'Login failed');
-            } finally {
-                setLoginButtonsEnabled(true);
-                document.getElementById('loginBtn').textContent = 'Login';
-                document.getElementById('registerBtn').textContent = 'Register';
-            }
-        };
-
-        document.getElementById('registerBtn').onclick = async () => {
-            const username = document.getElementById('loginUsername').value.trim();
-            const password = document.getElementById('loginPassword').value;
-            if (!username || !password) return;
-            setLoginButtonsEnabled(false);
-            document.getElementById('loginError').classList.add('hidden');
-            try {
-                const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
-                const res = await fetch(`${API_BASE}/auth/register`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username, password}),
-                    signal: ctrl.signal
-                });
-                clearTimeout(t);
-                const data = await res.json();
-                if (data.error) {
-                    setLoginError(data.error);
-                } else {
-                    loginSuccess(username);
-                }
-            } catch (e) {
-                setLoginError(e.name === 'AbortError' ? 'Connection timed out' : 'Registration failed');
-            } finally {
-                setLoginButtonsEnabled(true);
-                document.getElementById('loginBtn').textContent = 'Login';
-                document.getElementById('registerBtn').textContent = 'Register';
-            }
-        };
-
-        document.getElementById('logoutBtn').onclick = () => {
-            currentUser = null;
-            localStorage.removeItem('mona_user');
-            document.getElementById('loginContainer').style.display = 'flex';
-            document.getElementById('appContainer').classList.remove('active');
-        };
-
-        function loginSuccess(username) {
-            currentUser = username;
-            localStorage.setItem('mona_user', username);
-            document.getElementById('loginContainer').style.display = 'none';
-            document.getElementById('appContainer').classList.add('active');
-            document.getElementById('displayUsername').textContent = username;
-            loadDefaults();
-            loadSamples();
-            loadModels();
-            loadUploadedFiles();
-            checkActiveTraining();
-        }
-
-        async function checkActiveTraining() {
-            try {
-                const res = await fetch(`${API_BASE}/train/active/${currentUser}`);
-                const data = await res.json();
-                if (data.jobs && data.jobs.length > 0) {
-                    const job = data.jobs[0];
-                    document.getElementById('trainingStatus').classList.remove('hidden');
-                    document.getElementById('trainingSummary').classList.add('hidden');
-                    document.getElementById('trainingLive').classList.remove('hidden');
-                    document.getElementById('trainingProgress').textContent = job.progress + '%';
-                    document.getElementById('progressFill').style.width = job.progress + '%';
-                    document.getElementById('trainingEpoch').textContent = job.current_epoch || 0;
-                    document.getElementById('trainingMaxEpoch').textContent = job.config?.max_epochs || '-';
-                    if (job.current_loss) document.getElementById('trainingLoss').textContent = job.current_loss.toFixed(6);
-                    if (job.elapsed_time) {
-                        const mins = Math.floor(job.elapsed_time / 60);
-                        const secs = Math.floor(job.elapsed_time % 60);
-                        document.getElementById('trainingTime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-                    }
-                    document.getElementById('trainBtn').disabled = true;
-                    document.getElementById('trainBtn').innerHTML = '<span class="loader"></span>';
-                    trainPoll = setInterval(() => pollTraining(job.id), 2000);
-                }
-            } catch (e) {}
-        }
-
-        (async function() {
-            const saved = localStorage.getItem('mona_user');
-            if (!saved) return;
-            try {
-                const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), 5000);
-                const res = await fetch(`${API_BASE}/auth/check/${saved}`, { signal: ctrl.signal });
-                clearTimeout(t);
-                const data = await res.json();
-                if (data.exists) loginSuccess(saved);
-            } catch (e) {}
-        })();
-
-        // Navigation
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.onclick = () => {
-                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-                item.classList.add('active');
-                document.getElementById('page-' + item.dataset.page).classList.add('active');
-            };
-        });
-
-        // Sub-tab Navigation
-        document.querySelectorAll('.sub-nav-btn').forEach(btn => {
-            btn.onclick = () => {
-                const parent = btn.closest('.page');
-                parent.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.remove('active'));
-                parent.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById('subtab-' + btn.dataset.subtab).classList.add('active');
-                if (btn.dataset.subtab === 'crop' || btn.dataset.subtab === 'mask') syncCanvasToSubtab(btn.dataset.subtab);
-                if (btn.dataset.subtab === 'upload') loadUploadedFiles();
-                if (btn.dataset.subtab === 'export') loadExportFiles();
-                if (btn.dataset.subtab === 'merge') loadMergeVideos();
-            };
-        });
-
-        function syncCanvasToSubtab(tab) {
-            if (!currentImage) return;
-            if (tab === 'crop') {
-                cropCanvas.width = currentImage.width;
-                cropCanvas.height = currentImage.height;
-                drawCropCanvas();
-            } else if (tab === 'mask') {
-                maskCanvas.width = currentImage.width;
-                maskCanvas.height = currentImage.height;
-                drawMaskCanvas();
-            }
-        }
-
-        // Mask Tools
-        document.getElementById('maskCircular').onclick = () => { currentMaskTool = 'circular'; document.getElementById('maskCircular').classList.add('active'); document.getElementById('maskPolygon').classList.remove('active'); maskCircle = null; maskPoints = []; drawMaskCanvas(); document.getElementById('maskInfo').textContent = 'Draw a circle for ROI. Scroll to resize, drag to move.'; };
-        document.getElementById('maskPolygon').onclick = () => { currentMaskTool = 'polygon'; document.getElementById('maskPolygon').classList.add('active'); document.getElementById('maskCircular').classList.remove('active'); maskCircle = null; maskPoints = []; drawMaskCanvas(); document.getElementById('maskInfo').textContent = 'Click to add polygon points. Close shape by clicking near start.'; };
-
-        // Upload
-        const uploadZone = document.getElementById('uploadZone');
-        const fileInput = document.getElementById('fileInput');
-        uploadZone.onclick = () => fileInput.click();
-        uploadZone.ondragover = e => { e.preventDefault(); uploadZone.style.borderColor = '#4a9eff'; };
-        uploadZone.ondragleave = () => uploadZone.style.borderColor = '#444';
-        uploadZone.ondrop = e => { e.preventDefault(); uploadZone.style.borderColor = '#444'; if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]); };
-        fileInput.onchange = e => { if (e.target.files.length) handleUpload(e.target.files[0]); };
-
-        const CHUNK_SIZE = 10 * 1024 * 1024;
-
-        async function handleUpload(file) {
-            if (!currentUser) {
-                alert('Please login first');
-                return;
-            }
-            
-            console.log('Uploading file:', file.name, 'size:', file.size, 'user:', currentUser);
-
-            const progressEl = document.getElementById('uploadProgress');
-            const progressFill = document.getElementById('uploadProgressFill');
-            const progressText = document.getElementById('uploadProgressText');
-            const uploadIcon = document.getElementById('uploadIcon');
-            const uploadTextEl = document.getElementById('uploadText');
-
-            progressEl.classList.remove('hidden');
-            uploadIcon.classList.add('hidden');
-            uploadTextEl.innerHTML = `<strong>${file.name}</strong>`;
-            progressFill.style.width = '0%';
-            progressText.textContent = '0%';
-
-            const settings = {
-                username: currentUser,
-                filename: file.name,
-                total_size: file.size,
-                image_width: parseInt(document.getElementById('tdmsWidth').value) || 1024,
-                image_height: parseInt(document.getElementById('tdmsHeight').value) || 1024,
-                channel_index: parseInt(document.getElementById('tdmsChannel').value) || 0,
-                normalize: document.getElementById('tdmsNormalize').value === 'true'
-            };
-
-            try {
-                const startRes = await fetch(`${API_BASE}/upload/start`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(settings)
-                });
-                const startData = await startRes.json();
-                if (startData.error) throw new Error(startData.error);
-
-                const uploadId = startData.upload_id;
-                let offset = 0;
-
-                while (offset < file.size) {
-                    const chunk = file.slice(offset, offset + CHUNK_SIZE);
-                    const chunkData = await chunk.arrayBuffer();
-                    
-                    const chunkRes = await fetch(`${API_BASE}/upload/chunk/${uploadId}?offset=${offset}`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/octet-stream'},
-                        body: chunkData
-                    });
-                    const chunkResult = await chunkRes.json();
-                    if (chunkResult.error) throw new Error(chunkResult.error);
-
-                    offset += chunk.size;
-                    const pct = Math.round((offset / file.size) * 100);
-                    progressFill.style.width = pct + '%';
-                    progressText.textContent = pct + '%';
-                }
-
-                const completeRes = await fetch(`${API_BASE}/upload/complete`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        username: currentUser,
-                        upload_id: uploadId,
-                        filename: file.name,
-                        ...settings
-                    })
-                });
-                const data = await completeRes.json();
-                if (data.error) throw new Error(data.error);
-
-                progressEl.classList.add('hidden');
-                uploadIcon.classList.remove('hidden');
-                uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
-
-                currentFileId = data.id;
-                currentFileType = data.type;
-                document.getElementById('fileInfo').classList.remove('hidden');
-                document.getElementById('fileName').textContent = data.filename;
-                document.getElementById('fileMeta').textContent = `${data.width || '?'}x${data.height || '?'} | ${data.frame_count} frames`;
-
-                if (data.type === 'tdms') {
-                    document.getElementById('tdmsSettings').classList.remove('hidden');
-                    if (data.frame_count > 1) {
-                        document.getElementById('frameControls').classList.remove('hidden');
-                        document.getElementById('frameSlider').max = data.frame_count - 1;
-                        document.getElementById('frameTotal').textContent = data.frame_count;
-                    }
-                } else {
-                    document.getElementById('tdmsSettings').classList.add('hidden');
-                    document.getElementById('frameControls').classList.add('hidden');
-                }
-                loadFrame(0);
-
-            } catch (err) {
-                progressEl.classList.add('hidden');
-                uploadIcon.classList.remove('hidden');
-                uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
-                alert('Upload failed: ' + err.message);
-            }
-            loadUploadedFiles();
-        }
-
-        async function loadUploadedFiles() {
-            if (!currentUser) return;
-            const res = await fetch(`${API_BASE}/files/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('uploadedFilesList');
-            
-            if (Object.keys(data.files).length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No files uploaded yet</div>';
-                return;
-            }
-            
-            list.innerHTML = '';
-            for (const [id, file] of Object.entries(data.files)) {
-                const isActive = id === currentFileId;
-                const fileItem = document.createElement('div');
-                fileItem.className = 'file-item';
-                fileItem.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #222; border-radius: 6px; margin-bottom: 8px; ' + (isActive ? 'border: 1px solid #4a9eff;' : '');
-                fileItem.innerHTML = `
-                    <div style="flex: 1; cursor: pointer;" onclick="selectUploadedFile('${id}')">
-                        <div style="font-weight: 500;">${file.filename}</div>
-                        <div style="font-size: 0.85rem; color: #888;">${file.type === 'tdms' ? file.frame_count + ' frames' : (file.width || '?') + 'x' + (file.height || '?')}</div>
-                    </div>
-                    <button class="btn btn-danger btn-sm" onclick="deleteUploadedFile('${id}', '${file.filename.replace(/'/g, "\\'")}')" style="padding: 6px 12px; font-size: 0.85rem;">Delete</button>
-                `;
-                list.appendChild(fileItem);
-            }
-        }
-
-        async function selectUploadedFile(fileId) {
-            currentFileId = fileId;
-            const res = await fetch(`${API_BASE}/files/${currentUser}`);
-            const data = await res.json();
-            const file = data.files[fileId];
-            if (!file) return;
-            
-            currentFileType = file.type;
-            document.getElementById('fileInfo').classList.remove('hidden');
-            document.getElementById('fileName').textContent = file.filename;
-            document.getElementById('fileMeta').textContent = `${file.width || '?'}x${file.height || '?'} | ${file.frame_count} frames`;
-            
-            if (file.type === 'tdms') {
-                document.getElementById('tdmsSettings').classList.remove('hidden');
-                if (file.frame_count > 1) {
-                    document.getElementById('frameControls').classList.remove('hidden');
-                    document.getElementById('frameSlider').max = file.frame_count - 1;
-                    document.getElementById('frameTotal').textContent = file.frame_count;
-                }
-            } else {
-                document.getElementById('tdmsSettings').classList.add('hidden');
-                document.getElementById('frameControls').classList.add('hidden');
-            }
-            loadFrame(0);
-            loadUploadedFiles();
-        }
-
-        async function deleteUploadedFile(fileId, filename) {
-            if (!confirm(`Delete "${filename}"?`)) return;
-            
-            const res = await fetch(`${API_BASE}/files/${currentUser}/${fileId}`, { method: 'DELETE' });
-            const data = await res.json();
-            
-            if (data.error) {
-                alert('Delete failed: ' + data.error);
-                return;
-            }
-            
-            if (currentFileId === fileId) {
-                currentFileId = null;
-                currentFileType = null;
-                document.getElementById('fileInfo').classList.add('hidden');
-                document.getElementById('tdmsSettings').classList.add('hidden');
-                document.getElementById('frameControls').classList.add('hidden');
-            }
-            
-            loadUploadedFiles();
-        }
-
-        async function loadFrame(index) {
-            if (!currentFileId) return;
-            const res = await fetch(`${API_BASE}/frame/${currentUser}/${currentFileId}/${index}`);
-            const data = await res.json();
-            currentFrameIndex = index;
-            currentImage = new Image();
-            currentImage.onload = () => {
-                previewCanvas.width = currentImage.width;
-                previewCanvas.height = currentImage.height;
-                cropCanvas.width = currentImage.width;
-                cropCanvas.height = currentImage.height;
-                maskCanvas.width = currentImage.width;
-                maskCanvas.height = currentImage.height;
-                drawPreviewCanvas();
-                drawCropCanvas();
-                drawMaskCanvas();
-            };
-            currentImage.src = data.image;
-            document.getElementById('frameSlider').value = index;
-            document.getElementById('frameInput').value = index;
-        }
-
-        document.getElementById('frameSlider').oninput = e => loadFrame(parseInt(e.target.value));
-        document.getElementById('frameInput').onchange = e => loadFrame(Math.max(0, Math.min(parseInt(e.target.value) || 0, parseInt(e.target.max))));
-
-        function drawPreviewCanvas() {
-            if (!currentImage || !previewCanvas || !previewCtx) return;
-            previewCanvas.width = currentImage.width;
-            previewCanvas.height = currentImage.height;
-            previewCtx.drawImage(currentImage, 0, 0);
-        }
-
-        function drawCropCanvas() {
-            if (!currentImage || !cropCanvas || !cropCtx) return;
-            cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
-            cropCtx.drawImage(currentImage, 0, 0);
-            
-            if (cropRect) {
-                cropCtx.strokeStyle = '#4a9eff';
-                cropCtx.lineWidth = 2;
-                cropCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-                cropCtx.fillStyle = 'rgba(74, 158, 255, 0.1)';
-                cropCtx.fillRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-                cropCtx.strokeStyle = '#4aff80';
-                cropCtx.beginPath();
-                cropCtx.moveTo(cropRect.x, cropRect.y);
-                cropCtx.lineTo(cropRect.x + cropRect.w, cropRect.y + cropRect.h);
-                cropCtx.moveTo(cropRect.x + cropRect.w, cropRect.y);
-                cropCtx.lineTo(cropRect.x, cropRect.y + cropRect.h);
-                cropCtx.stroke();
-            }
-        }
-
-        function drawMaskCanvas() {
-            if (!currentImage || !maskCanvas || !maskCtx) return;
-            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-            maskCtx.drawImage(currentImage, 0, 0);
-            
-            if (currentMaskTool === 'circular' && maskCircle) {
-                maskCtx.strokeStyle = '#ff4a4a';
-                maskCtx.lineWidth = 2;
-                maskCtx.beginPath();
-                maskCtx.arc(maskCircle.x, maskCircle.y, maskCircle.r, 0, 2 * Math.PI);
-                maskCtx.stroke();
-                maskCtx.fillStyle = 'rgba(255, 74, 74, 0.15)';
-                maskCtx.fill();
-                maskCtx.fillStyle = '#fff';
-                maskCtx.beginPath();
-                maskCtx.arc(maskCircle.x, maskCircle.y, 5, 0, 2 * Math.PI);
-                maskCtx.fill();
-            }
-            
-            if (currentMaskTool === 'polygon' && maskPoints.length > 0) {
-                maskCtx.strokeStyle = '#ff4a4a';
-                maskCtx.lineWidth = 2;
-                maskCtx.beginPath();
-                maskCtx.moveTo(maskPoints[0].x, maskPoints[0].y);
-                for (let i = 1; i < maskPoints.length; i++) maskCtx.lineTo(maskPoints[i].x, maskPoints[i].y);
-                if (maskPoints.length > 2) maskCtx.closePath();
-                maskCtx.stroke();
-                maskCtx.fillStyle = 'rgba(255, 74, 74, 0.15)';
-                maskCtx.fill();
-                maskPoints.forEach((p, i) => {
-                    maskCtx.fillStyle = i === 0 ? '#4aff80' : '#fff';
-                    maskCtx.beginPath();
-                    maskCtx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-                    maskCtx.fill();
-                });
-            }
-        }
-
-        function getCanvasCoords(canvas, e) {
-            const rect = canvas.getBoundingClientRect();
-            return { x: (e.clientX - rect.left) * canvas.width / rect.width, y: (e.clientY - rect.top) * canvas.height / rect.height };
-        }
-
-        // Crop Canvas Events
-        cropCanvas.onmousedown = e => {
-            const {x, y} = getCanvasCoords(cropCanvas, e);
-            if (cropRect && x >= cropRect.x && x <= cropRect.x + cropRect.w && y >= cropRect.y && y <= cropRect.y + cropRect.h) {
-                isDragging = true;
-                dragOffsetX = x - cropRect.x;
-                dragOffsetY = y - cropRect.y;
-            } else {
-                isDrawing = true;
-                startX = x; startY = y;
-                cropRect = null;
-            }
-        };
-
-        cropCanvas.onmousemove = e => {
-            const {x, y} = getCanvasCoords(cropCanvas, e);
-            if (isDrawing) {
-                const size = Math.max(Math.abs(x - startX), Math.abs(y - startY));
-                cropRect = { x: (startX + x) / 2 - size / 2, y: (startY + y) / 2 - size / 2, w: size, h: size };
-                drawCropCanvas();
-                document.getElementById('cropInfo').textContent = `Selection: ${Math.round(cropRect.w)}x${Math.round(cropRect.h)}px`;
-            } else if (isDragging && cropRect) {
-                cropRect.x = Math.max(0, Math.min(x - dragOffsetX, cropCanvas.width - cropRect.w));
-                cropRect.y = Math.max(0, Math.min(y - dragOffsetY, cropCanvas.height - cropRect.h));
-                drawCropCanvas();
-            }
-        };
-
-        cropCanvas.onmouseup = () => { isDrawing = false; isDragging = false; updateSaveButton(); };
-        cropCanvas.onmouseleave = () => { isDrawing = false; isDragging = false; };
-
-        cropCanvas.onwheel = e => {
-            if (!cropRect) return;
-            const {x, y} = getCanvasCoords(cropCanvas, e);
-            if (x < cropRect.x || x > cropRect.x + cropRect.w || y < cropRect.y || y > cropRect.y + cropRect.h) return;
-            e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.1 : 0.9;
-            const newSize = Math.max(10, cropRect.w * factor);
-            const cx = cropRect.x + cropRect.w / 2, cy = cropRect.y + cropRect.h / 2;
-            cropRect = { x: Math.max(0, cx - newSize/2), y: Math.max(0, cy - newSize/2), w: newSize, h: newSize };
-            drawCropCanvas();
-            document.getElementById('cropInfo').textContent = `Selection: ${Math.round(cropRect.w)}x${Math.round(cropRect.h)}px`;
-        };
-
-        // Mask Canvas Events
-        maskCanvas.onmousedown = e => {
-            const {x, y} = getCanvasCoords(maskCanvas, e);
-            if (currentMaskTool === 'circular') {
-                if (maskCircle && Math.sqrt((x - maskCircle.x)**2 + (y - maskCircle.y)**2) <= maskCircle.r) {
-                    isDragging = true;
-                    dragOffsetX = x - maskCircle.x;
-                    dragOffsetY = y - maskCircle.y;
-                } else {
-                    isDrawing = true;
-                    startX = x; startY = y;
-                    maskCircle = null;
-                }
-            } else {
-                if (maskPoints.length > 2 && Math.sqrt((x - maskPoints[0].x)**2 + (y - maskPoints[0].y)**2) < 15) {
-                    maskPoints.push({...maskPoints[0]});
-                } else {
-                    maskPoints.push({x, y});
-                }
-                drawMaskCanvas();
-                updateMaskButton();
-            }
-        };
-
-        maskCanvas.onmousemove = e => {
-            const {x, y} = getCanvasCoords(maskCanvas, e);
-            if (currentMaskTool === 'circular') {
-                if (isDrawing) {
-                    const r = Math.sqrt((x - startX)**2 + (y - startY)**2) / 2;
-                    const cx = (startX + x) / 2, cy = (startY + y) / 2;
-                    maskCircle = { x: cx, y: cy, r: Math.max(10, r) };
-                    drawMaskCanvas();
-                    document.getElementById('maskInfo').textContent = `Radius: ${Math.round(maskCircle.r)}px`;
-                } else if (isDragging && maskCircle) {
-                    maskCircle.x = Math.max(maskCircle.r, Math.min(x - dragOffsetX, maskCanvas.width - maskCircle.r));
-                    maskCircle.y = Math.max(maskCircle.r, Math.min(y - dragOffsetY, maskCanvas.height - maskCircle.r));
-                    drawMaskCanvas();
-                }
-            }
-        };
-
-        maskCanvas.onmouseup = () => { isDrawing = false; isDragging = false; updateMaskButton(); };
-        maskCanvas.onmouseleave = () => { isDrawing = false; isDragging = false; };
-
-        maskCanvas.onwheel = e => {
-            if (currentMaskTool !== 'circular' || !maskCircle) return;
-            const {x, y} = getCanvasCoords(maskCanvas, e);
-            if (Math.sqrt((x - maskCircle.x)**2 + (y - maskCircle.y)**2) > maskCircle.r) return;
-            e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.1 : 0.9;
-            maskCircle.r = Math.max(10, maskCircle.r * factor);
-            drawMaskCanvas();
-            document.getElementById('maskInfo').textContent = `Radius: ${Math.round(maskCircle.r)}px`;
-        };
-
-        function updateMaskButton() {
-            const name = document.getElementById('maskParticleName').value.trim();
-            const hasShape = (currentMaskTool === 'circular' && maskCircle) || (currentMaskTool === 'polygon' && maskPoints.length > 2);
-            document.getElementById('saveMaskBtn').disabled = !hasShape || !name || !currentFileId;
-        }
-        document.getElementById('maskParticleName').oninput = updateMaskButton;
-
-        function updateSaveButton() {
-            document.getElementById('saveSampleBtn').disabled = !cropRect || !document.getElementById('particleName').value.trim() || !currentFileId;
-        }
-        document.getElementById('particleName').oninput = updateSaveButton;
-
-        document.getElementById('saveSampleBtn').onclick = async () => {
-            const name = document.getElementById('particleName').value.trim();
-            if (!name || !cropRect) return;
-
-            await fetch(`${API_BASE}/sample`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ username: currentUser, particle_name: name, x: Math.round(cropRect.x), y: Math.round(cropRect.y), width: Math.round(cropRect.w), height: Math.round(cropRect.h), file_id: currentFileId, frame_index: currentFrameIndex })
-            });
-            
-            cropRect = null;
-            document.getElementById('particleName').value = '';
-            drawCropCanvas();
-            updateSaveButton();
-            loadSamples();
-        };
-
-        document.getElementById('saveMaskBtn').onclick = async () => {
-            const name = document.getElementById('maskParticleName').value.trim();
-            if (!name || !currentFileId) return;
-
-            if (currentMaskTool === 'circular' && maskCircle) {
-                await fetch(`${API_BASE}/mask/circular`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username: currentUser, file_id: currentFileId, frame_index: currentFrameIndex, roi_center_x: maskCircle.x, roi_center_y: maskCircle.y, roi_radius: maskCircle.r, particle_name: name })
-                });
-            } else if (currentMaskTool === 'polygon' && maskPoints.length > 2) {
-                await fetch(`${API_BASE}/mask`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username: currentUser, particle_name: name, mask_data: maskCanvas.toDataURL() })
-                });
-            }
-            
-            maskCircle = null;
-            maskPoints = [];
-            document.getElementById('maskParticleName').value = '';
-            drawMaskCanvas();
-            updateMaskButton();
-            loadSamples();
-        };
-
-        // Export functionality
-        async function loadExportFiles() {
-            const res = await fetch(`${API_BASE}/files/${currentUser}?file_type=tdms`);
-            const data = await res.json();
-            const select = document.getElementById('exportFileSelect');
-            select.innerHTML = '<option value="">Select TDMS file</option>';
-            for (const [id, file] of Object.entries(data.files)) {
-                select.innerHTML += `<option value="${id}">${file.filename} (${file.frame_count} frames)</option>`;
-            }
-            document.getElementById('exportDownloadBtn').disabled = true;
-            document.getElementById('exportSaveBtn').disabled = true;
-            loadExportedFiles();
-        }
-
-        document.getElementById('exportFileSelect').onchange = () => {
-            const hasFile = !!document.getElementById('exportFileSelect').value;
-            document.getElementById('exportDownloadBtn').disabled = !hasFile;
-            document.getElementById('exportSaveBtn').disabled = !hasFile;
-        };
-
-        async function loadExportedFiles() {
-            const res = await fetch(`${API_BASE}/results/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('exportedFilesList');
-            if (data.results.length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No exports yet</div>';
-                return;
-            }
-            list.innerHTML = data.results.map(r => `<div class="file-item"><span>${r.name}</span><small style="color:#888">${r.type === 'folder' ? r.png_count + ' images' : (r.size / 1024).toFixed(1) + ' KB'}</small></div>`).join('');
-        }
-
-        async function exportTdms(saveToServer) {
-            const fileId = document.getElementById('exportFileSelect').value;
-            if (!fileId) return;
-            
-            const btn = saveToServer ? document.getElementById('exportSaveBtn') : document.getElementById('exportDownloadBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader"></span>';
-
-            const res = await fetch(`${API_BASE}/tdms/export`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: currentUser, file_id: fileId,
-                    output_format: document.getElementById('exportFormat').value,
-                    dtype: document.getElementById('exportDtype').value,
-                    normalize: document.getElementById('exportNormalize').checked,
-                    fps: parseFloat(document.getElementById('exportFps').value),
-                    start_frame: parseInt(document.getElementById('exportStart').value) || 0,
-                    end_frame: document.getElementById('exportEnd').value ? parseInt(document.getElementById('exportEnd').value) : null,
-                    save_to_server: saveToServer,
-                    output_name: document.getElementById('exportName').value || null
-                })
-            });
-            const data = await res.json();
-            
-            btn.disabled = false;
-            btn.textContent = saveToServer ? 'Save to Server' : 'Download';
-
-            if (data.status === 'ready' && data.data) {
-                const link = document.createElement('a');
-                link.href = 'data:application/octet-stream;base64,' + data.data;
-                link.download = data.filename;
-                link.click();
-            }
-            
-            document.getElementById('exportStatus').classList.remove('hidden');
-            document.getElementById('exportStatus').innerHTML = `<div class="alert alert-info">Exported ${data.frames} frames</div>`;
-            loadExportedFiles();
-        }
-
-        document.getElementById('exportDownloadBtn').onclick = () => exportTdms(false);
-        document.getElementById('exportSaveBtn').onclick = () => exportTdms(true);
-
-        // Video Merge functionality
-        async function loadMergeVideos() {
-            const res = await fetch(`${API_BASE}/results/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('mergeVideoList');
-            const videos = data.results.filter(r => r.type === '.mp4');
-            
-            if (videos.length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No videos available</div>';
-                document.getElementById('mergeBtn').disabled = true;
-                return;
-            }
-            
-            list.innerHTML = videos.map(v => `<div class="file-item"><input type="checkbox" id="merge_${v.name}" value="${v.name}"><label for="merge_${v.name}">${v.name}</label></div>`).join('');
-            document.getElementById('mergeBtn').disabled = false;
-            loadMergedVideos();
-        }
-
-        async function loadMergedVideos() {
-            const res = await fetch(`${API_BASE}/results/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('mergedVideosList');
-            const videos = data.results.filter(r => r.type === '.mp4');
-            if (videos.length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No merged videos yet</div>';
-                return;
-            }
-            list.innerHTML = videos.map(v => `<div class="file-item"><span>${v.name}</span><small style="color:#888">${(v.size / 1024 / 1024).toFixed(1)} MB</small></div>`).join('');
-        }
-
-        document.getElementById('mergeBtn').onclick = async () => {
-            const checkboxes = document.querySelectorAll('#mergeVideoList input[type="checkbox"]:checked');
-            const fileIds = Array.from(checkboxes).map(cb => cb.value.replace('.mp4', ''));
-            if (fileIds.length < 2) { alert('Select at least 2 videos'); return; }
-
-            const btn = document.getElementById('mergeBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader"></span>';
-
-            const res = await fetch(`${API_BASE}/video/merge`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: currentUser,
-                    file_ids: fileIds,
-                    output_name: document.getElementById('mergeOutputName').value || 'merged',
-                    fps: parseFloat(document.getElementById('mergeFps').value)
-                })
-            });
-            const data = await res.json();
-            
-            btn.disabled = false;
-            btn.textContent = 'Merge Selected';
-            document.getElementById('mergeStatus').classList.remove('hidden');
-            document.getElementById('mergeStatus').innerHTML = `<div class="alert alert-info">Merged ${data.source_files} files (${data.total_frames} frames)</div>`;
-            loadMergedVideos();
-        };
-
-        // Postprocessing page functions
-        async function loadPostResults() {
-            const res = await fetch(`${API_BASE}/results/${currentUser}`);
-            const data = await res.json();
-            
-            const videoList = document.getElementById('postMergeVideoList');
-            const resultsList = document.getElementById('postResultsList');
-            const videos = data.results.filter(r => r.type === '.mp4');
-            
-            if (videos.length === 0) {
-                videoList.innerHTML = '<div class="alert alert-info">No videos available</div>';
-                document.getElementById('postMergeBtn').disabled = true;
-            } else {
-                videoList.innerHTML = videos.map(v => `<div class="file-item"><input type="checkbox" id="post_${v.name}" value="${v.name}"><label for="post_${v.name}">${v.name}</label></div>`).join('');
-                document.getElementById('postMergeBtn').disabled = false;
-            }
-            
-            if (data.results.length === 0) {
-                resultsList.innerHTML = '<div class="alert alert-info">No results yet</div>';
-            } else {
-                resultsList.innerHTML = data.results.map(r => `<div class="file-item"><span>${r.name}</span><small style="color:#888">${r.type === 'folder' ? r.png_count + ' images' : (r.size / 1024 / 1024).toFixed(2) + ' MB'}</small></div>`).join('');
-            }
-        }
-
-        document.getElementById('postMergeBtn').onclick = async () => {
-            const checkboxes = document.querySelectorAll('#postMergeVideoList input[type="checkbox"]:checked');
-            const fileIds = Array.from(checkboxes).map(cb => cb.value.replace('.mp4', ''));
-            if (fileIds.length < 2) { alert('Select at least 2 videos'); return; }
-
-            const btn = document.getElementById('postMergeBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader"></span>';
-
-            const res = await fetch(`${API_BASE}/video/merge`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: currentUser,
-                    file_ids: fileIds,
-                    output_name: document.getElementById('postMergeOutputName').value || 'merged',
-                    fps: parseFloat(document.getElementById('postMergeFps').value)
-                })
-            });
-            const data = await res.json();
-            
-            btn.disabled = false;
-            btn.textContent = 'Merge Selected';
-            document.getElementById('postMergeStatus').classList.remove('hidden');
-            document.getElementById('postMergeStatus').innerHTML = `<div class="alert alert-info">Merged ${data.source_files} files (${data.total_frames} frames)</div>`;
-            loadPostResults();
-        };
-
-        // Load postprocessing results when switching to that page
-        document.querySelector('[data-page="postprocessing"]').addEventListener('click', loadPostResults);
-
-        async function loadSamples() {
-            const res = await fetch(`${API_BASE}/samples/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('samplesList');
-            const maskList = document.getElementById('maskSamplesList');
-            const trainSelect = document.getElementById('trainParticle');
-            
-            if (Object.keys(data.samples).length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No samples yet</div>';
-                maskList.innerHTML = '<div class="alert alert-info">No samples yet</div>';
-                trainSelect.innerHTML = '<option value="">Select sample</option>';
-                document.getElementById('trainBtn').disabled = true;
-                return;
-            }
-
-            let html = '';
-            trainSelect.innerHTML = '<option value="">Select sample</option>';
-            for (const [name, samples] of Object.entries(data.samples)) {
-                const s = samples[0];
-                const maskType = s.mask_type ? ` (${s.mask_type})` : '';
-                html += `<div class="sample-item"><div class="sample-preview">🔬</div><div class="sample-info"><div class="sample-name">${name}${maskType}</div><div class="sample-meta">${s.width}x${s.height}px</div></div><button class="btn btn-danger btn-sm" onclick="deleteSample('${name}')">Delete</button></div>`;
-                trainSelect.innerHTML += `<option value="${name}">${name}</option>`;
-            }
-            list.innerHTML = html;
-            maskList.innerHTML = html;
-            updateTrainButton();
-        }
-
-        async function deleteSample(name) {
-            if (!confirm(`Delete ${name}?`)) return;
-            await fetch(`${API_BASE}/sample/${currentUser}/${name}`, { method: 'DELETE' });
-            loadSamples();
-        }
-
-        function updateTrainButton() { document.getElementById('trainBtn').disabled = !document.getElementById('trainParticle').value; }
-        document.getElementById('trainParticle').onchange = updateTrainButton;
-
-        document.getElementById('trainBtn').onclick = async () => {
-            const particle = document.getElementById('trainParticle').value;
-            if (!particle) return;
-
-            document.getElementById('trainBtn').disabled = true;
-            document.getElementById('trainBtn').innerHTML = '<span class="loader"></span>';
-            document.getElementById('trainingSummary').classList.add('hidden');
-            document.getElementById('trainingLive').classList.remove('hidden');
-            document.getElementById('trainingLoss').textContent = '-';
-            document.getElementById('trainingTime').textContent = '0:00';
-
-            const res = await fetch(`${API_BASE}/train`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: currentUser, particle_name: particle,
-                    n_transforms: parseInt(document.getElementById('nTransforms').value),
-                    max_epochs: parseInt(document.getElementById('maxEpochs').value),
-                    batch_size: parseInt(document.getElementById('batchSize').value),
-                    lr: parseFloat(document.getElementById('learningRate').value),
-                    length: parseInt(document.getElementById('trainLength').value),
-                    mul_min: parseFloat(document.getElementById('mulMin').value),
-                    mul_max: parseFloat(document.getElementById('mulMax').value),
-                    add_min: parseFloat(document.getElementById('addMin').value),
-                    add_max: parseFloat(document.getElementById('addMax').value),
-                    scale_min: parseFloat(document.getElementById('scaleMin').value),
-                    scale_max: parseFloat(document.getElementById('scaleMax').value),
-                    rotation_min: parseFloat(document.getElementById('rotationMin').value),
-                    rotation_max: parseFloat(document.getElementById('rotationMax').value),
-                    translate_min: parseFloat(document.getElementById('translateMin').value),
-                    translate_max: parseFloat(document.getElementById('translateMax').value),
-                    use_affine: document.getElementById('useAffine').checked
-                })
-            });
-            const data = await res.json();
-            document.getElementById('trainingStatus').classList.remove('hidden');
-            trainPoll = setInterval(() => pollTraining(data.job_id), 2000);
-        };
-
-        async function pollTraining(jobId) {
-            const res = await fetch(`${API_BASE}/train/${jobId}`);
-            const data = await res.json();
-            
-            document.getElementById('trainingProgress').textContent = data.progress + '%';
-            document.getElementById('progressFill').style.width = data.progress + '%';
-            document.getElementById('trainingEpoch').textContent = data.current_epoch || 0;
-            document.getElementById('trainingMaxEpoch').textContent = data.config?.max_epochs || '-';
-            
-            if (data.current_loss !== undefined && data.current_loss !== null) {
-                document.getElementById('trainingLoss').textContent = data.current_loss.toFixed(6);
-            }
-            if (data.elapsed_time !== undefined) {
-                const mins = Math.floor(data.elapsed_time / 60);
-                const secs = Math.floor(data.elapsed_time % 60);
-                document.getElementById('trainingTime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-            }
-            
-            if (data.status === 'completed' || data.status === 'failed') {
-                clearInterval(trainPoll);
-                document.getElementById('trainBtn').disabled = false;
-                document.getElementById('trainBtn').textContent = 'Start Training';
-                document.getElementById('trainingLive').classList.add('hidden');
-                
-                if (data.status === 'failed') {
-                    alert('Training failed: ' + data.error);
-                } else if (data.summary) {
-                    document.getElementById('trainingSummary').classList.remove('hidden');
-                    document.getElementById('summaryRuntime').textContent = data.summary.runtime_formatted;
-                    document.getElementById('summaryDevice').textContent = data.summary.device;
-                    document.getElementById('summaryFinalLoss').textContent = data.summary.final_loss?.toFixed(6) || '-';
-                    document.getElementById('summaryMinLoss').textContent = data.summary.min_loss?.toFixed(6) || '-';
-                }
-                loadModels();
-            }
-        }
-
-        async function loadModels() {
-            const res = await fetch(`${API_BASE}/models/${currentUser}`);
-            const data = await res.json();
-            const list = document.getElementById('modelsList');
-            const detectSelect = document.getElementById('detectModel');
-
-            if (data.models.length === 0) {
-                list.innerHTML = '<div class="alert alert-info">No models yet</div>';
-                detectSelect.innerHTML = '<option value="">Select model</option>';
-                document.getElementById('detectBtn').disabled = true;
-                return;
-            }
-
-            list.innerHTML = '';
-            detectSelect.innerHTML = '<option value="">Select model</option>';
-            for (const m of data.models) {
-                const summary = m.summary ? `<br><small style="color:#4aff80">${m.summary.runtime_formatted} | Loss: ${m.summary.final_loss?.toFixed(4) || '-'}</small>` : '';
-                list.innerHTML += `<div class="model-item">
-                    <div><strong>${m.particle_name}</strong><br><small style="color:#888">${new Date(m.created_at).toLocaleString()}</small>${summary}</div>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <button class="btn btn-sm btn-secondary" onclick="renameModel('${m.id}', '${m.particle_name}')">Rename</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteModel('${m.id}', '${m.particle_name}')">Delete</button>
-                    </div>
-                </div>`;
-                detectSelect.innerHTML += `<option value="${m.id}">${m.particle_name}</option>`;
-            }
-            updateDetectButton();
-        }
-
-        async function deleteModel(modelId, name) {
-            if (!confirm(`Delete model "${name}"? This cannot be undone.`)) return;
-            await fetch(`${API_BASE}/models/${currentUser}/${modelId}`, { method: 'DELETE' });
-            loadModels();
-        }
-
-        async function renameModel(modelId, currentName) {
-            const newName = prompt('Enter new name:', currentName);
-            if (!newName || newName === currentName) return;
-            await fetch(`${API_BASE}/models/${currentUser}/${modelId}/rename`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ new_name: newName })
-            });
-            loadModels();
-        }
-
-        let detectFileId = null;
-        let detectFileType = null;
-        let detectFrameCount = 1;
-        let detectFrameIndex = 0;
-
-        const detectUploadZone = document.getElementById('detectUploadZone');
-        const detectImageInput = document.getElementById('detectImageInput');
-        detectUploadZone.onclick = () => detectImageInput.click();
-        detectUploadZone.ondragover = e => { e.preventDefault(); detectUploadZone.style.borderColor = '#4a9eff'; };
-        detectUploadZone.ondragleave = () => detectUploadZone.style.borderColor = '#444';
-        detectUploadZone.ondrop = e => { e.preventDefault(); detectUploadZone.style.borderColor = '#444'; if (e.dataTransfer.files.length) handleDetectUpload(e.dataTransfer.files[0]); };
-        detectImageInput.onchange = e => { if (e.target.files.length) handleDetectUpload(e.target.files[0]); };
-
-        function handleDetectUpload(file) {
-            const ext = file.name.split('.').pop().toLowerCase();
-            
-            const progressEl = document.getElementById('detectUploadProgress');
-            const progressFill = document.getElementById('detectUploadProgressFill');
-            const progressText = document.getElementById('detectUploadProgressText');
-            const uploadTextEl = document.getElementById('detectUploadText');
-            
-            if (ext === 'tdms') {
-                document.getElementById('detectTdmsSettings').classList.remove('hidden');
-                const formData = new FormData();
-                formData.append('username', currentUser);
-                formData.append('file', file);
-                formData.append('image_width', document.getElementById('detectTdmsWidth').value);
-                formData.append('image_height', document.getElementById('detectTdmsHeight').value);
-                formData.append('channel_index', document.getElementById('detectTdmsChannel').value);
-                formData.append('normalize', document.getElementById('detectTdmsNormalize').value);
-
-                progressEl.classList.remove('hidden');
-                uploadTextEl.innerHTML = `<strong>${file.name}</strong>`;
-                progressFill.style.width = '0%';
-                progressText.textContent = '0%';
-
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', `${API_BASE}/detect/upload`);
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const pct = Math.round((e.loaded / e.total) * 100);
-                        progressFill.style.width = pct + '%';
-                        progressText.textContent = pct + '%';
-                    }
-                };
-
-                xhr.onload = () => {
-                    progressEl.classList.add('hidden');
-                    uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
-
-                    if (xhr.status === 200) {
-                        const data = JSON.parse(xhr.responseText);
-                        if (data.error) { alert(data.error); return; }
-
-                        detectFileId = data.id;
-                        detectFileType = 'tdms';
-                        detectFrameCount = data.frame_count;
-                        detectFrameIndex = 0;
-
-                        document.getElementById('detectFileInfo').classList.remove('hidden');
-                        document.getElementById('detectFileName').textContent = data.filename;
-                        document.getElementById('detectFileMeta').textContent = `${data.width || '?'}x${data.height || '?'} | ${data.frame_count} frames`;
-
-                        if (data.frame_count > 1) {
-                            document.getElementById('detectFrameControls').classList.remove('hidden');
-                            document.getElementById('detectFrameSlider').max = data.frame_count - 1;
-                            document.getElementById('detectFrameSlider').value = 0;
-                            document.getElementById('detectFrameTotal').textContent = data.frame_count;
-                            document.getElementById('detectFrameInput').value = 0;
-                        } else {
-                            document.getElementById('detectFrameControls').classList.add('hidden');
-                        }
-                        updateDetectButton();
-                    } else {
-                        alert('Upload failed: ' + xhr.statusText);
-                    }
-                };
-
-                xhr.onerror = () => {
-                    progressEl.classList.add('hidden');
-                    uploadTextEl.innerHTML = 'Drop file or <strong>click to browse</strong>';
-                    alert('Upload failed');
-                };
-
-                xhr.send(formData);
-            } else {
-                detectFileId = null;
-                detectFileType = 'image';
-                detectFrameCount = 1;
-                document.getElementById('detectTdmsSettings').classList.add('hidden');
-                document.getElementById('detectFrameControls').classList.add('hidden');
-                document.getElementById('detectFileInfo').classList.remove('hidden');
-                document.getElementById('detectFileName').textContent = file.name;
-                document.getElementById('detectFileMeta').textContent = 'Single image';
-                updateDetectButton();
-            }
-        }
-
-        function updateDetectButton() {
-            const hasModel = !!document.getElementById('detectModel').value;
-            const hasFile = detectFileId || (detectImageInput.files && detectImageInput.files.length);
-            document.getElementById('detectBtn').disabled = !hasModel || !hasFile;
-        }
-        document.getElementById('detectModel').onchange = updateDetectButton;
-
-        document.getElementById('detectFrameSlider').oninput = e => { detectFrameIndex = parseInt(e.target.value); document.getElementById('detectFrameInput').value = detectFrameIndex; runDetection(); };
-        document.getElementById('detectFrameInput').onchange = e => { detectFrameIndex = Math.max(0, Math.min(parseInt(e.target.value) || 0, detectFrameCount - 1)); document.getElementById('detectFrameSlider').value = detectFrameIndex; runDetection(); };
-
-        document.getElementById('detectBtn').onclick = () => runDetection();
-
-        async function runDetection() {
-            const modelId = document.getElementById('detectModel').value;
-            if (!modelId) return;
-
-            document.getElementById('detectBtn').disabled = true;
-            document.getElementById('detectBtn').innerHTML = '<span class="loader"></span>';
-
-            let data;
-            if (detectFileType === 'tdms' && detectFileId) {
-                const params = new URLSearchParams({
-                    model_id: modelId,
-                    alpha: document.getElementById('detectAlpha').value,
-                    beta: document.getElementById('detectBeta').value,
-                    cutoff: document.getElementById('detectCutoff').value,
-                    return_weightmap: document.getElementById('showWeightmap').checked
-                });
-                const res = await fetch(`${API_BASE}/detect/frame/${currentUser}/${detectFileId}/${detectFrameIndex}?${params}`);
-                data = await res.json();
-            } else {
-                const formData = new FormData();
-                formData.append('username', currentUser);
-                formData.append('model_id', modelId);
-                formData.append('file', detectImageInput.files[0]);
-                formData.append('alpha', document.getElementById('detectAlpha').value);
-                formData.append('beta', document.getElementById('detectBeta').value);
-                formData.append('cutoff', document.getElementById('detectCutoff').value);
-                formData.append('return_weightmap', document.getElementById('showWeightmap').checked);
-
-                const res = await fetch(`${API_BASE}/detect`, { method: 'POST', body: formData });
-                data = await res.json();
-            }
-
-            document.getElementById('detectionResults').classList.remove('hidden');
-            document.getElementById('detectionCount').textContent = data.count;
-            document.getElementById('detectionFrame').textContent = detectFrameIndex;
-
-            const img = new Image();
-            img.onload = () => {
-                detectCanvas.width = img.width;
-                detectCanvas.height = img.height;
-                detectCtx.drawImage(img, 0, 0);
-                detectCtx.strokeStyle = '#4aff80';
-                detectCtx.lineWidth = 2;
-                for (const [x, y] of data.detections) {
-                    detectCtx.beginPath();
-                    detectCtx.arc(x, y, 10, 0, 2 * Math.PI);
-                    detectCtx.stroke();
-                }
-            };
-            img.src = data.image;
-
-            if (data.weightmap) {
-                const wmImg = new Image();
-                wmImg.onload = () => {
-                    weightmapCanvas.width = wmImg.width;
-                    weightmapCanvas.height = wmImg.height;
-                    weightmapCtx.drawImage(wmImg, 0, 0);
-                };
-                wmImg.src = data.weightmap;
-                document.getElementById('weightmapPanel').classList.remove('hidden');
-            } else {
-                document.getElementById('weightmapPanel').classList.add('hidden');
-            }
-
-            document.getElementById('detectBtn').disabled = false;
-            document.getElementById('detectBtn').textContent = 'Detect Particles';
-        }
-
-        async function loadDefaults() {
-            try {
-                const res = await fetch(`${API_BASE}/config/defaults`);
-                const d = await res.json();
-                document.getElementById('nTransforms').value = d.n_transforms;
-                document.getElementById('maxEpochs').value = d.max_epochs;
-                document.getElementById('batchSize').value = d.batch_size;
-                document.getElementById('learningRate').value = d.lr;
-                document.getElementById('trainLength').value = d.length;
-                document.getElementById('mulMin').value = d.mul_min;
-                document.getElementById('mulMax').value = d.mul_max;
-                document.getElementById('addMin').value = d.add_min;
-                document.getElementById('addMax').value = d.add_max;
-                document.getElementById('scaleMin').value = d.scale_min;
-                document.getElementById('scaleMax').value = d.scale_max;
-                document.getElementById('rotationMin').value = d.rotation_min;
-                document.getElementById('rotationMax').value = d.rotation_max;
-                document.getElementById('translateMin').value = d.translate_min;
-                document.getElementById('translateMax').value = d.translate_max;
-                document.getElementById('detectAlpha').value = d.alpha;
-                document.getElementById('detectCutoff').value = d.cutoff;
-            } catch (e) {}
-        }
-    </script>
-</body>
-</html>
+    <!-- ===== DETECTION ===== -->
+    <div class="panel" id="panel-detection">
+      <div class="row">
+        <div class="col card" style="max-width:280px">
+          <div class="card-title">Setup</div>
+          <label>Model</label>
+          <select id="det-model-select"><option value="">&#8212; Select model &#8212;</option></select>
+          <label>File (uploaded)</label>
+          <select id="det-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+          <div style="margin-top:6px">
+            <button class="btn btn-outline btn-sm" id="det-upload-btn">Upload file&#8230;</button>
+            <input type="file" id="det-file-input" accept=".tdms,.png,.jpg,.jpeg,.tif,.tiff">
+          </div>
+          <label>Frame</label>
+          <div class="row" style="gap:6px;align-items:center">
+            <input type="number" id="det-frame" value="0" min="0" style="flex:1">
+            <button class="btn btn-outline btn-sm" id="det-prev">&#9664;</button>
+            <button class="btn btn-outline btn-sm" id="det-next">&#9654;</button>
+          </div>
+          <label>Alpha</label><input type="number" id="det-alpha" value="1.0" step="0.1">
+          <label>Beta</label><input type="number" id="det-beta" value="0.0" step="0.1">
+          <label>Cutoff</label><input type="number" id="det-cutoff" value="0.8" step="0.05" min="0" max="1">
+          <label><input type="checkbox" id="det-weightmap"> Show weight map</label>
+          <button class="btn btn-primary" id="det-run-btn" style="margin-top:12px;width:100%">&#9654; Detect Frame</button>
+        </div>
+
+        <div class="col card">
+          <div class="card-title" style="display:flex;justify-content:space-between">
+            <span>Detection Result</span>
+            <span id="det-count-badge" class="mono" style="color:var(--success);font-size:12px"></span>
+          </div>
+          <div id="detect-canvas-wrap" style="min-height:300px;display:flex;align-items:center;justify-content:center">
+            <span style="color:var(--text2)">Run detection to see results</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Batch Detection &#8212; all frames &#8594; CSV</div>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;max-width:240px">
+            <label>Output name</label>
+            <input type="text" id="batch-output-name" placeholder="e.g. experiment_01">
+          </div>
+          <button class="btn btn-primary" id="batch-detect-btn">&#9654; Run Batch</button>
+        </div>
+        <div id="batch-status" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- ===== TRACKING ===== -->
+    <div class="panel" id="panel-tracking">
+      <div class="row">
+        <div class="col card" style="max-width:320px">
+          <div class="card-title">Input</div>
+          <label>Detection CSV (from results/)</label>
+          <select id="track-csv-select"><option value="">&#8212; Select CSV &#8212;</option></select>
+          <button class="btn btn-outline btn-sm" id="upload-det-csv-btn" style="margin-top:6px">Upload CSV&#8230;</button>
+          <input type="file" id="track-csv-input" accept=".csv">
+
+          <div class="card-title" style="margin-top:16px">Parameters</div>
+          <label>NMS radius (px)</label><input type="number" id="trk-min-dist" value="20" min="1">
+          <label>Max linking distance (px)</label><input type="number" id="trk-max-link" value="30" min="1">
+          <label>Min track length (frames)</label><input type="number" id="trk-min-track" value="5" min="1">
+          <label>Max gap (frames)</label><input type="number" id="trk-max-gap" value="10" min="0">
+          <label>Output name (optional)</label><input type="text" id="trk-output-name" placeholder="auto">
+          <button class="btn btn-primary" id="trk-run-btn" style="margin-top:14px;width:100%">&#9654; Run Tracking</button>
+        </div>
+
+        <div class="col card">
+          <div class="card-title">Results</div>
+          <div id="trk-status-wrap"><span style="color:var(--text2)">No results yet</span></div>
+          <div id="trk-results-wrap" class="hidden" style="margin-top:12px">
+            <table class="results-table"><tbody id="trk-table"></tbody></table>
+            <button class="btn btn-outline btn-sm" id="trk-download-btn" style="margin-top:12px">&#11015; Download Tracks CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ANALYSIS ===== -->
+    <div class="panel" id="panel-analysis">
+      <div class="row">
+        <div class="col card" style="max-width:320px">
+          <div class="card-title">Input</div>
+          <label>Tracks CSV (from results/)</label>
+          <select id="abp-csv-select"><option value="">&#8212; Select CSV &#8212;</option></select>
+          <button class="btn btn-outline btn-sm" id="upload-trk-csv-btn" style="margin-top:6px">Upload CSV&#8230;</button>
+          <input type="file" id="abp-csv-input" accept=".csv">
+
+          <div class="card-title" style="margin-top:16px">ABP / MSD Parameters</div>
+          <label>Frame interval dt (s)</label><input type="number" id="abp-dt" value="0.033333" step="0.001">
+          <label>Pixel size (&#956;m/px)</label><input type="number" id="abp-px" value="0.078" step="0.001">
+          <label>Max lag (frames)</label><input type="number" id="abp-maxlag" value="100" min="10">
+          <label>Min real frames per track</label><input type="number" id="abp-mintrack" value="50" min="5">
+          <label><input type="checkbox" id="abp-include-interp"> Include interpolated rows</label>
+          <button class="btn btn-primary" id="abp-run-btn" style="margin-top:14px;width:100%">&#9654; Fit ABP / MSD</button>
+        </div>
+
+        <div class="col card">
+          <div class="card-title">Physics Parameters</div>
+          <div id="abp-status-wrap"><span style="color:var(--text2)">No results yet</span></div>
+          <div id="abp-results-wrap" class="hidden">
+            <table class="results-table">
+              <thead><tr><th>Parameter</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody id="abp-table"></tbody>
+            </table>
+            <img id="abp-plot" class="hidden" alt="MSD plot" style="max-width:100%;border-radius:4px;margin-top:12px;display:block">
+            <button class="btn btn-outline btn-sm hidden" id="abp-plot-download" style="margin-top:8px">&#11015; Download Plot</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// ---- API base (handles /proxy/<port>/ Jupyter prefix) ----
+let API_BASE = '';
+(function () {
+  const parts = window.location.pathname.split('/');
+  const idx = parts.indexOf('proxy');
+  if (idx !== -1) API_BASE = parts.slice(0, idx + 2).join('/');
+})();
+
+function apiUrl(path) { return API_BASE + path; }
+function wsUrl(path) {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return proto + '//' + location.host + API_BASE + path;
+}
+
+async function api(path, body, method) {
+  const isForm = body instanceof FormData;
+  const opts = {
+    method: method || (body ? 'POST' : 'GET'),
+    headers: isForm ? {} : (body ? { 'Content-Type': 'application/json' } : {}),
+    body: isForm ? body : (body ? JSON.stringify(body) : undefined),
+  };
+  try {
+    const r = await fetch(apiUrl(path), opts);
+    return r.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ---- State ----
+let username = localStorage.getItem('mona_user') || '';
+let uploadedFiles = {}, detFiles = {}, models = [];
+let currentFileId = null, currentFrame = 0;
+let detFileId = null, detFrame = 0, detFileCount = 1;
+let trainJobId = null, trainWs = null;
+let lastTrackCsv = null, lastAbpPlotB64 = null;
+
+// ====================================================================
+// LOGIN
+// ====================================================================
+const loginOverlay = document.getElementById('login-overlay');
+let loginMode = 'login';
+
+document.getElementById('tab-login').onclick = () => {
+  loginMode = 'login';
+  document.getElementById('tab-login').classList.add('active');
+  document.getElementById('tab-register').classList.remove('active');
+  document.getElementById('login-submit').textContent = 'Sign In';
+};
+document.getElementById('tab-register').onclick = () => {
+  loginMode = 'register';
+  document.getElementById('tab-register').classList.add('active');
+  document.getElementById('tab-login').classList.remove('active');
+  document.getElementById('login-submit').textContent = 'Register';
+};
+document.getElementById('login-submit').onclick = doLogin;
+document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin() {
+  const u = document.getElementById('login-username').value.trim();
+  const p = document.getElementById('login-password').value;
+  if (!u || !p) { showLoginMsg('Enter username and password', 'err'); return; }
+  const path = loginMode === 'register' ? '/auth/register' : '/auth/login';
+  const d = await api(path, { username: u, password: p });
+  if (d.error) { showLoginMsg(d.error, 'err'); return; }
+  username = u;
+  localStorage.setItem('mona_user', u);
+  loginOverlay.classList.add('hidden');
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('sidebar-username').textContent = u;
+  await initApp();
+}
+
+function showLoginMsg(msg, type) {
+  const el = document.getElementById('login-msg');
+  el.textContent = msg;
+  el.className = 'status status-' + (type === 'err' ? 'err' : 'ok');
+  el.classList.remove('hidden');
+}
+
+document.getElementById('logout-btn').onclick = () => {
+  username = '';
+  localStorage.removeItem('mona_user');
+  loginOverlay.classList.remove('hidden');
+  document.getElementById('app').style.display = 'none';
+};
+
+// ====================================================================
+// INIT
+// ====================================================================
+window.onload = async () => {
+  if (username) {
+    const check = await api('/auth/check/' + username);
+    if (check.exists) {
+      loginOverlay.classList.add('hidden');
+      document.getElementById('app').style.display = 'flex';
+      document.getElementById('sidebar-username').textContent = username;
+      uploadedFiles = (check.session && check.session.files) || {};
+      models = (check.session && check.session.models) || [];
+      await initApp();
+    } else {
+      localStorage.removeItem('mona_user'); username = '';
+    }
+  }
+};
+
+async function initApp() {
+  const h = await api('/health');
+  const badge = document.getElementById('gpu-badge');
+  if (h.gpu) { badge.textContent = 'GPU x' + h.gpu_count; badge.className = 'badge badge-gpu'; }
+  else { badge.textContent = 'CPU'; badge.className = 'badge badge-cpu'; }
+  refreshFileList();
+  refreshModels();
+  const cfg = await api('/config/defaults');
+  if (cfg.dt) document.getElementById('abp-dt').value = cfg.dt;
+  if (cfg.px_size) document.getElementById('abp-px').value = cfg.px_size;
+}
+
+// ====================================================================
+// SIDEBAR NAVIGATION
+// ====================================================================
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const name = btn.dataset.panel;
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    document.getElementById('panel-title').textContent = btn.textContent.trim();
+    if (name === 'tracking' || name === 'analysis') refreshResultFiles();
+    if (name === 'detection') refreshModels();
+    if (name === 'training') refreshModels();
+  };
+});
+
+// ====================================================================
+// FILES PANEL
+// ====================================================================
+function refreshFileList() {
+  const list = document.getElementById('file-list');
+  const trainSel = document.getElementById('train-file-select');
+  const detSel = document.getElementById('det-file-select');
+  trainSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
+  detSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
+  const keys = Object.keys(uploadedFiles);
+  if (!keys.length) { list.innerHTML = '<div style="color:var(--text2)">No files uploaded</div>'; return; }
+  list.innerHTML = '';
+  keys.forEach(fid => {
+    const f = uploadedFiles[fid];
+    const item = document.createElement('div');
+    item.className = 'file-item' + (fid === currentFileId ? ' selected' : '');
+    item.innerHTML = `
+      <div>
+        <div class="file-name">${esc(f.filename)}</div>
+        <div class="file-meta">${f.type.toUpperCase()} &middot; ${f.frame_count || 1} frame(s) &middot; ${f.width || '?'}x${f.height || '?'}</div>
+      </div>
+      <div class="file-actions">
+        <button class="btn btn-outline btn-sm" onclick="previewFile('${fid}')">Preview</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteFile('${fid}')">&#10005;</button>
+      </div>`;
+    list.appendChild(item);
+    trainSel.appendChild(new Option(f.filename, fid));
+    detSel.appendChild(new Option(f.filename, fid));
+  });
+}
+
+async function previewFile(fid) {
+  currentFileId = fid; currentFrame = 0;
+  document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+  await showFrame(fid, 0);
+}
+
+async function showFrame(fid, idx) {
+  const wrap = document.getElementById('frame-preview-wrap');
+  wrap.innerHTML = '<span class="spinner"></span>';
+  const d = await api(`/frame/${username}/${fid}/${idx}`);
+  if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
+  wrap.innerHTML = `<img src="${d.image}" style="max-width:100%;border-radius:4px">`;
+  const fc = (uploadedFiles[fid] && uploadedFiles[fid].frame_count) || 1;
+  const nav = document.getElementById('frame-nav');
+  nav.classList.remove('hidden');
+  document.getElementById('frame-counter').textContent = `Frame ${idx + 1} / ${fc}`;
+  currentFrame = idx;
+}
+
+document.getElementById('frame-prev').onclick = async () => {
+  if (currentFileId && currentFrame > 0) await showFrame(currentFileId, --currentFrame);
+};
+document.getElementById('frame-next').onclick = async () => {
+  if (currentFileId) {
+    const fc = (uploadedFiles[currentFileId] && uploadedFiles[currentFileId].frame_count) || 1;
+    if (currentFrame < fc - 1) await showFrame(currentFileId, ++currentFrame);
+  }
+};
+
+async function deleteFile(fid) {
+  if (!confirm('Delete this file?')) return;
+  await api(`/files/${username}/${fid}`, null, 'DELETE');
+  delete uploadedFiles[fid];
+  if (currentFileId === fid) {
+    currentFileId = null;
+    document.getElementById('frame-preview-wrap').innerHTML = '<span style="color:var(--text2)">Select a file to preview</span>';
+    document.getElementById('frame-nav').classList.add('hidden');
+  }
+  refreshFileList();
+}
+
+// Chunked upload
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.onclick = () => fileInput.click();
+dropZone.ondragover = e => { e.preventDefault(); dropZone.classList.add('dragover'); };
+dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+dropZone.ondrop = e => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]); };
+fileInput.onchange = () => { if (fileInput.files[0]) { doUpload(fileInput.files[0]); fileInput.value = ''; } };
+
+async function doUpload(file) {
+  const normalize = document.getElementById('normalize-check').checked;
+  const prog = document.getElementById('upload-progress');
+  const bar = document.getElementById('upload-bar');
+  const statusTxt = document.getElementById('upload-status-text');
+  prog.classList.remove('hidden');
+  bar.style.width = '0%';
+  statusTxt.textContent = 'Starting upload…';
+  const CHUNK = 2 * 1024 * 1024;
+  const start = await api('/upload/start', { username, filename: file.name, total_size: file.size, normalize });
+  if (start.error) { statusTxt.textContent = start.error; return; }
+  const uid = start.upload_id;
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, offset + CHUNK);
+    const buf = await chunk.arrayBuffer();
+    await fetch(apiUrl(`/upload/chunk/${uid}?offset=${offset}`), {
+      method: 'POST', body: buf, headers: { 'Content-Type': 'application/octet-stream' }
+    });
+    offset += buf.byteLength;
+    bar.style.width = Math.round(offset / file.size * 100) + '%';
+    statusTxt.textContent = `${(offset / 1048576).toFixed(1)} / ${(file.size / 1048576).toFixed(1)} MB`;
+  }
+  const info = await api('/upload/complete', { username, upload_id: uid, filename: file.name, normalize });
+  if (info.error) { statusTxt.textContent = info.error; return; }
+  uploadedFiles[info.id] = info;
+  statusTxt.textContent = `Done — ${file.name}`;
+  bar.style.width = '100%';
+  refreshFileList();
+}
+
+// TDMS Export
+document.getElementById('export-download-btn').onclick = () => exportTdms(false);
+document.getElementById('export-save-btn').onclick = () => exportTdms(true);
+async function exportTdms(save) {
+  if (!currentFileId) { setStatus('export-status', 'Select a file first', 'warn'); return; }
+  setStatus('export-status', '<span class="spinner"></span> Exporting…', 'info');
+  const d = await api('/tdms/export', {
+    username, file_id: currentFileId,
+    output_format: document.getElementById('export-format').value,
+    fps: parseFloat(document.getElementById('export-fps').value),
+    normalize: true, save_to_server: save,
+  });
+  if (d.error) { setStatus('export-status', esc(d.error), 'err'); return; }
+  if (save) { setStatus('export-status', 'Saved: ' + esc(d.path), 'ok'); return; }
+  const a = document.createElement('a');
+  a.href = 'data:application/octet-stream;base64,' + d.data;
+  a.download = d.filename; a.click();
+  setStatus('export-status', 'Downloaded ' + esc(d.filename), 'ok');
+}
+
+// Video merge
+document.getElementById('merge-btn').onclick = async () => {
+  setStatus('merge-status', '<span class="spinner"></span> Merging…', 'info');
+  const d = await api('/video/merge', {
+    username,
+    file_ids: Object.keys(uploadedFiles),
+    output_name: document.getElementById('merge-name').value.trim() || 'merged',
+    fps: parseFloat(document.getElementById('merge-fps').value),
+  });
+  if (d.error) { setStatus('merge-status', esc(d.error), 'err'); return; }
+  setStatus('merge-status', `Merged ${d.source_files} files, ${d.total_frames} frames → ${esc(d.path)}`, 'ok');
+};
+
+// ====================================================================
+// TRAINING PANEL
+// ====================================================================
+document.getElementById('crop-sample-btn').onclick = async () => {
+  const fid = document.getElementById('train-file-select').value;
+  if (!fid) { setStatus('sample-status', 'Select a source file', 'warn'); return; }
+  const name = document.getElementById('train-particle').value.trim();
+  if (!name) { setStatus('sample-status', 'Enter particle name', 'warn'); return; }
+  const d = await api('/sample', {
+    username, particle_name: name, file_id: fid,
+    frame_index: parseInt(document.getElementById('train-frame-idx').value) || 0,
+    x: parseInt(document.getElementById('sample-x').value) || 0,
+    y: parseInt(document.getElementById('sample-y').value) || 0,
+    width: parseInt(document.getElementById('sample-w').value) || 64,
+    height: parseInt(document.getElementById('sample-h').value) || 64,
+  });
+  if (d.error) { setStatus('sample-status', esc(d.error), 'err'); return; }
+  document.getElementById('sample-preview-wrap').innerHTML =
+    `<img src="${d.preview}" style="max-width:80px;border-radius:3px">`;
+  setStatus('sample-status', 'Sample saved: ' + esc(name), 'ok');
+};
+
+document.getElementById('train-start-btn').onclick = startTraining;
+document.getElementById('train-cancel-btn').onclick = cancelTraining;
+
+async function startTraining() {
+  const name = document.getElementById('train-particle').value.trim();
+  if (!name) { setStatus('train-status', 'Enter particle name', 'warn'); return; }
+  document.getElementById('train-progress-card').style.display = 'block';
+  document.getElementById('train-start-btn').disabled = true;
+  document.getElementById('train-cancel-btn').classList.remove('hidden');
+  setStatus('train-status', '<span class="spinner"></span> Queued…', 'info');
+  const d = await api('/train', {
+    username, particle_name: name,
+    max_epochs: parseInt(document.getElementById('cfg-epochs').value),
+    batch_size: parseInt(document.getElementById('cfg-batch').value),
+    lr: parseFloat(document.getElementById('cfg-lr').value),
+    length: parseInt(document.getElementById('cfg-length').value),
+    n_transforms: parseInt(document.getElementById('cfg-ntrans').value),
+    mul_min: parseFloat(document.getElementById('cfg-mul-min').value),
+    mul_max: parseFloat(document.getElementById('cfg-mul-max').value),
+    add_min: parseFloat(document.getElementById('cfg-add-min').value),
+    add_max: parseFloat(document.getElementById('cfg-add-max').value),
+    use_affine: document.getElementById('cfg-affine').checked,
+  });
+  if (d.error) { setStatus('train-status', esc(d.error), 'err'); resetTrainUI(); return; }
+  trainJobId = d.job_id;
+  openTrainWs(trainJobId);
+}
+
+function openTrainWs(jobId) {
+  if (trainWs) { try { trainWs.close(); } catch (e) {} }
+  try {
+    trainWs = new WebSocket(wsUrl('/ws/train/' + jobId));
+    trainWs.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.heartbeat) return;
+      updateTrainProgress(msg);
+    };
+    trainWs.onerror = () => pollTrainJob(jobId);
+    trainWs.onclose = () => { if (trainJobId === jobId) pollTrainJob(jobId); };
+  } catch (e) {
+    pollTrainJob(jobId);
+  }
+}
+
+function pollTrainJob(jobId) {
+  const timer = setInterval(async () => {
+    const d = await api('/train/' + jobId);
+    updateTrainProgress(d);
+    if (['completed', 'failed', 'cancelled'].includes(d.status)) clearInterval(timer);
+  }, 2000);
+}
+
+function updateTrainProgress(msg) {
+  if (!msg) return;
+  const progress = msg.progress || 0;
+  document.getElementById('train-bar').style.width = progress + '%';
+  if (msg.current_epoch) {
+    document.getElementById('train-epoch-label').textContent =
+      `Epoch ${msg.current_epoch} / ${msg.max_epochs || '?'}`;
+  }
+  if (msg.current_loss != null) {
+    document.getElementById('train-loss-label').textContent = 'loss: ' + msg.current_loss.toFixed(6);
+  }
+  if (msg.losses && msg.losses.length > 1) drawLossChart(msg.losses);
+  if (msg.status === 'completed') {
+    const s = msg.summary || {};
+    setStatus('train-status', `Done — ${s.runtime_formatted || ''} &middot; device: ${s.device || '?'} &middot; final loss: ${s.final_loss != null ? s.final_loss.toFixed(6) : '?'}`, 'ok');
+    resetTrainUI(); refreshModels();
+  } else if (msg.status === 'failed') {
+    setStatus('train-status', 'Failed: ' + esc(msg.error || 'unknown error'), 'err');
+    resetTrainUI();
+  } else if (msg.status === 'cancelled') {
+    setStatus('train-status', 'Training cancelled', 'warn');
+    resetTrainUI();
+  }
+}
+
+function resetTrainUI() {
+  document.getElementById('train-start-btn').disabled = false;
+  document.getElementById('train-cancel-btn').classList.add('hidden');
+  trainJobId = null;
+}
+
+async function cancelTraining() {
+  if (!trainJobId) return;
+  await api('/train/' + trainJobId + '/cancel', {}, 'POST');
+  setStatus('train-status', 'Cancel requested…', 'warn');
+}
+
+function drawLossChart(losses) {
+  const canvas = document.getElementById('loss-canvas');
+  canvas.width = canvas.offsetWidth || 400;
+  canvas.height = 100;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (losses.length < 2) return;
+  const mn = Math.min(...losses), mx = Math.max(...losses), range = mx - mn || 1;
+  const w = canvas.width, h = canvas.height;
+  ctx.strokeStyle = '#3d8ef0'; ctx.lineWidth = 1.5; ctx.beginPath();
+  losses.forEach((v, i) => {
+    const x = i / (losses.length - 1) * w;
+    const y = h - (v - mn) / range * (h - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+async function refreshModels() {
+  const d = await api('/models/' + username);
+  models = d.models || [];
+  const list = document.getElementById('model-list');
+  const detSel = document.getElementById('det-model-select');
+  detSel.innerHTML = '<option value="">&#8212; Select model &#8212;</option>';
+  if (!models.length) { list.innerHTML = '<div style="color:var(--text2)">No models trained yet</div>'; return; }
+  list.innerHTML = '';
+  models.forEach(m => {
+    const s = m.summary || {};
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.innerHTML = `
+      <div>
+        <div class="file-name">${esc(m.particle_name)}</div>
+        <div class="file-meta">${(m.created_at || '').slice(0, 16)} &middot; ${s.runtime_formatted || ''} &middot; ${s.device || ''} &middot; loss: ${s.final_loss != null ? s.final_loss.toFixed(5) : '?'}</div>
+      </div>
+      <div class="file-actions">
+        <button class="btn btn-danger btn-sm" onclick="deleteModel('${esc(m.id)}')">&#10005;</button>
+      </div>`;
+    list.appendChild(item);
+    detSel.appendChild(new Option(m.particle_name + ' (' + m.id + ')', m.id));
+  });
+}
+
+async function deleteModel(id) {
+  if (!confirm('Delete this model?')) return;
+  await api(`/models/${username}/${id}`, null, 'DELETE');
+  await refreshModels();
+}
+
+// ====================================================================
+// DETECTION PANEL
+// ====================================================================
+document.getElementById('det-upload-btn').onclick = () => document.getElementById('det-file-input').click();
+document.getElementById('det-file-input').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const form = new FormData();
+  form.append('username', username); form.append('file', file); form.append('normalize', 'true');
+  setStatus('batch-status', '<span class="spinner"></span> Uploading…', 'info');
+  const d = await api('/detect/upload', form);
+  if (d.error) { setStatus('batch-status', esc(d.error), 'err'); return; }
+  detFiles[d.id] = d;
+  const sel = document.getElementById('det-file-select');
+  sel.appendChild(new Option(d.filename + ' (detect)', 'det:' + d.id));
+  sel.value = 'det:' + d.id;
+  detFileId = d.id; detFrame = 0; detFileCount = d.frame_count || 1;
+  document.getElementById('det-frame').value = 0;
+  setStatus('batch-status', 'File ready: ' + esc(d.filename), 'ok');
+  e.target.value = '';
+};
+
+document.getElementById('det-file-select').onchange = e => {
+  const val = e.target.value; if (!val) { detFileId = null; return; }
+  if (val.startsWith('det:')) { detFileId = val.slice(4); }
+  else { detFileId = val; }
+  const f = detFiles[detFileId] || uploadedFiles[detFileId];
+  detFileCount = (f && f.frame_count) || 1;
+  detFrame = 0; document.getElementById('det-frame').value = 0;
+};
+document.getElementById('det-prev').onclick = () => { if (detFrame > 0) { document.getElementById('det-frame').value = --detFrame; } };
+document.getElementById('det-next').onclick = () => { if (detFrame < detFileCount - 1) { document.getElementById('det-frame').value = ++detFrame; } };
+document.getElementById('det-frame').onchange = e => { detFrame = Math.max(0, Math.min(detFileCount - 1, parseInt(e.target.value) || 0)); };
+
+document.getElementById('det-run-btn').onclick = async () => {
+  const modelId = document.getElementById('det-model-select').value;
+  if (!modelId) { alert('Select a model'); return; }
+  if (!detFileId) { alert('Select or upload a file'); return; }
+  const alpha = parseFloat(document.getElementById('det-alpha').value);
+  const beta = parseFloat(document.getElementById('det-beta').value);
+  const cutoff = parseFloat(document.getElementById('det-cutoff').value);
+  const wmap = document.getElementById('det-weightmap').checked;
+  document.getElementById('det-run-btn').disabled = true;
+  const wrap = document.getElementById('detect-canvas-wrap');
+  wrap.innerHTML = '<span class="spinner" style="margin:40px auto;display:block"></span>';
+  const d = await api(
+    `/detect/frame/${username}/${detFileId}/${detFrame}?model_id=${modelId}&alpha=${alpha}&beta=${beta}&cutoff=${cutoff}&return_weightmap=${wmap}`
+  );
+  document.getElementById('det-run-btn').disabled = false;
+  if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
+  const srcImg = new Image();
+  srcImg.onload = () => {
+    const scale = Math.min(1, 600 / Math.max(d.width, d.height));
+    const cw = Math.round(d.width * scale), ch = Math.round(d.height * scale);
+    wrap.innerHTML = `<canvas id="det-canvas" width="${cw}" height="${ch}" style="max-width:100%;display:block"></canvas>`;
+    const ctx = document.getElementById('det-canvas').getContext('2d');
+    ctx.drawImage(srcImg, 0, 0, cw, ch);
+    ctx.fillStyle = 'rgba(255,68,68,0.85)';
+    d.detections.forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x * scale, y * scale, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  };
+  srcImg.src = (wmap && d.weightmap) ? d.weightmap : d.image;
+  document.getElementById('det-count-badge').textContent = d.count + ' particles';
+};
+
+document.getElementById('batch-detect-btn').onclick = async () => {
+  const modelId = document.getElementById('det-model-select').value;
+  if (!modelId) { setStatus('batch-status', 'Select a model', 'warn'); return; }
+  if (!detFileId) { setStatus('batch-status', 'Select or upload a file', 'warn'); return; }
+  const outName = document.getElementById('batch-output-name').value.trim() || undefined;
+  setStatus('batch-status', '<span class="spinner"></span> Starting batch detection…', 'info');
+  const d = await api('/detect/batch', {
+    username, file_id: detFileId, model_id: modelId,
+    alpha: parseFloat(document.getElementById('det-alpha').value),
+    beta: parseFloat(document.getElementById('det-beta').value),
+    cutoff: parseFloat(document.getElementById('det-cutoff').value),
+    output_name: outName,
+  });
+  if (d.error) { setStatus('batch-status', esc(d.error), 'err'); return; }
+  pollJob(d.job_id, 'batch-status', msg => {
+    if (msg.status === 'running') return `<span class="spinner"></span> Frame ${msg.frames_done || 0} / ${msg.frames_total || '?'}`;
+    if (msg.status === 'completed') return `Done — ${msg.total_detections} detections in ${msg.frames} frames → <code>${esc(msg.output_csv)}</code>`;
+    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error);
+  }, 1000);
+};
+
+// ====================================================================
+// TRACKING PANEL
+// ====================================================================
+document.getElementById('upload-det-csv-btn').onclick = () => document.getElementById('track-csv-input').click();
+document.getElementById('track-csv-input').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const form = new FormData();
+  form.append('username', username); form.append('file', file); form.append('file_type', 'detection');
+  const d = await api('/upload/csv', form);
+  if (d.error) { setStatus('trk-status-wrap', esc(d.error), 'err'); return; }
+  await refreshResultFiles();
+  document.getElementById('track-csv-select').value = d.filename;
+  e.target.value = '';
+};
+
+document.getElementById('trk-run-btn').onclick = async () => {
+  const csvName = document.getElementById('track-csv-select').value;
+  if (!csvName) { setStatus('trk-status-wrap', 'Select a detection CSV', 'warn'); return; }
+  const outName = document.getElementById('trk-output-name').value.trim() || undefined;
+  setStatus('trk-status-wrap', '<span class="spinner"></span> Starting tracking…', 'info');
+  document.getElementById('trk-results-wrap').classList.add('hidden');
+  const d = await api('/track', {
+    username, csv_name: csvName, output_name: outName,
+    min_dist: parseFloat(document.getElementById('trk-min-dist').value),
+    max_link: parseFloat(document.getElementById('trk-max-link').value),
+    min_track: parseInt(document.getElementById('trk-min-track').value),
+    max_gap: parseInt(document.getElementById('trk-max-gap').value),
+  });
+  if (d.error) { setStatus('trk-status-wrap', esc(d.error), 'err'); return; }
+  lastTrackCsv = d.output_csv;
+  pollJob(d.job_id, 'trk-status-wrap', msg => {
+    if (msg.status === 'running') return '<span class="spinner"></span> Running tracking…';
+    if (msg.status === 'completed') { showTrackResults(msg); return null; }
+    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error);
+  }, 1500);
+};
+
+function showTrackResults(msg) {
+  setStatus('trk-status-wrap', 'Completed', 'ok');
+  const rows = [
+    ['Tracks', msg.n_tracks],
+    ['Total rows', msg.n_rows],
+    ['Interpolated rows', msg.n_interpolated],
+    ['Raw detections', msg.n_raw_detections],
+    ['After NMS', msg.n_after_nms],
+    ['Output CSV', msg.output_csv],
+  ];
+  document.getElementById('trk-table').innerHTML = rows.map(([k, v]) =>
+    `<tr><td style="color:var(--text2)">${k}</td><td class="mono">${esc(String(v))}</td></tr>`
+  ).join('');
+  document.getElementById('trk-results-wrap').classList.remove('hidden');
+  document.getElementById('trk-download-btn').onclick = () => {
+    window.location.href = apiUrl(`/results/${username}/download/${msg.output_csv}`);
+  };
+  refreshResultFiles();
+}
+
+// ====================================================================
+// ANALYSIS PANEL
+// ====================================================================
+document.getElementById('upload-trk-csv-btn').onclick = () => document.getElementById('abp-csv-input').click();
+document.getElementById('abp-csv-input').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const form = new FormData();
+  form.append('username', username); form.append('file', file); form.append('file_type', 'tracks');
+  const d = await api('/upload/csv', form);
+  if (d.error) { setStatus('abp-status-wrap', esc(d.error), 'err'); return; }
+  await refreshResultFiles();
+  document.getElementById('abp-csv-select').value = d.filename;
+  e.target.value = '';
+};
+
+document.getElementById('abp-run-btn').onclick = async () => {
+  const csvName = document.getElementById('abp-csv-select').value;
+  if (!csvName) { setStatus('abp-status-wrap', 'Select a tracks CSV', 'warn'); return; }
+  setStatus('abp-status-wrap', '<span class="spinner"></span> Computing MSD and fitting ABP…', 'info');
+  document.getElementById('abp-results-wrap').classList.add('hidden');
+  const d = await api('/analyze/abp', {
+    username, csv_name: csvName,
+    dt: parseFloat(document.getElementById('abp-dt').value),
+    px_size: parseFloat(document.getElementById('abp-px').value),
+    max_lag: parseInt(document.getElementById('abp-maxlag').value),
+    min_track: parseInt(document.getElementById('abp-mintrack').value),
+    include_interpolated: document.getElementById('abp-include-interp').checked,
+  });
+  if (d.error) { setStatus('abp-status-wrap', esc(d.error), 'err'); return; }
+  showAbpResults(d);
+};
+
+function showAbpResults(d) {
+  const rows = [
+    ['Tracks analysed', d.n_tracks, ''],
+    ['Real detection rows', d.n_real_rows, ''],
+  ];
+  if (d.D_t != null) rows.push(['D_t', d.D_t.toFixed(5), 'µm²/s']);
+  if (d.v0 != null) rows.push(['v₀', d.v0.toFixed(4), 'µm/s']);
+  if (d.D_r_msd != null) rows.push(['D_r (MSD fit)', d.D_r_msd.toFixed(5), 'rad²/s']);
+  if (d.D_r_angular != null) rows.push(['D_r (angular MSD)', d.D_r_angular.toFixed(5), 'rad²/s']);
+
+  document.getElementById('abp-table').innerHTML = rows.map(([k, v, u]) =>
+    `<tr><td style="color:var(--text2)">${k}</td><td class="mono">${esc(String(v))}</td><td style="color:var(--text2)">${u}</td></tr>`
+  ).join('');
+
+  if (d.plot_b64) {
+    lastAbpPlotB64 = d.plot_b64;
+    const img = document.getElementById('abp-plot');
+    img.src = d.plot_b64; img.classList.remove('hidden');
+    const dlBtn = document.getElementById('abp-plot-download');
+    dlBtn.classList.remove('hidden');
+    dlBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = lastAbpPlotB64;
+      a.download = d.plot_name || 'msd_plot.png';
+      a.click();
+    };
+  }
+  document.getElementById('abp-results-wrap').classList.remove('hidden');
+  setStatus('abp-status-wrap', 'ABP fit complete', 'ok');
+}
+
+// ====================================================================
+// SHARED UTILITIES
+// ====================================================================
+async function refreshResultFiles() {
+  const d = await api('/results/' + username);
+  const csvs = (d.results || []).filter(f => f.type === '.csv').map(f => f.name);
+  const trkSel = document.getElementById('track-csv-select');
+  const abpSel = document.getElementById('abp-csv-select');
+  const prev1 = trkSel.value, prev2 = abpSel.value;
+  trkSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
+  abpSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
+  csvs.forEach(name => {
+    trkSel.appendChild(new Option(name, name));
+    abpSel.appendChild(new Option(name, name));
+  });
+  if (prev1) trkSel.value = prev1;
+  if (prev2) abpSel.value = prev2;
+}
+
+function pollJob(jobId, statusElId, msgFn, intervalMs) {
+  const timer = setInterval(async () => {
+    const d = await api('/jobs/' + jobId);
+    if (!d || d.error) { clearInterval(timer); return; }
+    const msg = msgFn(d);
+    if (msg !== null && msg !== undefined) setStatus(statusElId, msg, statusClass(d.status));
+    if (['completed', 'failed', 'cancelled'].includes(d.status)) clearInterval(timer);
+  }, intervalMs || 1500);
+}
+
+function statusClass(s) {
+  if (s === 'completed') return 'ok';
+  if (s === 'failed') return 'err';
+  if (s === 'cancelled') return 'warn';
+  return 'info';
+}
+
+function setStatus(id, html, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<div class="status status-${type || 'info'}">${html}</div>`;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
