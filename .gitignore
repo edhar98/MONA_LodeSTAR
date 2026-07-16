@@ -30,9 +30,11 @@ tools/tdms_to_png
 # Runtime data
 web/sessions.json
 web/training_jobs.json
+web/background_jobs.json
 web/users.json
 web/uploads/
 web/samples/
+web/data/
 
 # Output directories
 detection_output/

@@ -98,6 +98,21 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
 .btn-outline:hover { background: var(--bg3); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
+.tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:12px; flex-wrap:wrap; }
+.tab-btn {
+  background:none; border:none; border-bottom:2px solid transparent; color:var(--text2);
+  padding:8px 12px; cursor:pointer; font-size:12px; font-family:var(--sans);
+}
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+.tab-pane { display:none; }
+.tab-pane.active { display:block; }
+.meta-box {
+  font-family:var(--mono); font-size:11px; color:var(--text2); background:var(--bg);
+  border:1px solid var(--border); border-radius:4px; padding:10px; white-space:pre-wrap;
+  max-height:180px; overflow:auto; line-height:1.45;
+}
+.plot-canvas { width:100%; max-height:220px; background:#000; border-radius:4px; display:block; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Progress */
@@ -185,7 +200,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
   <aside class="sidebar">
     <div class="logo">MONA<span>LodeSTAR</span></div>
     <nav>
-      <button class="nav-btn active" data-panel="files"><span class="icon">&#128193;</span>Files</button>
+      <button class="nav-btn active" data-panel="files"><span class="icon">&#128193;</span>TDMS Explorer</button>
       <button class="nav-btn" data-panel="training"><span class="icon">&#128300;</span>Training</button>
       <button class="nav-btn" data-panel="detection"><span class="icon">&#128269;</span>Detection</button>
       <button class="nav-btn" data-panel="tracking"><span class="icon">&#128739;</span>Tracking</button>
@@ -194,6 +209,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
     <div class="sidebar-bottom">
       <div class="user-badge">
         <strong id="sidebar-username"></strong>
+        <div id="sidebar-data-dir" style="font-size:10px;color:var(--text2);margin-top:4px;word-break:break-all;line-height:1.3"></div>
         <span id="gpu-badge" class="badge">&#8212;</span>
         <button class="btn btn-outline btn-sm" id="logout-btn" style="margin-top:8px;width:100%">Sign Out</button>
       </div>
@@ -202,49 +218,157 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 
   <main>
     <div class="topbar">
-      <span class="topbar-title" id="panel-title">Files</span>
+      <span class="topbar-title" id="panel-title">TDMS Explorer</span>
     </div>
 
-    <!-- ===== FILES ===== -->
+    <!-- ===== TDMS EXPLORER ===== -->
     <div class="panel active" id="panel-files">
-      <div class="card">
-        <div class="card-title">Upload</div>
-        <div class="dropzone" id="drop-zone">
-          <div style="font-size:28px">&#128194;</div>
-          <p>Drop a TDMS or image file here, or click to browse</p>
-          <input type="file" id="file-input" accept=".tdms,.png,.jpg,.jpeg,.tif,.tiff">
-        </div>
-        <div style="display:flex;gap:12px;align-items:center;margin-top:10px">
-          <label style="margin:0;white-space:nowrap">
-            <input type="checkbox" id="normalize-check" checked> Normalize TDMS
-          </label>
-          <div id="upload-progress" class="hidden" style="flex:1">
+      <div class="row">
+        <div class="col card" style="max-width:340px">
+          <div class="card-title">Load</div>
+          <div class="dropzone" id="drop-zone">
+            <div style="font-size:28px">&#128194;</div>
+            <p>Drop TDMS / image, or click</p>
+            <input type="file" id="file-input" accept=".tdms,.png,.jpg,.jpeg,.tif,.tiff">
+          </div>
+          <label style="margin-top:10px"><input type="checkbox" id="normalize-check" checked> Normalize TDMS</label>
+          <div id="upload-progress" class="hidden" style="margin-top:8px">
             <div class="progress-bar-wrap"><div class="progress-bar" id="upload-bar" style="width:0%"></div></div>
             <div id="upload-status-text" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
           </div>
+          <label>Server path / glob</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="server-path-input" placeholder="/data/.../*.tdms" style="flex:1;font-family:var(--mono);font-size:12px">
+            <button class="btn btn-primary btn-sm" id="server-path-load-btn">Load</button>
+          </div>
+          <label><input type="checkbox" id="server-normalize-check" checked> Normalize</label>
+          <div id="server-path-status" style="margin-top:6px;font-size:12px"></div>
+          <div class="card-title" style="margin-top:16px">Session files</div>
+          <div id="file-list" class="file-list"><div style="color:var(--text2)">No files loaded</div></div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="card-title">Uploaded Files</div>
-        <div id="file-list" class="file-list"><div style="color:var(--text2)">No files uploaded</div></div>
+        <div class="col card">
+          <div class="card-title">Inspector</div>
+          <div id="tdms-meta" class="meta-box">Select a TDMS file</div>
+          <div class="tabs" id="explorer-tabs" style="margin-top:12px">
+            <button class="tab-btn active" data-tab="viewer">Image Viewer</button>
+            <button class="tab-btn" data-tab="channel">Channel Data</button>
+            <button class="tab-btn" data-tab="analysis">Analysis</button>
+            <button class="tab-btn" data-tab="compare">Compare</button>
+          </div>
+
+          <div class="tab-pane active" id="tab-viewer">
+            <div id="frame-preview-wrap" style="text-align:center;min-height:220px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:4px">
+              <span style="color:var(--text2)">Select a file to preview</span>
+            </div>
+            <div id="frame-nav" class="hidden" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+              <button class="btn btn-outline btn-sm" id="frame-prev">&#9664;</button>
+              <span id="frame-counter" style="font-size:12px;color:var(--text2);flex:1;text-align:center"></span>
+              <button class="btn btn-outline btn-sm" id="frame-next">&#9654;</button>
+              <label style="margin:0;display:flex;align-items:center;gap:6px">Colormap
+                <select id="viewer-cmap" style="width:auto;min-width:100px">
+                  <option value="gray">gray</option>
+                  <option value="viridis">viridis</option>
+                  <option value="plasma">plasma</option>
+                  <option value="inferno">inferno</option>
+                  <option value="magma">magma</option>
+                  <option value="hot">hot</option>
+                  <option value="jet">jet</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="tab-pane" id="tab-channel">
+            <div class="row" style="gap:8px">
+              <div class="col"><label>Group</label><select id="channel-group"></select></div>
+              <div class="col"><label>Channel</label><select id="channel-name"></select></div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="channel-plot-btn" style="margin-top:10px">Plot channel</button>
+            <canvas id="channel-plot" class="plot-canvas" width="800" height="220" style="margin-top:10px"></canvas>
+            <div id="channel-stats" style="font-size:11px;color:var(--text2);margin-top:6px"></div>
+          </div>
+
+          <div class="tab-pane" id="tab-analysis">
+            <div class="tabs" id="analysis-tabs">
+              <button class="tab-btn active" data-atab="hist">Histogram</button>
+              <button class="tab-btn" data-atab="filter">Filters</button>
+              <button class="tab-btn" data-atab="edges">Edges</button>
+              <button class="tab-btn" data-atab="profile">Profile</button>
+            </div>
+            <label>Frame</label>
+            <input type="number" id="analysis-frame" value="0" min="0">
+            <div id="atab-hist" class="atab-pane">
+              <label>Bins</label><input type="number" id="hist-bins" value="256" min="16" max="1024">
+              <button class="btn btn-primary btn-sm" id="hist-run-btn" style="margin-top:8px">Run</button>
+              <canvas id="hist-plot" class="plot-canvas" width="800" height="220" style="margin-top:10px"></canvas>
+              <div id="hist-stats" class="meta-box" style="margin-top:8px;max-height:120px"></div>
+            </div>
+            <div id="atab-filter" class="atab-pane" style="display:none">
+              <label>Filter</label>
+              <select id="filter-type">
+                <option value="gaussian">gaussian</option>
+                <option value="median">median</option>
+                <option value="bilateral">bilateral</option>
+                <option value="sobel">sobel</option>
+                <option value="prewitt">prewitt</option>
+                <option value="laplace">laplace</option>
+              </select>
+              <label>Sigma / size</label><input type="number" id="filter-sigma" value="1" min="0.1" max="10" step="0.1">
+              <button class="btn btn-primary btn-sm" id="filter-run-btn" style="margin-top:8px">Apply</button>
+              <img id="filter-img" alt="" style="max-width:100%;margin-top:10px;border-radius:4px;display:none">
+            </div>
+            <div id="atab-edges" class="atab-pane" style="display:none">
+              <label>Method</label>
+              <select id="edge-method">
+                <option value="canny">canny</option>
+                <option value="sobel">sobel</option>
+                <option value="prewitt">prewitt</option>
+                <option value="laplace">laplace</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="edges-run-btn" style="margin-top:8px">Detect</button>
+              <img id="edges-img" alt="" style="max-width:100%;margin-top:10px;border-radius:4px;display:none">
+            </div>
+            <div id="atab-profile" class="atab-pane" style="display:none">
+              <label>Direction</label>
+              <select id="profile-dir">
+                <option value="horizontal">horizontal</option>
+                <option value="vertical">vertical</option>
+                <option value="diagonal">diagonal</option>
+              </select>
+              <label>Position (blank = center)</label>
+              <input type="number" id="profile-pos" placeholder="auto">
+              <button class="btn btn-primary btn-sm" id="profile-run-btn" style="margin-top:8px">Profile</button>
+              <canvas id="profile-plot" class="plot-canvas" width="800" height="220" style="margin-top:10px"></canvas>
+            </div>
+          </div>
+
+          <div class="tab-pane" id="tab-compare">
+            <div class="row" style="gap:8px">
+              <div class="col"><label>Frame A</label><input type="number" id="compare-a" value="0" min="0"></div>
+              <div class="col"><label>Frame B</label><input type="number" id="compare-b" value="1" min="0"></div>
+              <div class="col"><label>Method</label>
+                <select id="compare-method">
+                  <option value="difference">difference</option>
+                  <option value="absolute">absolute</option>
+                  <option value="relative">relative</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="compare-run-btn" style="margin-top:8px">Compare</button>
+            <div class="row" style="gap:8px;margin-top:10px">
+              <div class="col"><img id="compare-img-a" alt="A" style="max-width:100%;border-radius:4px;display:none"></div>
+              <div class="col"><img id="compare-img-b" alt="B" style="max-width:100%;border-radius:4px;display:none"></div>
+              <div class="col"><img id="compare-img-d" alt="diff" style="max-width:100%;border-radius:4px;display:none"></div>
+            </div>
+          </div>
+          <div id="explorer-status" style="margin-top:10px;font-size:12px"></div>
+        </div>
       </div>
 
       <div class="row">
         <div class="col card">
-          <div class="card-title">Frame Preview</div>
-          <div id="frame-preview-wrap" style="text-align:center;min-height:80px;display:flex;align-items:center;justify-content:center">
-            <span style="color:var(--text2)">Select a file to preview</span>
-          </div>
-          <div id="frame-nav" class="hidden" style="display:flex;gap:8px;align-items:center;margin-top:8px">
-            <button class="btn btn-outline btn-sm" id="frame-prev">&#9664;</button>
-            <span id="frame-counter" style="font-size:12px;color:var(--text2);flex:1;text-align:center"></span>
-            <button class="btn btn-outline btn-sm" id="frame-next">&#9654;</button>
-          </div>
-        </div>
-
-        <div class="col card">
-          <div class="card-title">TDMS Export</div>
+          <div class="card-title">Export</div>
           <label>Format</label>
           <select id="export-format">
             <option value="png">PNG frames (zip)</option>
@@ -258,77 +382,138 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
           </div>
           <div id="export-status" style="margin-top:8px"></div>
         </div>
+        <div class="col card">
+          <div class="card-title">Merge to MP4</div>
+          <div id="merge-file-list" style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto;margin-bottom:10px">
+            <div style="color:var(--text2);font-size:12px">Load files to select them here</div>
+          </div>
+          <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+            <div class="col" style="min-width:120px">
+              <label>Output name</label>
+              <input type="text" id="merge-name" value="merged">
+            </div>
+            <div style="width:64px">
+              <label>FPS</label>
+              <input type="number" id="merge-fps" value="30" min="1" max="120">
+            </div>
+            <label style="margin:0 0 2px;font-size:12px"><input type="checkbox" id="merge-normalize" checked> Normalize</label>
+          </div>
+          <button class="btn btn-primary btn-sm" id="merge-btn" style="width:100%;margin-top:10px">Merge Selected</button>
+          <div id="merge-status" style="margin-top:8px;font-size:12px"></div>
+        </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Video Merge</div>
-        <div class="row" style="align-items:flex-end">
-          <div class="col" style="max-width:200px">
-            <label>Output filename</label>
-            <input type="text" id="merge-name" value="merged">
-          </div>
-          <div class="col" style="max-width:80px">
-            <label>FPS</label>
-            <input type="number" id="merge-fps" value="30" min="1" max="120">
-          </div>
-          <button class="btn btn-primary btn-sm" id="merge-btn">Merge Videos</button>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Merged Videos</span>
+          <button class="btn btn-outline btn-sm" id="merged-refresh-btn">Refresh</button>
         </div>
-        <div style="font-size:12px;color:var(--text2);margin-top:6px">Place MP4 files in your results folder, then click Merge to concatenate them.</div>
-        <div id="merge-status" style="margin-top:8px"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="merged-select" style="flex:1"><option value="">&#8212; No videos yet &#8212;</option></select>
+          <button class="btn btn-danger btn-sm" id="merged-delete-btn" title="Delete selected">&#10005;</button>
+        </div>
+        <div id="merged-meta" style="font-size:11px;color:var(--text2);margin-top:6px;min-height:14px"></div>
+        <video id="merged-video" controls style="width:100%;max-height:420px;margin-top:10px;border-radius:4px;background:#000"></video>
+        <a class="btn btn-outline btn-sm" id="merged-download-btn" style="margin-top:8px;display:inline-flex" href="#" download>&#11015; Download</a>
       </div>
     </div>
 
     <!-- ===== TRAINING ===== -->
     <div class="panel" id="panel-training">
-      <div class="row">
-        <div class="col card" style="max-width:320px">
-          <div class="card-title">Sample</div>
-          <label>Particle name</label>
-          <input type="text" id="train-particle" placeholder="e.g. JP_Fe">
-          <label>Source file</label>
-          <select id="train-file-select"><option value="">&#8212; Select file &#8212;</option></select>
-          <label>Frame index</label>
-          <input type="number" id="train-frame-idx" value="0" min="0">
-          <label>Crop (x, y, width, height)</label>
-          <div class="row" style="gap:6px">
-            <input type="number" id="sample-x" placeholder="x" style="flex:1">
-            <input type="number" id="sample-y" placeholder="y" style="flex:1">
-            <input type="number" id="sample-w" placeholder="w" value="64" style="flex:1">
-            <input type="number" id="sample-h" placeholder="h" value="64" style="flex:1">
-          </div>
-          <button class="btn btn-outline btn-sm" id="crop-sample-btn" style="margin-top:10px;width:100%">Crop Sample</button>
-          <div id="sample-preview-wrap" style="margin-top:8px;text-align:center"></div>
-          <div id="sample-status" style="margin-top:6px"></div>
-        </div>
+      <div class="card">
+        <div class="card-title">Sample</div>
+        <div class="row" style="gap:16px;align-items:stretch">
+          <div style="flex:1;min-width:280px;max-width:320px">
+            <label>Particle name</label>
+            <input type="text" id="train-particle" placeholder="e.g. JP_Fe">
+            <label>Source file</label>
+            <select id="train-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+              <button class="btn btn-outline btn-sm" id="train-frame-prev">&#9664;</button>
+              <span id="train-frame-counter" style="font-size:12px;color:var(--text2);flex:1;text-align:center">No file</span>
+              <button class="btn btn-outline btn-sm" id="train-frame-next">&#9654;</button>
+            </div>
 
-        <div class="col card">
-          <div class="card-title">Training Config</div>
-          <div class="row">
-            <div class="col">
-              <label>Epochs</label><input type="number" id="cfg-epochs" value="100" min="1">
-              <label>Batch size</label><input type="number" id="cfg-batch" value="8" min="1">
-              <label>Learning rate</label><input type="number" id="cfg-lr" value="0.0001" step="0.00001">
-              <label>Dataset length</label><input type="number" id="cfg-length" value="400" min="10">
-              <label>N transforms</label><input type="number" id="cfg-ntrans" value="4" min="1">
+            <div class="card-title" style="margin-top:16px">Image adjust</div>
+            <label>Brightness <span id="adj-bright-val" class="mono" style="float:right">0</span></label>
+            <input type="range" id="adj-brightness" min="-100" max="100" value="0" style="width:100%">
+            <label>Contrast <span id="adj-contrast-val" class="mono" style="float:right">0</span></label>
+            <input type="range" id="adj-contrast" min="-100" max="100" value="0" style="width:100%">
+            <label>Gamma <span id="adj-gamma-val" class="mono" style="float:right">1.00</span></label>
+            <input type="range" id="adj-gamma" min="20" max="300" value="100" style="width:100%">
+            <button class="btn btn-outline btn-sm" id="adj-reset-btn" style="width:100%;margin-top:8px">Reset adjust</button>
+
+            <div class="card-title" style="margin-top:16px">Crop aspect</div>
+            <label>Mode</label>
+            <select id="crop-aspect-mode">
+              <option value="free">Free</option>
+              <option value="1:1">Square 1:1</option>
+              <option value="custom">Custom W:H</option>
+            </select>
+            <div id="crop-aspect-custom" class="hidden" style="display:flex;gap:6px;margin-top:6px">
+              <input type="number" id="crop-aspect-w" value="1" min="1" step="1" style="flex:1" title="Width">
+              <span style="align-self:center;color:var(--text2)">:</span>
+              <input type="number" id="crop-aspect-h" value="1" min="1" step="1" style="flex:1" title="Height">
             </div>
-            <div class="col">
-              <label>Mul min / max</label>
-              <div class="row" style="gap:6px">
-                <input type="number" id="cfg-mul-min" value="0.9" step="0.01" style="flex:1">
-                <input type="number" id="cfg-mul-max" value="1.1" step="0.01" style="flex:1">
-              </div>
-              <label>Add min / max</label>
-              <div class="row" style="gap:6px">
-                <input type="number" id="cfg-add-min" value="-0.1" step="0.01" style="flex:1">
-                <input type="number" id="cfg-add-max" value="0.1" step="0.01" style="flex:1">
-              </div>
-              <label style="margin-top:10px"><input type="checkbox" id="cfg-affine"> Affine augmentation</label>
+            <div id="train-selection-info" style="font-size:11px;color:var(--text2);margin-top:10px;min-height:32px">Drag to select. Drag inside a selection to move it.</div>
+            <button class="btn btn-primary btn-sm" id="crop-sample-btn" style="width:100%;margin-top:8px" disabled>Add to Pool</button>
+            <div id="sample-status" style="margin-top:6px;font-size:12px"></div>
+            <div id="crop-pool" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+          </div>
+
+          <div style="flex:2;min-width:0;display:flex;flex-direction:column">
+            <div id="train-crop-wrap" style="flex:1;position:relative;min-height:520px;background:var(--bg3);border-radius:4px;overflow:auto;display:flex;align-items:center;justify-content:center">
+              <span id="train-crop-hint" style="color:var(--text2);font-size:12px;padding:20px;pointer-events:none">Select a file to load frame</span>
+              <canvas id="train-crop-canvas" style="display:none;cursor:crosshair;touch-action:none"></canvas>
             </div>
           </div>
-          <div style="display:flex;gap:8px;margin-top:14px">
-            <button class="btn btn-primary" id="train-start-btn">&#9654; Start Training</button>
-            <button class="btn btn-danger hidden" id="train-cancel-btn">&#10005; Cancel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Training Config</div>
+        <div class="row">
+          <div class="col">
+            <label>Epochs</label><input type="number" id="cfg-epochs" value="100" min="1">
+            <label>Batch size</label><input type="number" id="cfg-batch" value="8" min="1">
+            <label>Learning rate</label><input type="number" id="cfg-lr" value="0.0001" step="0.00001">
+            <label>Dataset length</label><input type="number" id="cfg-length" value="400" min="10">
+            <label>N transforms</label><input type="number" id="cfg-ntrans" value="4" min="1">
           </div>
+          <div class="col">
+            <label>Mul min / max</label>
+            <div class="row" style="gap:6px">
+              <input type="number" id="cfg-mul-min" value="0.9" step="0.01" style="flex:1">
+              <input type="number" id="cfg-mul-max" value="1.1" step="0.01" style="flex:1">
+            </div>
+            <label>Add min / max</label>
+            <div class="row" style="gap:6px">
+              <input type="number" id="cfg-add-min" value="-0.1" step="0.01" style="flex:1">
+              <input type="number" id="cfg-add-max" value="0.1" step="0.01" style="flex:1">
+            </div>
+            <label style="margin-top:10px"><input type="checkbox" id="cfg-affine"> Affine augmentation</label>
+            <div id="cfg-affine-params" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg3);border-radius:4px">
+              <label>Scale min / max</label>
+              <div class="row" style="gap:6px">
+                <input type="number" id="cfg-scale-min" value="0.9" step="0.01" style="flex:1">
+                <input type="number" id="cfg-scale-max" value="1.1" step="0.01" style="flex:1">
+              </div>
+              <label>Rotation (0–1 = fraction of 360°)</label>
+              <div class="row" style="gap:6px">
+                <input type="number" id="cfg-rot-min" value="0" step="0.05" min="0" max="1" style="flex:1">
+                <input type="number" id="cfg-rot-max" value="1" step="0.05" min="0" max="1" style="flex:1">
+              </div>
+              <label>Translate min / max (px)</label>
+              <div class="row" style="gap:6px">
+                <input type="number" id="cfg-trans-min" value="-5" step="1" style="flex:1">
+                <input type="number" id="cfg-trans-max" value="5" step="1" style="flex:1">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary" id="train-start-btn">&#9654; Start Training</button>
+          <button class="btn btn-danger hidden" id="train-cancel-btn">&#10005; Cancel</button>
         </div>
       </div>
 
@@ -356,8 +541,8 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
           <div class="card-title">Setup</div>
           <label>Model</label>
           <select id="det-model-select"><option value="">&#8212; Select model &#8212;</option></select>
-          <label>File (uploaded)</label>
-          <select id="det-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+          <label>Files</label>
+          <select id="det-file-select" multiple size="8" style="min-height:140px;width:100%"></select>
           <div style="margin-top:6px">
             <button class="btn btn-outline btn-sm" id="det-upload-btn">Upload file&#8230;</button>
             <input type="file" id="det-file-input" accept=".tdms,.png,.jpg,.jpeg,.tif,.tiff">
@@ -387,7 +572,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       </div>
 
       <div class="card">
-        <div class="card-title">Batch Detection &#8212; all frames &#8594; CSV</div>
+        <div class="card-title">Batch Detection &#8212; all frames of selected file(s) &#8594; CSV</div>
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
           <div style="flex:1;max-width:240px">
             <label>Output name</label>
@@ -403,27 +588,68 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
     <div class="panel" id="panel-tracking">
       <div class="row">
         <div class="col card" style="max-width:320px">
-          <div class="card-title">Input</div>
-          <label>Detection CSV (from results/)</label>
+          <div class="card-title">1 · Input</div>
+          <label>Detection CSV</label>
           <select id="track-csv-select"><option value="">&#8212; Select CSV &#8212;</option></select>
           <button class="btn btn-outline btn-sm" id="upload-det-csv-btn" style="margin-top:6px">Upload CSV&#8230;</button>
           <input type="file" id="track-csv-input" accept=".csv">
+          <div id="trk-input-meta" style="font-size:11px;color:var(--text2);margin-top:8px;min-height:14px"></div>
 
-          <div class="card-title" style="margin-top:16px">Parameters</div>
+          <div class="card-title" style="margin-top:18px">2 · Link</div>
           <label>NMS radius (px)</label><input type="number" id="trk-min-dist" value="20" min="1">
           <label>Max linking distance (px)</label><input type="number" id="trk-max-link" value="30" min="1">
           <label>Min track length (frames)</label><input type="number" id="trk-min-track" value="5" min="1">
           <label>Max gap (frames)</label><input type="number" id="trk-max-gap" value="10" min="0">
-          <label>Output name (optional)</label><input type="text" id="trk-output-name" placeholder="auto">
+          <label>Output name</label><input type="text" id="trk-output-name" placeholder="auto">
           <button class="btn btn-primary" id="trk-run-btn" style="margin-top:14px;width:100%">&#9654; Run Tracking</button>
         </div>
 
         <div class="col card">
-          <div class="card-title">Results</div>
-          <div id="trk-status-wrap"><span style="color:var(--text2)">No results yet</span></div>
+          <div class="card-title">3 · Tracks</div>
+          <div id="trk-status-wrap"><span style="color:var(--text2)">No run yet</span></div>
           <div id="trk-results-wrap" class="hidden" style="margin-top:12px">
             <table class="results-table"><tbody id="trk-table"></tbody></table>
-            <button class="btn btn-outline btn-sm" id="trk-download-btn" style="margin-top:12px">&#11015; Download Tracks CSV</button>
+          </div>
+          <label style="margin-top:16px">Tracks CSV</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="trk-tracks-select" style="flex:1"><option value="">&#8212; No tracks yet &#8212;</option></select>
+            <button class="btn btn-outline btn-sm" id="trk-download-btn" title="Download">&#11015;</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">4 · Preview</div>
+        <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <div class="col" style="min-width:240px;max-width:300px">
+            <label>Background source</label>
+            <select id="viz-bg-mode" style="margin-bottom:8px">
+              <option value="files" selected>Session files (TDMS / images)</option>
+              <option value="none">None (black)</option>
+            </select>
+            <div id="viz-files-wrap">
+              <label>Files (same order as detection batch)</label>
+              <select id="viz-file-select" multiple size="6" style="min-height:110px;width:100%"></select>
+            </div>
+            <div class="row" style="gap:8px;margin-top:10px">
+              <div class="col"><label>FPS</label><input type="number" id="viz-fps" value="10" min="1" max="120"></div>
+              <div class="col"><label>Trail</label><input type="number" id="viz-trail" value="20" min="1"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn-primary btn-sm" id="viz-overview-btn" style="flex:1">Overview</button>
+              <button class="btn btn-outline btn-sm" id="viz-video-btn" style="flex:1">Video</button>
+            </div>
+            <div id="viz-status" style="margin-top:8px;font-size:12px"></div>
+          </div>
+          <div class="col" style="min-width:200px;flex:1">
+            <div id="viz-preview-wrap" style="display:none">
+              <img id="viz-overview-img" alt="Track overview" style="max-width:100%;border-radius:4px;display:block">
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-outline btn-sm" id="viz-overview-dl">&#11015; PNG</button>
+                <button class="btn btn-outline btn-sm hidden" id="viz-video-dl">&#11015; MP4</button>
+              </div>
+            </div>
+            <div id="viz-preview-empty" style="color:var(--text2);font-size:13px;padding:24px 0">Select the same files used for detection, then Overview / Video.</div>
           </div>
         </div>
       </div>
@@ -468,18 +694,31 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 <script>
 'use strict';
 
-// ---- API base (handles /proxy/<port>/ Jupyter prefix) ----
+// ---- API base (JupyterHub /server-proxy and classic /proxy/<port>/) ----
 let API_BASE = '';
 (function () {
-  const parts = window.location.pathname.split('/');
-  const idx = parts.indexOf('proxy');
-  if (idx !== -1) API_BASE = parts.slice(0, idx + 2).join('/');
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  const proxyIdx = parts.indexOf('proxy');
+  if (proxyIdx !== -1 && parts[proxyIdx + 1]) {
+    API_BASE = '/' + parts.slice(0, proxyIdx + 2).join('/');
+    return;
+  }
+  const userIdx = parts.indexOf('user');
+  if (userIdx !== -1 && parts[userIdx + 2]) {
+    const svc = parts[userIdx + 2];
+    if (svc === 'mona-track' || svc.startsWith('mona-track-')) {
+      API_BASE = '/' + parts.slice(0, userIdx + 3).join('/');
+    }
+  }
 })();
 
-function apiUrl(path) { return API_BASE + path; }
+function apiUrl(path) {
+  const p = path.startsWith('/') ? path : '/' + path;
+  return API_BASE ? (API_BASE.replace(/\/$/, '') + p) : p;
+}
 function wsUrl(path) {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return proto + '//' + location.host + API_BASE + path;
+  return proto + '//' + location.host + apiUrl(path);
 }
 
 async function api(path, body, method) {
@@ -491,7 +730,16 @@ async function api(path, body, method) {
   };
   try {
     const r = await fetch(apiUrl(path), opts);
-    return r.json();
+    let data = {};
+    try { data = await r.json(); } catch (_) { data = {}; }
+    if (!r.ok) {
+      const detail = data.detail !== undefined ? data.detail : data.error;
+      const msg = typeof detail === 'string' ? detail
+        : (Array.isArray(detail) ? detail.map(x => x.msg || JSON.stringify(x)).join('; ')
+          : (detail ? JSON.stringify(detail) : (r.statusText || 'Request failed')));
+      return { error: msg, status: r.status, ...data };
+    }
+    return data;
   } catch (e) {
     return { error: e.message };
   }
@@ -503,7 +751,13 @@ let uploadedFiles = {}, detFiles = {}, models = [];
 let currentFileId = null, currentFrame = 0;
 let detFileId = null, detFrame = 0, detFileCount = 1;
 let trainJobId = null, trainWs = null;
-let lastTrackCsv = null, lastAbpPlotB64 = null;
+let lastTrackCsv = null, lastDetCsv = null, lastDetFileIds = [], lastAbpPlotB64 = null;
+// Visual crop state
+let trainFileId = null, trainFrameIdx = 0, trainFrameCount = 1;
+let cropImage = null, cropScale = 1, cropStart = null, cropRect = null;
+let cropMode = null, cropMoveOff = null, cropResizeCorner = null;
+let cropSourceCanvas = null;
+let cropAdjustedCache = null;
 
 // ====================================================================
 // LOGIN
@@ -533,11 +787,9 @@ async function doLogin() {
   const path = loginMode === 'register' ? '/auth/register' : '/auth/login';
   const d = await api(path, { username: u, password: p });
   if (d.error) { showLoginMsg(d.error, 'err'); return; }
-  username = u;
-  localStorage.setItem('mona_user', u);
-  loginOverlay.classList.add('hidden');
-  document.getElementById('app').style.display = 'flex';
-  document.getElementById('sidebar-username').textContent = u;
+  const check = await api('/auth/check/' + encodeURIComponent(u));
+  const me = await api('/auth/me');
+  enterApp(u, check.session, d.mode || 'standalone', (me && me.data_dir) || '');
   await initApp();
 }
 
@@ -549,24 +801,47 @@ function showLoginMsg(msg, type) {
 }
 
 document.getElementById('logout-btn').onclick = () => {
+  if (appMode === 'jupyter') return;
   username = '';
   localStorage.removeItem('mona_user');
   loginOverlay.classList.remove('hidden');
   document.getElementById('app').style.display = 'none';
 };
 
+let appMode = 'standalone';
+let dataDir = '';
+
+function enterApp(u, session, mode, dir) {
+  username = u;
+  appMode = mode || 'standalone';
+  dataDir = dir || '';
+  localStorage.setItem('mona_user', u);
+  loginOverlay.classList.add('hidden');
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('sidebar-username').textContent = u;
+  const dirEl = document.getElementById('sidebar-data-dir');
+  if (dirEl) dirEl.textContent = dataDir ? ('Data: ' + dataDir) : '';
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) logoutBtn.style.display = appMode === 'jupyter' ? 'none' : '';
+  uploadedFiles = (session && session.files) || {};
+  models = (session && session.models) || [];
+}
+
 // ====================================================================
 // INIT
 // ====================================================================
 window.onload = async () => {
+  const me = await api('/auth/me');
+  if (me && me.mode === 'jupyter' && me.username) {
+    localStorage.setItem('mona_user', me.username);
+    enterApp(me.username, me.session, 'jupyter', me.data_dir);
+    await initApp();
+    return;
+  }
   if (username) {
     const check = await api('/auth/check/' + username);
     if (check.exists) {
-      loginOverlay.classList.add('hidden');
-      document.getElementById('app').style.display = 'flex';
-      document.getElementById('sidebar-username').textContent = username;
-      uploadedFiles = (check.session && check.session.files) || {};
-      models = (check.session && check.session.models) || [];
+      enterApp(username, check.session, check.mode || 'standalone', me.data_dir || '');
       await initApp();
     } else {
       localStorage.removeItem('mona_user'); username = '';
@@ -581,9 +856,85 @@ async function initApp() {
   else { badge.textContent = 'CPU'; badge.className = 'badge badge-cpu'; }
   refreshFileList();
   refreshModels();
+  refreshMergedVideos();
   const cfg = await api('/config/defaults');
   if (cfg.dt) document.getElementById('abp-dt').value = cfg.dt;
   if (cfg.px_size) document.getElementById('abp-px').value = cfg.px_size;
+  resumeActiveJobs();
+}
+
+async function resumeActiveJobs() {
+  const d = await api('/jobs/user/' + encodeURIComponent(username));
+  if (!d || d.error) return;
+  const active = (d.background_jobs || []).filter(j =>
+    j && ['queued', 'running'].includes(j.status)
+  );
+  active.forEach(j => {
+    if (j.type === 'batch_detect') {
+      setStatus('batch-status', `<span class="spinner"></span> Resuming job ${esc(j.id)}…`, 'info');
+      pollJob(j.id, 'batch-status', msg => {
+        if (msg.status === 'running' || msg.status === 'queued') {
+          const fileBit = msg.current_file ? ` · ${esc(msg.current_file)}` : '';
+          return `<span class="spinner"></span> Frame ${msg.frames_done || 0}/${msg.frames_total || '?'} · file ${(msg.files_done || 0) + 1}/${msg.files_total || '?'}${fileBit}`;
+        }
+        if (msg.status === 'completed') {
+          lastDetCsv = msg.output_csv || lastDetCsv;
+          refreshResultFiles();
+          return `Done — ${msg.total_detections} detections in ${msg.frames} frames → <code>${esc(msg.output_csv)}</code>`;
+        }
+        if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown');
+        if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run batch.';
+      }, 1000);
+    } else if (j.type === 'merge_video') {
+      setStatus('merge-status', `<span class="spinner"></span> Resuming merge ${esc(j.id)}…`, 'info');
+      pollJob(j.id, 'merge-status', msg => {
+        if (msg.status === 'running' || msg.status === 'queued') {
+          return `<span class="spinner"></span> File ${msg.files_done || 0}/${msg.files_total || '?'} · ${msg.frames_done || 0} frames`;
+        }
+        if (msg.status === 'completed') {
+          const doneName = msg.filename || '';
+          if (doneName) refreshMergedVideos(doneName);
+          return `Done — ${msg.total_frames || 0} frames → results/merged/${esc(doneName)}`;
+        }
+        if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown error');
+        if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run merge.';
+      }, 1500);
+    } else if (j.type === 'tracking') {
+      setStatus('trk-status-wrap', `<span class="spinner"></span> Resuming tracking ${esc(j.id)}…`, 'info');
+      pollJob(j.id, 'trk-status-wrap', msg => {
+        if (msg.status === 'running' || msg.status === 'queued') return '<span class="spinner"></span> Running tracking…';
+        if (msg.status === 'completed') { showTrackResults(msg); return null; }
+        if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown');
+        if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run tracking.';
+      }, 1500);
+    } else if (j.type === 'visualize_video') {
+      setStatus('viz-status', `<span class="spinner"></span> Resuming video ${esc(j.id)}…`, 'info');
+      pollJob(j.id, 'viz-status', msg => {
+        if (msg.status === 'running' || msg.status === 'queued') return '<span class="spinner"></span> Rendering video…';
+        if (msg.status === 'completed') {
+          const dlBtn = document.getElementById('viz-video-dl');
+          dlBtn.classList.remove('hidden');
+          dlBtn.onclick = () => { window.location.href = apiUrl(`/results/${username}/download/${msg.output_mp4}`); };
+          document.getElementById('viz-preview-wrap').style.display = 'block';
+          document.getElementById('viz-preview-empty').style.display = 'none';
+          return 'Video ready';
+        }
+        if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || '');
+        if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run video.';
+      }, 2000);
+    }
+  });
+  const trainActive = (d.training_jobs || []).filter(j =>
+    j && ['queued', 'running'].includes(j.status)
+  );
+  trainActive.forEach(j => {
+    trainJobId = j.id;
+    document.getElementById('train-progress-card').style.display = 'block';
+    document.getElementById('train-start-btn').classList.add('hidden');
+    document.getElementById('train-cancel-btn').classList.remove('hidden');
+    setStatus('train-status', `<span class="spinner"></span> Resuming training ${esc(j.id)}…`, 'info');
+    openTrainWs(j.id);
+  });
 }
 
 // ====================================================================
@@ -597,9 +948,10 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.getElementById('panel-' + name).classList.add('active');
     document.getElementById('panel-title').textContent = btn.textContent.trim();
-    if (name === 'tracking' || name === 'analysis') refreshResultFiles();
+    if (name === 'tracking' || name === 'analysis') { refreshResultFiles(); refreshVizFileList(); }
     if (name === 'detection') refreshModels();
-    if (name === 'training') refreshModels();
+    if (name === 'files') refreshMergedVideos();
+    if (name === 'training') { refreshModels(); refreshFileList(); refreshCropPool(); }
   };
 });
 
@@ -610,47 +962,110 @@ function refreshFileList() {
   const list = document.getElementById('file-list');
   const trainSel = document.getElementById('train-file-select');
   const detSel = document.getElementById('det-file-select');
+  const prevDet = [...detSel.selectedOptions].map(o => o.value);
   trainSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
-  detSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
+  detSel.innerHTML = '';
   const keys = Object.keys(uploadedFiles);
-  if (!keys.length) { list.innerHTML = '<div style="color:var(--text2)">No files uploaded</div>'; return; }
+  Object.keys(detFiles).forEach(id => {
+    if (!keys.includes(id)) keys.push(id);
+  });
+  if (!Object.keys(uploadedFiles).length && !Object.keys(detFiles).length) {
+    list.innerHTML = '<div style="color:var(--text2)">No files loaded</div>';
+    refreshMergeList();
+    return;
+  }
   list.innerHTML = '';
-  keys.forEach(fid => {
+  Object.keys(uploadedFiles).forEach(fid => {
     const f = uploadedFiles[fid];
     const item = document.createElement('div');
     item.className = 'file-item' + (fid === currentFileId ? ' selected' : '');
+    const srcBadge = f.server_path ? ' &middot; <span style="color:var(--accent)">server</span>' : '';
     item.innerHTML = `
-      <div>
+      <div style="min-width:0">
         <div class="file-name">${esc(f.filename)}</div>
-        <div class="file-meta">${f.type.toUpperCase()} &middot; ${f.frame_count || 1} frame(s) &middot; ${f.width || '?'}x${f.height || '?'}</div>
+        <div class="file-meta">${f.type.toUpperCase()} &middot; ${f.frame_count || 1} frame(s) &middot; ${f.width || '?'}x${f.height || '?'}${srcBadge}</div>
       </div>
       <div class="file-actions">
         <button class="btn btn-outline btn-sm" onclick="previewFile('${fid}')">Preview</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteFile('${fid}')">&#10005;</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteFile('${fid}')" title="${f.server_path ? 'Remove from session' : 'Delete file'}">&#10005;</button>
       </div>`;
     list.appendChild(item);
     trainSel.appendChild(new Option(f.filename, fid));
     detSel.appendChild(new Option(f.filename, fid));
   });
+  Object.keys(detFiles).forEach(fid => {
+    if (uploadedFiles[fid]) return;
+    const f = detFiles[fid];
+    detSel.appendChild(new Option(f.filename + ' (detect)', 'det:' + fid));
+  });
+  prevDet.forEach(v => {
+    const opt = [...detSel.options].find(o => o.value === v);
+    if (opt) opt.selected = true;
+  });
+  syncDetFileSelection();
+  refreshMergeList();
+  refreshVizFileList();
+}
+
+function syncDetFileSelection() {
+  const sel = document.getElementById('det-file-select');
+  const opts = [...sel.selectedOptions];
+  if (!opts.length) { detFileId = null; detFileCount = 1; return; }
+  const val = opts[0].value;
+  detFileId = val.startsWith('det:') ? val.slice(4) : val;
+  const f = detFiles[detFileId] || uploadedFiles[detFileId];
+  detFileCount = (f && f.frame_count) || 1;
+}
+
+function selectedDetFileIds() {
+  return [...document.getElementById('det-file-select').selectedOptions].map(o =>
+    o.value.startsWith('det:') ? o.value.slice(4) : o.value
+  );
 }
 
 async function previewFile(fid) {
   currentFileId = fid; currentFrame = 0;
-  document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+  refreshFileList();
+  await loadExplorerStructure(fid);
   await showFrame(fid, 0);
 }
 
 async function showFrame(fid, idx) {
   const wrap = document.getElementById('frame-preview-wrap');
-  wrap.innerHTML = '<span class="spinner"></span>';
-  const d = await api(`/frame/${username}/${fid}/${idx}`);
+  if (!wrap.querySelector('img')) wrap.innerHTML = '<span class="spinner"></span>';
+  const f = uploadedFiles[fid];
+  const cmap = (document.getElementById('viewer-cmap') || {}).value || 'gray';
+  const path = (f && f.type === 'tdms')
+    ? `/tdms/frame/${username}/${fid}/${idx}?cmap=${encodeURIComponent(cmap)}`
+    : `/frame/${username}/${fid}/${idx}`;
+  const d = await api(path);
   if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
-  wrap.innerHTML = `<img src="${d.image}" style="max-width:100%;border-radius:4px">`;
-  const fc = (uploadedFiles[fid] && uploadedFiles[fid].frame_count) || 1;
+  const img = wrap.querySelector('img');
+  if (img) img.src = d.image;
+  else wrap.innerHTML = `<img src="${d.image}" style="max-width:100%;border-radius:4px">`;
+  let metaChanged = false;
+  if (uploadedFiles[fid]) {
+    if (d.frame_count && uploadedFiles[fid].frame_count !== d.frame_count) {
+      uploadedFiles[fid].frame_count = d.frame_count;
+      metaChanged = true;
+    }
+    if (d.width && uploadedFiles[fid].width !== d.width) {
+      uploadedFiles[fid].width = d.width;
+      metaChanged = true;
+    }
+    if (d.height && uploadedFiles[fid].height !== d.height) {
+      uploadedFiles[fid].height = d.height;
+      metaChanged = true;
+    }
+  }
+  const fc = (uploadedFiles[fid] && uploadedFiles[fid].frame_count) || d.frame_count || 1;
   const nav = document.getElementById('frame-nav');
   nav.classList.remove('hidden');
   document.getElementById('frame-counter').textContent = `Frame ${idx + 1} / ${fc}`;
   currentFrame = idx;
+  const af = document.getElementById('analysis-frame');
+  if (af) af.value = idx;
+  if (metaChanged) refreshFileList();
 }
 
 document.getElementById('frame-prev').onclick = async () => {
@@ -662,17 +1077,225 @@ document.getElementById('frame-next').onclick = async () => {
     if (currentFrame < fc - 1) await showFrame(currentFileId, ++currentFrame);
   }
 };
+document.getElementById('viewer-cmap').onchange = async () => {
+  if (currentFileId) await showFrame(currentFileId, currentFrame);
+};
 
 async function deleteFile(fid) {
-  if (!confirm('Delete this file?')) return;
-  await api(`/files/${username}/${fid}`, null, 'DELETE');
+  const f = uploadedFiles[fid];
+  const msg = f && f.server_path ? 'Remove this file from the session? (The original file will not be deleted.)' : 'Delete this file?';
+  if (!confirm(msg)) return;
+  const d = await api(`/files/${username}/${fid}`, null, 'DELETE');
+  if (d.error) { alert(d.error); return; }
   delete uploadedFiles[fid];
   if (currentFileId === fid) {
     currentFileId = null;
     document.getElementById('frame-preview-wrap').innerHTML = '<span style="color:var(--text2)">Select a file to preview</span>';
     document.getElementById('frame-nav').classList.add('hidden');
+    document.getElementById('tdms-meta').textContent = 'Select a TDMS file';
   }
   refreshFileList();
+}
+
+let tdmsStructure = null;
+
+async function loadExplorerStructure(fid) {
+  const meta = document.getElementById('tdms-meta');
+  const f = uploadedFiles[fid];
+  if (!f) { meta.textContent = 'No file'; return; }
+  if (f.type !== 'tdms') {
+    tdmsStructure = null;
+    meta.textContent = `${f.filename}\ntype=${f.type}\nframes=${f.frame_count || 1}\nsize=${f.width || '?'}x${f.height || '?'}`;
+    return;
+  }
+  meta.textContent = 'Loading structure…';
+  const d = await api(`/tdms/structure/${username}/${fid}`);
+  if (d.error) { meta.textContent = d.error; return; }
+  tdmsStructure = d.structure || {};
+  const groups = tdmsStructure.groups || [];
+  const ch = tdmsStructure.channels || {};
+  const img = tdmsStructure.image_data || tdmsStructure.metadata || {};
+  const lines = [
+    f.filename,
+    `frames=${f.frame_count || img.frames || '?'}  ${f.width || img.dimx || '?'}x${f.height || img.dimy || '?'}`,
+    `groups=${groups.length}`,
+    groups.slice(0, 12).map(g => {
+      const names = (ch[g] && ch[g]._channels) || Object.keys(ch[g] || {}).filter(k => k !== '_channels');
+      return `  ${g}: ${(names || []).slice(0, 8).join(', ')}`;
+    }).join('\n'),
+  ];
+  meta.textContent = lines.filter(Boolean).join('\n');
+  const gSel = document.getElementById('channel-group');
+  gSel.innerHTML = '';
+  groups.forEach(g => gSel.appendChild(new Option(g, g)));
+  gSel.onchange = () => fillChannelNames();
+  fillChannelNames();
+}
+
+function fillChannelNames() {
+  const g = document.getElementById('channel-group').value;
+  const cSel = document.getElementById('channel-name');
+  cSel.innerHTML = '';
+  if (!tdmsStructure || !g) return;
+  const ch = tdmsStructure.channels && tdmsStructure.channels[g];
+  const names = (ch && ch._channels) || Object.keys(ch || {}).filter(k => k !== '_channels');
+  (names || []).forEach(n => cSel.appendChild(new Option(n, n)));
+}
+
+function drawSeries(canvas, x, y, color) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  if (!y || !y.length) return;
+  let ymin = Infinity, ymax = -Infinity;
+  for (let i = 0; i < y.length; i++) {
+    const v = y[i];
+    if (v < ymin) ymin = v;
+    if (v > ymax) ymax = v;
+  }
+  if (ymax <= ymin) { ymax = ymin + 1; }
+  ctx.strokeStyle = color || '#3d8ef0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < y.length; i++) {
+    const px = (i / Math.max(y.length - 1, 1)) * (w - 2) + 1;
+    const py = h - 2 - ((y[i] - ymin) / (ymax - ymin)) * (h - 4);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+document.querySelectorAll('#explorer-tabs .tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#explorer-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#tab-viewer, #tab-channel, #tab-analysis, #tab-compare').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  };
+});
+
+document.querySelectorAll('#analysis-tabs .tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#analysis-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.atab-pane').forEach(p => { p.style.display = 'none'; });
+    btn.classList.add('active');
+    document.getElementById('atab-' + btn.dataset.atab).style.display = 'block';
+  };
+});
+
+function requireTdms() {
+  if (!currentFileId) { setStatus('explorer-status', 'Select a file', 'warn'); return null; }
+  const f = uploadedFiles[currentFileId];
+  if (!f || f.type !== 'tdms') { setStatus('explorer-status', 'TDMS file required', 'warn'); return null; }
+  return f;
+}
+
+document.getElementById('channel-plot-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  const group = document.getElementById('channel-group').value;
+  const channel = document.getElementById('channel-name').value;
+  if (!group || !channel) { setStatus('explorer-status', 'Pick group/channel', 'warn'); return; }
+  setStatus('explorer-status', '<span class="spinner"></span> Loading channel…', 'info');
+  const d = await api(`/tdms/channel/${username}/${currentFileId}?group=${encodeURIComponent(group)}&channel=${encodeURIComponent(channel)}`);
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  drawSeries(document.getElementById('channel-plot'), d.x, d.y, '#3dca7a');
+  document.getElementById('channel-stats').textContent =
+    `n=${d.n_original}  min=${d.min != null ? d.min.toFixed(4) : '?'}  max=${d.max != null ? d.max.toFixed(4) : '?'}  mean=${d.mean != null ? d.mean.toFixed(4) : '?'}`;
+  setStatus('explorer-status', 'Channel ready', 'ok');
+};
+
+document.getElementById('hist-run-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  const frame = parseInt(document.getElementById('analysis-frame').value) || 0;
+  const bins = parseInt(document.getElementById('hist-bins').value) || 256;
+  setStatus('explorer-status', '<span class="spinner"></span> Histogram…', 'info');
+  const d = await api('/tdms/analyze/histogram', { username, file_id: currentFileId, frame, bins });
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  const hist = d.histogram || {};
+  const counts = hist.hist || hist.counts || hist.values || [];
+  drawSeries(document.getElementById('hist-plot'), null, counts, '#e0943a');
+  document.getElementById('hist-stats').textContent = JSON.stringify(d.stats || {}, null, 2);
+  setStatus('explorer-status', 'Histogram ready', 'ok');
+};
+
+document.getElementById('filter-run-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  const frame = parseInt(document.getElementById('analysis-frame').value) || 0;
+  setStatus('explorer-status', '<span class="spinner"></span> Filtering…', 'info');
+  const d = await api('/tdms/analyze/filter', {
+    username, file_id: currentFileId, frame,
+    filter_type: document.getElementById('filter-type').value,
+    sigma: parseFloat(document.getElementById('filter-sigma').value) || 1,
+  });
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  const img = document.getElementById('filter-img');
+  img.src = d.image; img.style.display = 'block';
+  setStatus('explorer-status', 'Filter ready', 'ok');
+};
+
+document.getElementById('edges-run-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  const frame = parseInt(document.getElementById('analysis-frame').value) || 0;
+  setStatus('explorer-status', '<span class="spinner"></span> Edges…', 'info');
+  const d = await api('/tdms/analyze/edges', {
+    username, file_id: currentFileId, frame,
+    method: document.getElementById('edge-method').value,
+  });
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  const img = document.getElementById('edges-img');
+  img.src = d.image; img.style.display = 'block';
+  setStatus('explorer-status', 'Edges ready', 'ok');
+};
+
+document.getElementById('profile-run-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  const frame = parseInt(document.getElementById('analysis-frame').value) || 0;
+  const posRaw = document.getElementById('profile-pos').value;
+  setStatus('explorer-status', '<span class="spinner"></span> Profile…', 'info');
+  const d = await api('/tdms/analyze/profile', {
+    username, file_id: currentFileId, frame,
+    direction: document.getElementById('profile-dir').value,
+    position: posRaw === '' ? null : parseInt(posRaw),
+  });
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  const y = d.profile || d.values || d.intensities || d.y || [];
+  const x = d.x || d.positions || [...Array(y.length).keys()];
+  drawSeries(document.getElementById('profile-plot'), x, y, '#3d8ef0');
+  setStatus('explorer-status', 'Profile ready', 'ok');
+};
+
+document.getElementById('compare-run-btn').onclick = async () => {
+  if (!requireTdms()) return;
+  setStatus('explorer-status', '<span class="spinner"></span> Comparing…', 'info');
+  const d = await api('/tdms/compare', {
+    username, file_id: currentFileId,
+    frame_a: parseInt(document.getElementById('compare-a').value) || 0,
+    frame_b: parseInt(document.getElementById('compare-b').value) || 1,
+    compare_method: document.getElementById('compare-method').value,
+  });
+  if (d.error) { setStatus('explorer-status', esc(d.error), 'err'); return; }
+  [['compare-img-a', d.frame_a], ['compare-img-b', d.frame_b], ['compare-img-d', d.diff]].forEach(([id, src]) => {
+    const el = document.getElementById(id);
+    el.src = src; el.style.display = 'block';
+  });
+  setStatus('explorer-status', 'Compare ready', 'ok');
+};
+
+// Load from server path
+document.getElementById('server-path-load-btn').onclick = loadFromServerPath;
+document.getElementById('server-path-input').addEventListener('keydown', e => { if (e.key === 'Enter') loadFromServerPath(); });
+
+async function loadFromServerPath() {
+  const path = document.getElementById('server-path-input').value.trim();
+  if (!path) { setStatus('server-path-status', 'Enter a path', 'warn'); return; }
+  const normalize = document.getElementById('server-normalize-check').checked;
+  setStatus('server-path-status', '<span class="spinner"></span> Loading…', 'info');
+  const d = await api('/files/load-path', { username, path, normalize });
+  if (d.error) { setStatus('server-path-status', esc(d.error), 'err'); return; }
+  d.files.forEach(f => { uploadedFiles[f.id] = f; });
+  refreshFileList();
+  setStatus('server-path-status', `Loaded ${d.count} file${d.count === 1 ? '' : 's'}`, 'ok');
 }
 
 // Chunked upload
@@ -685,6 +1308,7 @@ dropZone.ondrop = e => { e.preventDefault(); dropZone.classList.remove('dragover
 fileInput.onchange = () => { if (fileInput.files[0]) { doUpload(fileInput.files[0]); fileInput.value = ''; } };
 
 async function doUpload(file) {
+  if (!username) { alert('Please sign in first'); return; }
   const normalize = document.getElementById('normalize-check').checked;
   const prog = document.getElementById('upload-progress');
   const bar = document.getElementById('upload-bar');
@@ -693,42 +1317,59 @@ async function doUpload(file) {
   bar.style.width = '0%';
   statusTxt.textContent = 'Starting upload…';
   const CHUNK = 2 * 1024 * 1024;
-  const start = await api('/upload/start', { username, filename: file.name, total_size: file.size, normalize });
-  if (start.error) { statusTxt.textContent = start.error; return; }
-  const uid = start.upload_id;
-  let offset = 0;
-  while (offset < file.size) {
-    const chunk = file.slice(offset, offset + CHUNK);
-    const buf = await chunk.arrayBuffer();
-    await fetch(apiUrl(`/upload/chunk/${uid}?offset=${offset}`), {
-      method: 'POST', body: buf, headers: { 'Content-Type': 'application/octet-stream' }
-    });
-    offset += buf.byteLength;
-    bar.style.width = Math.round(offset / file.size * 100) + '%';
-    statusTxt.textContent = `${(offset / 1048576).toFixed(1)} / ${(file.size / 1048576).toFixed(1)} MB`;
+  try {
+    const start = await api('/upload/start', { username, filename: file.name, total_size: file.size, normalize });
+    if (start.error) { statusTxt.textContent = start.error; return; }
+    const uid = start.upload_id;
+    let offset = 0;
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + CHUNK);
+      const buf = await chunk.arrayBuffer();
+      const r = await fetch(apiUrl(`/upload/chunk/${uid}?offset=${offset}`), {
+        method: 'POST', body: buf, headers: { 'Content-Type': 'application/octet-stream' }
+      });
+      if (!r.ok) {
+        let msg = r.statusText;
+        try { const j = await r.json(); msg = j.error || j.detail || msg; } catch (_) {}
+        statusTxt.textContent = 'Chunk failed: ' + msg;
+        return;
+      }
+      offset += buf.byteLength;
+      bar.style.width = Math.round(offset / file.size * 100) + '%';
+      statusTxt.textContent = `${(offset / 1048576).toFixed(1)} / ${(file.size / 1048576).toFixed(1)} MB`;
+    }
+    const info = await api('/upload/complete', { username, upload_id: uid, filename: file.name, normalize });
+    if (info.error && !info.id) { statusTxt.textContent = info.error; return; }
+    uploadedFiles[info.id] = info;
+    statusTxt.textContent = `Done — ${file.name}` + (info.error ? ` (warn: ${info.error})` : '');
+    bar.style.width = '100%';
+    refreshFileList();
+  } catch (e) {
+    statusTxt.textContent = 'Upload failed: ' + (e.message || String(e));
   }
-  const info = await api('/upload/complete', { username, upload_id: uid, filename: file.name, normalize });
-  if (info.error) { statusTxt.textContent = info.error; return; }
-  uploadedFiles[info.id] = info;
-  statusTxt.textContent = `Done — ${file.name}`;
-  bar.style.width = '100%';
-  refreshFileList();
 }
 
 // TDMS Export
 document.getElementById('export-download-btn').onclick = () => exportTdms(false);
 document.getElementById('export-save-btn').onclick = () => exportTdms(true);
 async function exportTdms(save) {
-  if (!currentFileId) { setStatus('export-status', 'Select a file first', 'warn'); return; }
+  if (!currentFileId) { setStatus('export-status', 'Select a file first (Preview)', 'warn'); return; }
+  const f = uploadedFiles[currentFileId];
+  if (!f || f.type !== 'tdms') {
+    setStatus('export-status', 'TDMS export requires a TDMS file selected via Preview', 'warn');
+    return;
+  }
   setStatus('export-status', '<span class="spinner"></span> Exporting…', 'info');
   const d = await api('/tdms/export', {
     username, file_id: currentFileId,
     output_format: document.getElementById('export-format').value,
     fps: parseFloat(document.getElementById('export-fps').value),
-    normalize: true, save_to_server: save,
+    normalize: document.getElementById('normalize-check').checked,
+    save_to_server: save,
   });
   if (d.error) { setStatus('export-status', esc(d.error), 'err'); return; }
   if (save) { setStatus('export-status', 'Saved: ' + esc(d.path), 'ok'); return; }
+  if (!d.data) { setStatus('export-status', 'Export returned no data', 'err'); return; }
   const a = document.createElement('a');
   a.href = 'data:application/octet-stream;base64,' + d.data;
   a.download = d.filename; a.click();
@@ -736,42 +1377,530 @@ async function exportTdms(save) {
 }
 
 // Video merge
+let mergeLastCheckIdx = -1;
+
+function refreshMergeList() {
+  const list = document.getElementById('merge-file-list');
+  const files = Object.values(uploadedFiles);
+  mergeLastCheckIdx = -1;
+  if (!files.length) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:12px">Load files above to select them here</div>';
+    return;
+  }
+  list.innerHTML = files.map(f => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:2px 0;user-select:none">
+      <input type="checkbox" class="merge-file-check" value="${f.id}">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.filename)}</span>
+      <span style="color:var(--text2);flex-shrink:0">${f.type.toUpperCase()} · ${f.frame_count || '?'} fr</span>
+    </label>`).join('');
+  const checks = [...list.querySelectorAll('.merge-file-check')];
+  checks.forEach((cb, i) => {
+    cb.addEventListener('click', e => {
+      if (e.shiftKey && mergeLastCheckIdx >= 0) {
+        const lo = Math.min(mergeLastCheckIdx, i);
+        const hi = Math.max(mergeLastCheckIdx, i);
+        const state = cb.checked;
+        for (let j = lo; j <= hi; j++) checks[j].checked = state;
+      }
+      mergeLastCheckIdx = i;
+    });
+  });
+}
+
+async function refreshMergedVideos(selectName) {
+  const sel = document.getElementById('merged-select');
+  const prev = selectName || sel.value;
+  const d = await api('/results/' + encodeURIComponent(username) + '/merged');
+  const videos = d.videos || [];
+  sel.innerHTML = videos.length
+    ? videos.map(v => `<option value="${esc(v.name)}">${esc(v.name)} (${(v.size / 1048576).toFixed(1)} MB)</option>`).join('')
+    : '<option value="">&#8212; No videos yet &#8212;</option>';
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  else if (videos.length) sel.value = videos[0].name;
+  playSelectedMerged();
+}
+
+function mergedVideoUrl(name) {
+  return apiUrl(`/results/${encodeURIComponent(username)}/merged/${encodeURIComponent(name)}`);
+}
+
+function playSelectedMerged() {
+  const name = document.getElementById('merged-select').value;
+  const video = document.getElementById('merged-video');
+  const dl = document.getElementById('merged-download-btn');
+  const meta = document.getElementById('merged-meta');
+  if (!name) {
+    video.removeAttribute('src');
+    video.load();
+    dl.removeAttribute('href');
+    meta.textContent = '';
+    return;
+  }
+  const url = mergedVideoUrl(name);
+  video.onerror = () => { meta.textContent = 'Could not play this file in the browser. Try Download.'; };
+  video.src = url;
+  video.load();
+  dl.href = url;
+  dl.download = name;
+  meta.textContent = name;
+}
+
+document.getElementById('merged-select').onchange = playSelectedMerged;
+document.getElementById('merged-refresh-btn').onclick = () => refreshMergedVideos();
+document.getElementById('merged-delete-btn').onclick = async () => {
+  const name = document.getElementById('merged-select').value;
+  if (!name) return;
+  if (!confirm('Delete ' + name + '?')) return;
+  const d = await api(`/results/${encodeURIComponent(username)}/merged/${encodeURIComponent(name)}`, null, 'DELETE');
+  if (d.error) { alert(d.error); return; }
+  await refreshMergedVideos();
+};
+
 document.getElementById('merge-btn').onclick = async () => {
-  setStatus('merge-status', '<span class="spinner"></span> Merging…', 'info');
-  const d = await api('/video/merge', {
+  const checked = [...document.querySelectorAll('.merge-file-check:checked')].map(c => c.value);
+  if (!checked.length) { setStatus('merge-status', 'Select at least one file', 'warn'); return; }
+  const outName = document.getElementById('merge-name').value.trim() || 'merged';
+  setStatus('merge-status', `<span class="spinner"></span> Queuing merge of ${checked.length} file(s)…`, 'info');
+  const d = await api('/video/merge-from-files', {
     username,
-    file_ids: Object.keys(uploadedFiles),
-    output_name: document.getElementById('merge-name').value.trim() || 'merged',
-    fps: parseFloat(document.getElementById('merge-fps').value),
+    file_ids: checked,
+    output_name: outName,
+    fps: parseFloat(document.getElementById('merge-fps').value) || 30,
+    normalize: document.getElementById('merge-normalize').checked,
   });
   if (d.error) { setStatus('merge-status', esc(d.error), 'err'); return; }
-  setStatus('merge-status', `Merged ${d.source_files} files, ${d.total_frames} frames → ${esc(d.path)}`, 'ok');
+  const fname = d.filename || (outName.endsWith('.mp4') ? outName : outName + '.mp4');
+  setStatus('merge-status', `<span class="spinner"></span> Encoding… (job ${esc(d.job_id)})`, 'info');
+  pollJob(d.job_id, 'merge-status', msg => {
+    if (msg.status === 'running') {
+      return `<span class="spinner"></span> File ${msg.files_done || 0}/${msg.files_total || '?'} · ${msg.frames_done || 0} frames`;
+    }
+    if (msg.status === 'completed') {
+      const doneName = msg.filename || fname;
+      setStatus('merge-status', `Done — ${msg.total_frames || 0} frames → results/merged/${esc(doneName)}`, 'ok');
+      refreshMergedVideos(doneName);
+      return null;
+    }
+    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown error');
+  }, 1500);
 };
 
 // ====================================================================
-// TRAINING PANEL
-// ====================================================================
+// TRAINING PANEL — visual crop
+const trainCropCanvas = document.getElementById('train-crop-canvas');
+const trainCropCtx = trainCropCanvas.getContext('2d');
+
+function getAdj() {
+  return {
+    brightness: parseInt(document.getElementById('adj-brightness').value, 10) || 0,
+    contrast: parseInt(document.getElementById('adj-contrast').value, 10) || 0,
+    gamma: (parseInt(document.getElementById('adj-gamma').value, 10) || 100) / 100,
+  };
+}
+
+function updateAdjLabels() {
+  const a = getAdj();
+  document.getElementById('adj-bright-val').textContent = String(a.brightness);
+  document.getElementById('adj-contrast-val').textContent = String(a.contrast);
+  document.getElementById('adj-gamma-val').textContent = a.gamma.toFixed(2);
+}
+
+function applyImageAdjust(srcCanvas) {
+  const a = getAdj();
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(srcCanvas, 0, 0);
+  if (!a.brightness && !a.contrast && Math.abs(a.gamma - 1) < 1e-6) return out;
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const c = (259 * (a.contrast + 255)) / (255 * (259 - a.contrast));
+  const g = a.gamma;
+  for (let i = 0; i < d.length; i += 4) {
+    for (let k = 0; k < 3; k++) {
+      let v = d[i + k];
+      v = c * (v - 128) + 128 + a.brightness;
+      v = Math.max(0, Math.min(255, v));
+      if (Math.abs(g - 1) > 1e-6) v = 255 * Math.pow(v / 255, 1 / g);
+      d[i + k] = Math.max(0, Math.min(255, Math.round(v)));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return out;
+}
+
+function invalidateAdjCache() { cropAdjustedCache = null; }
+
+function redrawCropView() {
+  if (!cropSourceCanvas) return;
+  if (!cropAdjustedCache) cropAdjustedCache = applyImageAdjust(cropSourceCanvas);
+  trainCropCtx.drawImage(cropAdjustedCache, 0, 0);
+  if (!cropRect) return;
+  trainCropCtx.fillStyle = 'rgba(61,142,240,0.18)';
+  trainCropCtx.fillRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+  trainCropCtx.strokeStyle = '#3d8ef0';
+  trainCropCtx.lineWidth = 1.5;
+  trainCropCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+  trainCropCtx.fillStyle = '#3d8ef0';
+  const hs = 8;
+  [[0,0],[cropRect.w,0],[0,cropRect.h],[cropRect.w,cropRect.h]].forEach(([dx, dy]) => {
+    trainCropCtx.fillRect(cropRect.x + dx - hs / 2, cropRect.y + dy - hs / 2, hs, hs);
+  });
+}
+
+function drawCropOverlay() { redrawCropView(); }
+
+function getAspectRatio() {
+  const mode = document.getElementById('crop-aspect-mode').value;
+  if (mode === '1:1') return 1;
+  if (mode === 'custom') {
+    const w = Math.max(1, parseFloat(document.getElementById('crop-aspect-w').value) || 1);
+    const h = Math.max(1, parseFloat(document.getElementById('crop-aspect-h').value) || 1);
+    return w / h;
+  }
+  return null;
+}
+
+function constrainAspect(rect, fromX, fromY, toX, toY) {
+  const ar = getAspectRatio();
+  let x0 = fromX, y0 = fromY, x1 = toX, y1 = toY;
+  if (ar != null) {
+    let dw = x1 - x0, dh = y1 - y0;
+    if (Math.abs(dw) / Math.max(Math.abs(dh), 1e-6) > ar) {
+      dh = Math.sign(dh || 1) * Math.abs(dw) / ar;
+      y1 = y0 + dh;
+    } else {
+      dw = Math.sign(dw || 1) * Math.abs(dh) * ar;
+      x1 = x0 + dw;
+    }
+  }
+  let x = Math.min(x0, x1), y = Math.min(y0, y1);
+  let w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+  const cw = trainCropCanvas.width, ch = trainCropCanvas.height;
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > cw) w = cw - x;
+  if (y + h > ch) h = ch - y;
+  if (ar != null && w > 0 && h > 0) {
+    const cur = w / h;
+    if (cur > ar) w = h * ar;
+    else h = w / ar;
+    if (x + w > cw) { w = cw - x; h = w / ar; }
+    if (y + h > ch) { h = ch - y; w = h * ar; }
+  }
+  return { x, y, w: Math.max(0, w), h: Math.max(0, h) };
+}
+
+const CROP_HANDLE = 10;
+
+function cropCorners() {
+  if (!cropRect) return {};
+  return {
+    nw: { x: cropRect.x, y: cropRect.y },
+    ne: { x: cropRect.x + cropRect.w, y: cropRect.y },
+    sw: { x: cropRect.x, y: cropRect.y + cropRect.h },
+    se: { x: cropRect.x + cropRect.w, y: cropRect.y + cropRect.h },
+  };
+}
+
+function hitCropCorner(p) {
+  const corners = cropCorners();
+  for (const [name, c] of Object.entries(corners)) {
+    if (Math.hypot(p.x - c.x, p.y - c.y) <= CROP_HANDLE) return name;
+  }
+  return null;
+}
+
+function resizeFromCorner(corner, p) {
+  const r = cropRect;
+  let x0, y0, x1, y1;
+  if (corner === 'nw') { x1 = r.x + r.w; y1 = r.y + r.h; x0 = p.x; y0 = p.y; }
+  else if (corner === 'ne') { x0 = r.x; y1 = r.y + r.h; x1 = p.x; y0 = p.y; }
+  else if (corner === 'sw') { x1 = r.x + r.w; y0 = r.y; x0 = p.x; y1 = p.y; }
+  else { x0 = r.x; y0 = r.y; x1 = p.x; y1 = p.y; }
+  return constrainAspect(null, x0, y0, x1, y1);
+}
+
+function pointInCrop(p) {
+  if (!cropRect) return false;
+  return p.x >= cropRect.x && p.x <= cropRect.x + cropRect.w &&
+         p.y >= cropRect.y && p.y <= cropRect.y + cropRect.h;
+}
+
+function clampCropRect(r) {
+  const cw = trainCropCanvas.width, ch = trainCropCanvas.height;
+  let { x, y, w, h } = r;
+  w = Math.min(w, cw); h = Math.min(h, ch);
+  x = Math.max(0, Math.min(x, cw - w));
+  y = Math.max(0, Math.min(y, ch - h));
+  return { x, y, w, h };
+}
+
+function cursorForCorner(c) {
+  if (c === 'nw' || c === 'se') return 'nwse-resize';
+  if (c === 'ne' || c === 'sw') return 'nesw-resize';
+  return 'crosshair';
+}
+
+function updateSelectionInfo() {
+  if (!cropRect || cropRect.w < 5 || cropRect.h < 5) {
+    document.getElementById('train-selection-info').textContent =
+      'Drag to select. Drag inside to move, drag corners to resize.';
+    document.getElementById('crop-sample-btn').disabled = true;
+    return;
+  }
+  const xi = Math.round(cropRect.x / cropScale);
+  const yi = Math.round(cropRect.y / cropScale);
+  const wi = Math.round(cropRect.w / cropScale);
+  const hi = Math.round(cropRect.h / cropScale);
+  document.getElementById('train-selection-info').textContent =
+    `Selected: x=${xi} y=${yi}  ${wi}×${hi} px — move inside / resize corners`;
+  document.getElementById('crop-sample-btn').disabled = false;
+}
+
+document.getElementById('train-file-select').onchange = async e => {
+  trainFileId = e.target.value || null;
+  trainFrameIdx = 0;
+  cropRect = null; cropImage = null; cropSourceCanvas = null;
+  document.getElementById('crop-sample-btn').disabled = true;
+  if (!trainFileId) {
+    trainCropCanvas.style.display = 'none';
+    document.getElementById('train-crop-hint').style.display = '';
+    document.getElementById('train-frame-counter').textContent = 'No file';
+    return;
+  }
+  const f = uploadedFiles[trainFileId];
+  trainFrameCount = (f && f.frame_count) || 1;
+  await loadTrainFrame();
+};
+
+document.getElementById('train-frame-prev').onclick = async () => {
+  if (trainFrameIdx > 0) { trainFrameIdx--; await loadTrainFrame(); }
+};
+document.getElementById('train-frame-next').onclick = async () => {
+  if (trainFrameIdx < trainFrameCount - 1) { trainFrameIdx++; await loadTrainFrame(); }
+};
+
+async function loadTrainFrame() {
+  if (!trainFileId) return;
+  const hint = document.getElementById('train-crop-hint');
+  hint.textContent = 'Loading…'; hint.style.display = '';
+  trainCropCanvas.style.display = 'none';
+  cropRect = null;
+  document.getElementById('crop-sample-btn').disabled = true;
+  document.getElementById('train-frame-counter').textContent =
+    `Frame ${trainFrameIdx + 1} / ${trainFrameCount}`;
+
+  const d = await api(`/frame/${username}/${trainFileId}/${trainFrameIdx}`);
+  if (d.error) { hint.textContent = d.error; return; }
+
+  const img = new Image();
+  img.onload = () => {
+    const wrap = document.getElementById('train-crop-wrap');
+    const maxW = Math.max(320, (wrap.clientWidth || 640) - 8);
+    const maxH = Math.max(320, (wrap.clientHeight || 520) - 8);
+    cropScale = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight);
+    const dw = Math.round(img.naturalWidth * cropScale);
+    const dh = Math.round(img.naturalHeight * cropScale);
+    trainCropCanvas.width = dw;
+    trainCropCanvas.height = dh;
+    cropSourceCanvas = document.createElement('canvas');
+    cropSourceCanvas.width = dw;
+    cropSourceCanvas.height = dh;
+    cropSourceCanvas.getContext('2d').drawImage(img, 0, 0, dw, dh);
+    cropImage = img;
+    cropAdjustedCache = null;
+    hint.style.display = 'none';
+    trainCropCanvas.style.display = 'block';
+    redrawCropView();
+    updateSelectionInfo();
+  };
+  img.src = d.image;
+}
+
+function canvasPos(e) {
+  const r = trainCropCanvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  const sx = trainCropCanvas.width / Math.max(r.width, 1);
+  const sy = trainCropCanvas.height / Math.max(r.height, 1);
+  return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
+}
+
+function onCropPointerDown(e) {
+  if (e.cancelable) e.preventDefault();
+  const p = canvasPos(e);
+  const corner = hitCropCorner(p);
+  if (corner) {
+    cropMode = 'resize';
+    cropResizeCorner = corner;
+    trainCropCanvas.style.cursor = cursorForCorner(corner);
+  } else if (cropRect && pointInCrop(p)) {
+    cropMode = 'move';
+    cropMoveOff = { x: p.x - cropRect.x, y: p.y - cropRect.y };
+    trainCropCanvas.style.cursor = 'move';
+  } else {
+    cropMode = 'draw';
+    cropStart = p;
+    cropRect = null;
+    cropResizeCorner = null;
+    document.getElementById('crop-sample-btn').disabled = true;
+    trainCropCanvas.style.cursor = 'crosshair';
+  }
+}
+
+function onCropPointerMove(e) {
+  if (!cropMode) {
+    const p = canvasPos(e);
+    const corner = hitCropCorner(p);
+    if (corner) trainCropCanvas.style.cursor = cursorForCorner(corner);
+    else if (cropRect && pointInCrop(p)) trainCropCanvas.style.cursor = 'move';
+    else trainCropCanvas.style.cursor = 'crosshair';
+    return;
+  }
+  if (e.cancelable) e.preventDefault();
+  const p = canvasPos(e);
+  if (cropMode === 'draw' && cropStart) {
+    cropRect = constrainAspect(null, cropStart.x, cropStart.y, p.x, p.y);
+    redrawCropView();
+  } else if (cropMode === 'move' && cropRect && cropMoveOff) {
+    cropRect = clampCropRect({
+      x: p.x - cropMoveOff.x,
+      y: p.y - cropMoveOff.y,
+      w: cropRect.w,
+      h: cropRect.h,
+    });
+    redrawCropView();
+  } else if (cropMode === 'resize' && cropRect && cropResizeCorner) {
+    cropRect = resizeFromCorner(cropResizeCorner, p);
+    redrawCropView();
+  }
+}
+
+function onCropPointerUp(e) {
+  if (!cropMode) return;
+  if (e && e.cancelable) e.preventDefault();
+  cropMode = null;
+  cropStart = null;
+  cropMoveOff = null;
+  cropResizeCorner = null;
+  updateSelectionInfo();
+  redrawCropView();
+}
+
+trainCropCanvas.addEventListener('mousedown', onCropPointerDown);
+trainCropCanvas.addEventListener('mousemove', onCropPointerMove);
+trainCropCanvas.addEventListener('mouseup', onCropPointerUp);
+trainCropCanvas.addEventListener('mouseleave', () => {
+  if (cropMode === 'draw') onCropPointerUp();
+  else cropMode = null;
+});
+trainCropCanvas.addEventListener('touchstart', onCropPointerDown, { passive: false });
+trainCropCanvas.addEventListener('touchmove', onCropPointerMove, { passive: false });
+trainCropCanvas.addEventListener('touchend', onCropPointerUp, { passive: false });
+
+['adj-brightness', 'adj-contrast', 'adj-gamma'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    updateAdjLabels();
+    invalidateAdjCache();
+    redrawCropView();
+  });
+});
+document.getElementById('adj-reset-btn').onclick = () => {
+  document.getElementById('adj-brightness').value = 0;
+  document.getElementById('adj-contrast').value = 0;
+  document.getElementById('adj-gamma').value = 100;
+  updateAdjLabels();
+  invalidateAdjCache();
+  redrawCropView();
+};
+document.getElementById('crop-aspect-mode').onchange = e => {
+  const custom = document.getElementById('crop-aspect-custom');
+  if (e.target.value === 'custom') custom.classList.remove('hidden');
+  else custom.classList.add('hidden');
+};
+updateAdjLabels();
+
 document.getElementById('crop-sample-btn').onclick = async () => {
-  const fid = document.getElementById('train-file-select').value;
-  if (!fid) { setStatus('sample-status', 'Select a source file', 'warn'); return; }
+  if (!cropRect || !trainFileId) return;
   const name = document.getElementById('train-particle').value.trim();
   if (!name) { setStatus('sample-status', 'Enter particle name', 'warn'); return; }
   const d = await api('/sample', {
-    username, particle_name: name, file_id: fid,
-    frame_index: parseInt(document.getElementById('train-frame-idx').value) || 0,
-    x: parseInt(document.getElementById('sample-x').value) || 0,
-    y: parseInt(document.getElementById('sample-y').value) || 0,
-    width: parseInt(document.getElementById('sample-w').value) || 64,
-    height: parseInt(document.getElementById('sample-h').value) || 64,
+    username, particle_name: name, file_id: trainFileId,
+    frame_index: trainFrameIdx,
+    x: Math.round(cropRect.x / cropScale),
+    y: Math.round(cropRect.y / cropScale),
+    width: Math.round(cropRect.w / cropScale),
+    height: Math.round(cropRect.h / cropScale),
   });
   if (d.error) { setStatus('sample-status', esc(d.error), 'err'); return; }
-  document.getElementById('sample-preview-wrap').innerHTML =
-    `<img src="${d.preview}" style="max-width:80px;border-radius:3px">`;
-  setStatus('sample-status', 'Sample saved: ' + esc(name), 'ok');
+  appendCropThumb(name, d.sample.id, d.preview);
+  cropRect = null;
+  redrawCropView();
+  document.getElementById('crop-sample-btn').disabled = true;
+  document.getElementById('train-selection-info').textContent = 'Drag to add another crop to the pool';
+  const n = d.crop_count || document.getElementById('crop-pool').children.length;
+  const ps = d.pool_size;
+  const sizeHint = n === 1 ? ` (${ps.width}×${ps.height}px — further crops will be resized to match)` : ` (${ps.width}×${ps.height}px)`;
+  setStatus('sample-status', `Pool: ${n} crop${n === 1 ? '' : 's'}${sizeHint}`, 'ok');
 };
+
+function appendCropThumb(particleName, cropId, src) {
+  const pool = document.getElementById('crop-pool');
+  const div = document.createElement('div');
+  div.dataset.cropId = cropId;
+  div.style.cssText = 'position:relative;width:56px;height:56px;border-radius:3px;border:1px solid var(--border);overflow:hidden;flex-shrink:0';
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.cssText = 'width:100%;height:100%;object-fit:contain;background:var(--bg3)';
+  const btn = document.createElement('button');
+  btn.textContent = '×';
+  btn.title = 'Remove crop';
+  btn.style.cssText = 'position:absolute;top:1px;right:1px;background:rgba(224,85,85,0.9);color:#fff;border:none;border-radius:2px;width:14px;height:14px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1';
+  btn.onclick = () => removeCrop(particleName, cropId, div);
+  div.appendChild(img);
+  div.appendChild(btn);
+  pool.appendChild(div);
+}
+
+async function removeCrop(particleName, cropId, el) {
+  await fetch(`${API_BASE}/sample/${encodeURIComponent(username)}/${encodeURIComponent(particleName)}/${cropId}`, { method: 'DELETE' });
+  el.remove();
+  const n = document.getElementById('crop-pool').children.length;
+  setStatus('sample-status', n > 0 ? `Pool: ${n} crop${n === 1 ? '' : 's'}` : '', n > 0 ? 'ok' : '');
+}
+
+async function refreshCropPool() {
+  const name = document.getElementById('train-particle').value.trim();
+  const pool = document.getElementById('crop-pool');
+  pool.innerHTML = '';
+  document.getElementById('sample-status').textContent = '';
+  if (!name) return;
+  const d = await fetch(`${API_BASE}/samples/${encodeURIComponent(username)}`).then(r => r.json()).catch(() => ({}));
+  const crops = (d.samples || {})[name] || [];
+  const withId = crops.filter(c => c.id);
+  withId.forEach(c => {
+    const src = `${API_BASE}/sample/preview/${encodeURIComponent(username)}/${encodeURIComponent(name)}/${c.id}`;
+    appendCropThumb(name, c.id, src);
+  });
+  if (withId.length > 0) {
+    const ref = withId[0];
+    const sizeHint = withId.length === 1
+      ? ` (${ref.width}×${ref.height}px — further crops will be resized to match)`
+      : ` (${ref.width}×${ref.height}px)`;
+    setStatus('sample-status', `Pool: ${withId.length} crop${withId.length === 1 ? '' : 's'}${sizeHint}`, 'ok');
+  }
+}
+
+document.getElementById('train-particle').addEventListener('input', refreshCropPool);
 
 document.getElementById('train-start-btn').onclick = startTraining;
 document.getElementById('train-cancel-btn').onclick = cancelTraining;
+document.getElementById('cfg-affine').onchange = e => {
+  const box = document.getElementById('cfg-affine-params');
+  if (e.target.checked) box.classList.remove('hidden');
+  else box.classList.add('hidden');
+};
 
 async function startTraining() {
   const name = document.getElementById('train-particle').value.trim();
@@ -792,6 +1921,12 @@ async function startTraining() {
     add_min: parseFloat(document.getElementById('cfg-add-min').value),
     add_max: parseFloat(document.getElementById('cfg-add-max').value),
     use_affine: document.getElementById('cfg-affine').checked,
+    scale_min: parseFloat(document.getElementById('cfg-scale-min').value),
+    scale_max: parseFloat(document.getElementById('cfg-scale-max').value),
+    rotation_min: parseFloat(document.getElementById('cfg-rot-min').value),
+    rotation_max: parseFloat(document.getElementById('cfg-rot-max').value),
+    translate_min: parseFloat(document.getElementById('cfg-trans-min').value),
+    translate_max: parseFloat(document.getElementById('cfg-trans-max').value),
   });
   if (d.error) { setStatus('train-status', esc(d.error), 'err'); resetTrainUI(); return; }
   trainJobId = d.job_id;
@@ -921,21 +2056,21 @@ document.getElementById('det-file-input').onchange = async e => {
   if (d.error) { setStatus('batch-status', esc(d.error), 'err'); return; }
   detFiles[d.id] = d;
   const sel = document.getElementById('det-file-select');
-  sel.appendChild(new Option(d.filename + ' (detect)', 'det:' + d.id));
-  sel.value = 'det:' + d.id;
-  detFileId = d.id; detFrame = 0; detFileCount = d.frame_count || 1;
+  const opt = new Option(d.filename + ' (detect)', 'det:' + d.id);
+  sel.appendChild(opt);
+  [...sel.options].forEach(o => { o.selected = false; });
+  opt.selected = true;
+  syncDetFileSelection();
+  detFrame = 0;
   document.getElementById('det-frame').value = 0;
   setStatus('batch-status', 'File ready: ' + esc(d.filename), 'ok');
   e.target.value = '';
 };
 
-document.getElementById('det-file-select').onchange = e => {
-  const val = e.target.value; if (!val) { detFileId = null; return; }
-  if (val.startsWith('det:')) { detFileId = val.slice(4); }
-  else { detFileId = val; }
-  const f = detFiles[detFileId] || uploadedFiles[detFileId];
-  detFileCount = (f && f.frame_count) || 1;
-  detFrame = 0; document.getElementById('det-frame').value = 0;
+document.getElementById('det-file-select').onchange = () => {
+  syncDetFileSelection();
+  detFrame = 0;
+  document.getElementById('det-frame').value = 0;
 };
 document.getElementById('det-prev').onclick = () => { if (detFrame > 0) { document.getElementById('det-frame').value = --detFrame; } };
 document.getElementById('det-next').onclick = () => { if (detFrame < detFileCount - 1) { document.getElementById('det-frame').value = ++detFrame; } };
@@ -957,6 +2092,11 @@ document.getElementById('det-run-btn').onclick = async () => {
   );
   document.getElementById('det-run-btn').disabled = false;
   if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
+  if (d.frame_count && d.frame_count > detFileCount) {
+    detFileCount = d.frame_count;
+    if (uploadedFiles[detFileId]) uploadedFiles[detFileId].frame_count = d.frame_count;
+    if (detFiles[detFileId]) detFiles[detFileId].frame_count = d.frame_count;
+  }
   const srcImg = new Image();
   srcImg.onload = () => {
     const scale = Math.min(1, 600 / Math.max(d.width, d.height));
@@ -978,11 +2118,13 @@ document.getElementById('det-run-btn').onclick = async () => {
 document.getElementById('batch-detect-btn').onclick = async () => {
   const modelId = document.getElementById('det-model-select').value;
   if (!modelId) { setStatus('batch-status', 'Select a model', 'warn'); return; }
-  if (!detFileId) { setStatus('batch-status', 'Select or upload a file', 'warn'); return; }
+  const fileIds = selectedDetFileIds();
+  if (!fileIds.length) { setStatus('batch-status', 'Select one or more files', 'warn'); return; }
+  lastDetFileIds = fileIds.slice();
   const outName = document.getElementById('batch-output-name').value.trim() || undefined;
-  setStatus('batch-status', '<span class="spinner"></span> Starting batch detection…', 'info');
+  setStatus('batch-status', `<span class="spinner"></span> Starting batch on ${fileIds.length} file(s)…`, 'info');
   const d = await api('/detect/batch', {
-    username, file_id: detFileId, model_id: modelId,
+    username, file_ids: fileIds, model_id: modelId,
     alpha: parseFloat(document.getElementById('det-alpha').value),
     beta: parseFloat(document.getElementById('det-beta').value),
     cutoff: parseFloat(document.getElementById('det-cutoff').value),
@@ -990,9 +2132,22 @@ document.getElementById('batch-detect-btn').onclick = async () => {
   });
   if (d.error) { setStatus('batch-status', esc(d.error), 'err'); return; }
   pollJob(d.job_id, 'batch-status', msg => {
-    if (msg.status === 'running') return `<span class="spinner"></span> Frame ${msg.frames_done || 0} / ${msg.frames_total || '?'}`;
-    if (msg.status === 'completed') return `Done — ${msg.total_detections} detections in ${msg.frames} frames → <code>${esc(msg.output_csv)}</code>`;
-    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error);
+    if (msg.status === 'running') {
+      const fileBit = msg.current_file ? ` · ${esc(msg.current_file)}` : '';
+      return `<span class="spinner"></span> Frame ${msg.frames_done || 0}/${msg.frames_total || '?'} · file ${(msg.files_done || 0) + 1}/${msg.files_total || fileIds.length}${fileBit}`;
+    }
+    if (msg.status === 'completed') {
+      lastDetCsv = msg.output_csv || lastDetCsv;
+      refreshResultFiles().then(() => {
+        if (lastDetCsv) {
+          const sel = document.getElementById('track-csv-select');
+          if ([...sel.options].some(o => o.value === lastDetCsv)) sel.value = lastDetCsv;
+          updateTrkInputMeta();
+        }
+      });
+      return `Done — ${msg.total_detections} detections in ${msg.frames} frames across ${msg.files || fileIds.length} file(s) → <code>${esc(msg.output_csv)}</code>`;
+    }
+    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown');
   }, 1000);
 };
 
@@ -1006,10 +2161,20 @@ document.getElementById('track-csv-input').onchange = async e => {
   form.append('username', username); form.append('file', file); form.append('file_type', 'detection');
   const d = await api('/upload/csv', form);
   if (d.error) { setStatus('trk-status-wrap', esc(d.error), 'err'); return; }
+  lastDetCsv = d.filename;
   await refreshResultFiles();
   document.getElementById('track-csv-select').value = d.filename;
+  updateTrkInputMeta();
   e.target.value = '';
 };
+
+document.getElementById('track-csv-select').onchange = updateTrkInputMeta;
+
+function updateTrkInputMeta() {
+  const name = document.getElementById('track-csv-select').value;
+  const el = document.getElementById('trk-input-meta');
+  el.textContent = name || '';
+}
 
 document.getElementById('trk-run-btn').onclick = async () => {
   const csvName = document.getElementById('track-csv-select').value;
@@ -1027,14 +2192,16 @@ document.getElementById('trk-run-btn').onclick = async () => {
   if (d.error) { setStatus('trk-status-wrap', esc(d.error), 'err'); return; }
   lastTrackCsv = d.output_csv;
   pollJob(d.job_id, 'trk-status-wrap', msg => {
-    if (msg.status === 'running') return '<span class="spinner"></span> Running tracking…';
+    if (msg.status === 'running' || msg.status === 'queued') return '<span class="spinner"></span> Running tracking…';
     if (msg.status === 'completed') { showTrackResults(msg); return null; }
     if (msg.status === 'failed') return 'Failed: ' + esc(msg.error);
+    if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run tracking.';
   }, 1500);
 };
 
 function showTrackResults(msg) {
   setStatus('trk-status-wrap', 'Completed', 'ok');
+  lastTrackCsv = msg.output_csv || lastTrackCsv;
   const rows = [
     ['Tracks', msg.n_tracks],
     ['Total rows', msg.n_rows],
@@ -1047,11 +2214,117 @@ function showTrackResults(msg) {
     `<tr><td style="color:var(--text2)">${k}</td><td class="mono">${esc(String(v))}</td></tr>`
   ).join('');
   document.getElementById('trk-results-wrap').classList.remove('hidden');
-  document.getElementById('trk-download-btn').onclick = () => {
-    window.location.href = apiUrl(`/results/${username}/download/${msg.output_csv}`);
-  };
-  refreshResultFiles();
+  refreshResultFiles().then(() => {
+    if (lastTrackCsv) {
+      const sel = document.getElementById('trk-tracks-select');
+      if ([...sel.options].some(o => o.value === lastTrackCsv)) sel.value = lastTrackCsv;
+      const abp = document.getElementById('abp-csv-select');
+      if ([...abp.options].some(o => o.value === lastTrackCsv)) abp.value = lastTrackCsv;
+    }
+  });
 }
+
+document.getElementById('trk-download-btn').onclick = () => {
+  const name = document.getElementById('trk-tracks-select').value || lastTrackCsv;
+  if (!name) return;
+  window.location.href = apiUrl(`/results/${username}/download/${name}`);
+};
+
+document.getElementById('trk-tracks-select').onchange = () => {
+  lastTrackCsv = document.getElementById('trk-tracks-select').value || lastTrackCsv;
+};
+
+// ====================================================================
+// TRACK PREVIEW
+// ====================================================================
+function refreshVizFileList() {
+  const sel = document.getElementById('viz-file-select');
+  if (!sel) return;
+  const prev = [...sel.selectedOptions].map(o => o.value);
+  const prefer = prev.length ? prev : lastDetFileIds;
+  sel.innerHTML = '';
+  Object.keys(uploadedFiles).forEach(fid => {
+    const f = uploadedFiles[fid];
+    sel.appendChild(new Option(f.filename, fid));
+  });
+  Object.keys(detFiles).forEach(fid => {
+    if (uploadedFiles[fid]) return;
+    const f = detFiles[fid];
+    sel.appendChild(new Option(f.filename + ' (detect)', fid));
+  });
+  prefer.forEach(id => {
+    const opt = [...sel.options].find(o => o.value === id);
+    if (opt) opt.selected = true;
+  });
+}
+
+document.getElementById('viz-bg-mode').onchange = () => {
+  document.getElementById('viz-files-wrap').style.display =
+    document.getElementById('viz-bg-mode').value === 'files' ? 'block' : 'none';
+};
+
+function _vizCsvName() {
+  return document.getElementById('trk-tracks-select').value || lastTrackCsv || null;
+}
+
+function _vizParams() {
+  const mode = document.getElementById('viz-bg-mode').value;
+  const fileIds = mode === 'files'
+    ? [...document.getElementById('viz-file-select').selectedOptions].map(o => o.value)
+    : [];
+  return {
+    username,
+    tracks_csv: _vizCsvName(),
+    file_ids: fileIds.length ? fileIds : undefined,
+    bg_dir: null,
+    fps: parseInt(document.getElementById('viz-fps').value) || 10,
+    trail: parseInt(document.getElementById('viz-trail').value) || 20,
+  };
+}
+
+document.getElementById('viz-overview-btn').onclick = async () => {
+  const params = _vizParams();
+  if (!params.tracks_csv) { setStatus('viz-status', 'Select a tracks CSV', 'warn'); return; }
+  if (document.getElementById('viz-bg-mode').value === 'files' && !(params.file_ids || []).length) {
+    setStatus('viz-status', 'Select session files for background', 'warn'); return;
+  }
+  setStatus('viz-status', '<span class="spinner"></span> Generating overview…', 'info');
+  document.getElementById('viz-preview-wrap').style.display = 'none';
+  const d = await api('/tracks/visualize-overview', params);
+  if (d.error) { setStatus('viz-status', esc(d.error), 'err'); return; }
+  const img = document.getElementById('viz-overview-img');
+  img.src = d.image;
+  document.getElementById('viz-overview-dl').onclick = () => {
+    const a = document.createElement('a'); a.href = d.image; a.download = d.filename; a.click();
+  };
+  document.getElementById('viz-preview-wrap').style.display = 'block';
+  document.getElementById('viz-preview-empty').style.display = 'none';
+  setStatus('viz-status', 'Overview ready', 'ok');
+};
+
+document.getElementById('viz-video-btn').onclick = async () => {
+  const params = _vizParams();
+  if (!params.tracks_csv) { setStatus('viz-status', 'Select a tracks CSV', 'warn'); return; }
+  if (document.getElementById('viz-bg-mode').value === 'files' && !(params.file_ids || []).length) {
+    setStatus('viz-status', 'Select session files for background', 'warn'); return;
+  }
+  setStatus('viz-status', '<span class="spinner"></span> Starting video render…', 'info');
+  document.getElementById('viz-video-dl').classList.add('hidden');
+  const d = await api('/tracks/visualize-video', params);
+  if (d.error) { setStatus('viz-status', esc(d.error), 'err'); return; }
+  pollJob(d.job_id, 'viz-status', msg => {
+    if (msg.status === 'running' || msg.status === 'queued') return '<span class="spinner"></span> Rendering video…';
+    if (msg.status === 'completed') {
+      const dlBtn = document.getElementById('viz-video-dl');
+      dlBtn.classList.remove('hidden');
+      dlBtn.onclick = () => { window.location.href = apiUrl(`/results/${username}/download/${msg.output_mp4}`); };
+      document.getElementById('viz-preview-wrap').style.display = 'block';
+      document.getElementById('viz-preview-empty').style.display = 'none';
+      return 'Video ready';
+    }
+    if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || '');
+  }, 2000);
+};
 
 // ====================================================================
 // ANALYSIS PANEL
@@ -1122,17 +2395,39 @@ function showAbpResults(d) {
 async function refreshResultFiles() {
   const d = await api('/results/' + username);
   const csvs = (d.results || []).filter(f => f.type === '.csv').map(f => f.name);
-  const trkSel = document.getElementById('track-csv-select');
+  const detSel = document.getElementById('track-csv-select');
+  const tracksSel = document.getElementById('trk-tracks-select');
   const abpSel = document.getElementById('abp-csv-select');
-  const prev1 = trkSel.value, prev2 = abpSel.value;
-  trkSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
+  const prevDet = detSel.value;
+  const prevTracks = tracksSel.value;
+  const prevAbp = abpSel.value;
+
+  const detCsvs = csvs.filter(n => /detect/i.test(n) || (!/track/i.test(n)));
+  const trackCsvs = csvs.filter(n => /track/i.test(n));
+
+  detSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
+  detCsvs.forEach(name => detSel.appendChild(new Option(name, name)));
+
+  tracksSel.innerHTML = trackCsvs.length
+    ? ''
+    : '<option value="">&#8212; No tracks yet &#8212;</option>';
+  trackCsvs.forEach(name => tracksSel.appendChild(new Option(name, name)));
+
   abpSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
+  trackCsvs.forEach(name => abpSel.appendChild(new Option(name, name)));
   csvs.forEach(name => {
-    trkSel.appendChild(new Option(name, name));
-    abpSel.appendChild(new Option(name, name));
+    if (!trackCsvs.includes(name)) abpSel.appendChild(new Option(name, name));
   });
-  if (prev1) trkSel.value = prev1;
-  if (prev2) abpSel.value = prev2;
+
+  const pick = (sel, preferred, fallback) => {
+    if (preferred && [...sel.options].some(o => o.value === preferred)) sel.value = preferred;
+    else if (fallback && [...sel.options].some(o => o.value === fallback)) sel.value = fallback;
+  };
+  pick(detSel, prevDet, lastDetCsv);
+  pick(tracksSel, prevTracks || lastTrackCsv, trackCsvs[0]);
+  pick(abpSel, prevAbp, lastTrackCsv);
+  if (tracksSel.value) lastTrackCsv = tracksSel.value;
+  updateTrkInputMeta();
 }
 
 function pollJob(jobId, statusElId, msgFn, intervalMs) {
@@ -1141,13 +2436,13 @@ function pollJob(jobId, statusElId, msgFn, intervalMs) {
     if (!d || d.error) { clearInterval(timer); return; }
     const msg = msgFn(d);
     if (msg !== null && msg !== undefined) setStatus(statusElId, msg, statusClass(d.status));
-    if (['completed', 'failed', 'cancelled'].includes(d.status)) clearInterval(timer);
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(d.status)) clearInterval(timer);
   }, intervalMs || 1500);
 }
 
 function statusClass(s) {
   if (s === 'completed') return 'ok';
-  if (s === 'failed') return 'err';
+  if (s === 'failed' || s === 'interrupted') return 'err';
   if (s === 'cancelled') return 'warn';
   return 'info';
 }

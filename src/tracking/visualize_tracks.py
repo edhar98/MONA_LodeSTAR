@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Visualize particle tracks:
-  1. tracks_overview.png  — all trajectories overlaid on first frame
+  1. tracks_overview.png  — all trajectories overlaid on a background frame
   2. tracks_video.mp4     — per-frame animation with accumulated trails
 
 Usage:
@@ -14,10 +14,10 @@ Usage:
 import argparse
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import matplotlib.cm as cm
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -33,19 +33,14 @@ def list_frame_images(images_dir: str) -> list[str]:
 
 
 def load_frame(images_dir: str, frame_idx: int) -> np.ndarray:
-    """Load a frame by the 0-based global frame index used in tracks CSV."""
     candidates = list_frame_images(images_dir)
     return load_frame_from_paths(candidates, frame_idx)
 
 
 def load_frame_from_paths(candidates: list[str], frame_idx: int) -> np.ndarray:
-    """Load a frame from a precomputed sorted image path list."""
-    # For flattened stack exports, sorted image order is the global frame order.
     if 0 <= frame_idx < len(candidates):
         return np.array(Image.open(candidates[frame_idx]).convert("L"))
 
-    # Fallback for simple single-stack names where only the local frame number
-    # is available in the filename.
     filename_idx = frame_idx + 1
     for path in candidates:
         fname = os.path.basename(path)
@@ -56,73 +51,67 @@ def load_frame_from_paths(candidates: list[str], frame_idx: int) -> np.ndarray:
 
 
 def track_colormap(n_tracks: int):
-    """Assign a distinct BGR colour to each track_id."""
-    cmap = cm.get_cmap("hsv", n_tracks)
+    cmap = cm.get_cmap("hsv", max(n_tracks, 1))
     colors = {}
-    ids = sorted(range(n_tracks))
-    for i, tid in enumerate(ids):
+    for i in range(n_tracks):
         r, g, b, _ = cmap(i / max(n_tracks - 1, 1))
-        colors[tid] = (int(b * 255), int(g * 255), int(r * 255))  # BGR
+        colors[i] = (int(b * 255), int(g * 255), int(r * 255))
     return colors
 
 
-# ---------------------------------------------------------------------------
-# 1. Static overview PNG
-# ---------------------------------------------------------------------------
-
-def make_overview(df: pd.DataFrame, images_dir: str, output_path: str):
-    # Use middle frame as background for representative content
-    mid_frame = int(df["frame"].median())
-    bg = load_frame(images_dir, mid_frame)
-    if bg is None:
-        bg = np.zeros((1024, 1024), dtype=np.uint8)
-
-    fig, ax = plt.subplots(figsize=(12, 12))
-    h, w = bg.shape[:2]
+def _contrast_bgr(bg: np.ndarray) -> np.ndarray:
     lo, hi = np.percentile(bg, [1, 99.5])
     if hi <= lo:
         lo, hi = 0, 255
-    ax.imshow(bg, cmap="gray", vmin=lo, vmax=hi)
+    stretched = np.clip((bg.astype(np.float32) - lo) / (hi - lo + 1e-8) * 255, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(stretched, cv2.COLOR_GRAY2BGR)
 
-    track_ids = df["track_id"].unique()
-    cmap = cm.get_cmap("hsv", len(track_ids))
-    id_to_color = {tid: cmap(i / max(len(track_ids) - 1, 1))
-                   for i, tid in enumerate(sorted(track_ids))}
 
-    for tid, group in df.groupby("track_id"):
-        group = group.sort_values("frame")
-        real = group[~group["is_interpolated"]]
-        interp = group[group["is_interpolated"]]
+def _track_series(df: pd.DataFrame):
+    track_ids = sorted(df["track_id"].unique())
+    colors = track_colormap(len(track_ids))
+    id_to_color = {tid: colors[i] for i, tid in enumerate(track_ids)}
+    series = {}
+    for tid, group in df.groupby("track_id", sort=False):
+        g = group.sort_values("frame")
+        series[tid] = (
+            g["frame"].to_numpy(dtype=np.int32),
+            g[["x", "y"]].to_numpy(dtype=np.float32),
+            g["is_interpolated"].to_numpy(dtype=bool),
+        )
+    return track_ids, id_to_color, series
 
+
+def make_overview(df: pd.DataFrame, images_dir: str, output_path: str, get_frame=None):
+    mid_frame = int(df["frame"].median())
+    if get_frame is not None:
+        bg = get_frame(mid_frame)
+    else:
+        bg = load_frame(images_dir, mid_frame)
+    if bg is None:
+        bg = np.zeros((1024, 1024), dtype=np.uint8)
+
+    canvas = _contrast_bgr(bg)
+    _, id_to_color, series = _track_series(df)
+
+    for tid, (frames, xy, interp) in series.items():
         color = id_to_color[tid]
+        pts = np.round(xy).astype(np.int32)
+        if len(pts) >= 2:
+            cv2.polylines(canvas, [pts.reshape(-1, 1, 2)], False, color, 1, cv2.LINE_AA)
+        real = pts[~interp]
+        for p in real:
+            cv2.circle(canvas, (int(p[0]), int(p[1])), 2, color, -1, cv2.LINE_AA)
+        for p in pts[interp]:
+            cv2.drawMarker(canvas, (int(p[0]), int(p[1])), color,
+                           markerType=cv2.MARKER_CROSS, markerSize=5, thickness=1)
 
-        # Solid line for real detections
-        ax.plot(group["x"], group["y"], color=color, linewidth=0.6, alpha=0.7)
-        # Dots for real detections
-        if len(real):
-            ax.scatter(real["x"], real["y"], color=color, s=3, zorder=3, alpha=0.8)
-        # Dashed segments for interpolated frames
-        if len(interp):
-            ax.scatter(interp["x"], interp["y"], color=color, s=3,
-                       marker="x", zorder=3, alpha=0.5)
-
-    ax.set_title(
-        f"Particle tracks — {len(track_ids)} tracks, {len(df)} rows "
-        f"({int(df['is_interpolated'].sum())} interpolated)",
-        fontsize=11,
-    )
-    ax.set_xlim(0, w)
-    ax.set_ylim(h, 0)
-    ax.axis("off")
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
+    n_interp = int(df["is_interpolated"].sum())
+    label = f"tracks={len(series)} rows={len(df)} interp={n_interp} bg={mid_frame}"
+    cv2.putText(canvas, label, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.imwrite(output_path, canvas)
     print(f"Saved overview → {output_path}")
 
-
-# ---------------------------------------------------------------------------
-# 2. Per-frame video MP4
-# ---------------------------------------------------------------------------
 
 def make_video(
     df: pd.DataFrame,
@@ -130,20 +119,18 @@ def make_video(
     output_path: str,
     fps: int = 10,
     trail_frames: int = 20,
+    get_frame=None,
+    workers: int = 0,
 ):
-    image_paths = list_frame_images(images_dir)
+    image_paths = list_frame_images(images_dir) if get_frame is None else []
     df = df.sort_values(["frame", "track_id"]).reset_index(drop=True)
-    rows_by_frame = {
-        int(frame): group
-        for frame, group in df.groupby("frame", sort=True)
-    }
-    frames = sorted(rows_by_frame)
-    track_ids = sorted(df["track_id"].unique())
-    colors = track_colormap(len(track_ids))
-    id_to_color = {tid: colors[i] for i, tid in enumerate(track_ids)}
+    frames = sorted(int(f) for f in df["frame"].unique())
+    _, id_to_color, series = _track_series(df)
 
-    # Determine frame size from first image
-    first_bg = load_frame_from_paths(image_paths, frames[0])
+    if get_frame is not None:
+        first_bg = get_frame(frames[0])
+    else:
+        first_bg = load_frame_from_paths(image_paths, frames[0])
     if first_bg is not None:
         h, w = first_bg.shape[:2]
     else:
@@ -154,95 +141,81 @@ def make_video(
     if not writer.isOpened():
         raise RuntimeError(f"Could not open video writer for {output_path}")
 
-    frame_set = set(frames)
-    total_frames = len(frames)
-    for i, frame_idx in enumerate(frames, start=1):
-        bg = load_frame_from_paths(image_paths, frame_idx)
+    n_workers = workers if workers > 0 else min(8, max(1, (os.cpu_count() or 4) - 1))
+    prev_cv_threads = cv2.getNumThreads()
+    cv2.setNumThreads(1)
+
+    def render(frame_idx: int) -> np.ndarray:
+        if get_frame is not None:
+            bg = get_frame(frame_idx)
+        else:
+            bg = load_frame_from_paths(image_paths, frame_idx)
         if bg is None:
             canvas = np.zeros((h, w, 3), dtype=np.uint8)
         else:
             canvas = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
 
-        # Draw trail: last `trail_frames` frames up to current
-        trail_start = max(frames[0], frame_idx - trail_frames)
-        trail_parts = [
-            rows_by_frame[f]
-            for f in range(trail_start, frame_idx + 1)
-            if f in frame_set
-        ]
-        if trail_parts:
-            trail_df = pd.concat(trail_parts, ignore_index=True)
-        else:
-            trail_df = pd.DataFrame(columns=df.columns)
-
-        for tid, group in trail_df.groupby("track_id"):
+        trail_start = frame_idx - trail_frames
+        for tid, (tframes, xy, interp) in series.items():
+            mask = (tframes >= trail_start) & (tframes <= frame_idx)
+            if not np.any(mask):
+                continue
             color = id_to_color.get(tid, (255, 255, 255))
-            pts = group[["x", "y"]].values.astype(np.int32)
-
-            # Draw polyline trail
+            pts = np.round(xy[mask]).astype(np.int32)
             if len(pts) >= 2:
-                cv2.polylines(canvas, [pts.reshape(-1, 1, 2)],
-                              isClosed=False, color=color, thickness=1,
-                              lineType=cv2.LINE_AA)
-
-            # Current-frame dot
-            cur = group[group["frame"] == frame_idx]
+                cv2.polylines(canvas, [pts.reshape(-1, 1, 2)], False, color, 1, cv2.LINE_AA)
+            cur = np.where(tframes[mask] == frame_idx)[0]
             if len(cur):
-                cx, cy = int(cur.iloc[0].x), int(cur.iloc[0].y)
-                is_interp = bool(cur.iloc[0].is_interpolated)
-                marker = cv2.MARKER_CROSS if is_interp else cv2.MARKER_TILTED_CROSS
-                cv2.drawMarker(canvas, (cx, cy), color,
-                               markerType=marker, markerSize=6, thickness=1)
+                i = int(cur[-1])
+                cx, cy = int(pts[i, 0]), int(pts[i, 1])
+                marker = cv2.MARKER_CROSS if bool(interp[mask][i]) else cv2.MARKER_TILTED_CROSS
+                cv2.drawMarker(canvas, (cx, cy), color, markerType=marker, markerSize=6, thickness=1)
 
-        # Frame counter
         cv2.putText(canvas, f"frame {frame_idx:03d}", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1,
-                    cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+        return canvas
 
-        writer.write(canvas)
-        if i == 1 or i % 100 == 0 or i == total_frames:
-            print(f"Rendered video frame {i}/{total_frames} (track frame {frame_idx})", flush=True)
-
-    writer.release()
+    total_frames = len(frames)
+    batch = max(1, n_workers * 2)
+    try:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            for start in range(0, total_frames, batch):
+                chunk = frames[start:start + batch]
+                for i, canvas in enumerate(pool.map(render, chunk), start=start + 1):
+                    writer.write(canvas)
+                    if i == 1 or i % 100 == 0 or i == total_frames:
+                        print(f"Rendered video frame {i}/{total_frames}", flush=True)
+    finally:
+        cv2.setNumThreads(prev_cv_threads)
+        writer.release()
     print(f"Saved video   → {output_path}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(description="Visualize particle tracks")
-    parser.add_argument("--tracks",  required=True, help="Tracks CSV path")
-    parser.add_argument("--images",  required=True, help="Directory of per-frame images")
-    parser.add_argument("--output",  required=True, help="Output directory")
-    parser.add_argument("--fps",     type=int, default=30, help="Video FPS (default: 30)")
-    parser.add_argument("--trail",   type=int, default=20,
+    parser.add_argument("--tracks", required=True, help="Tracks CSV path")
+    parser.add_argument("--images", required=True, help="Directory of per-frame images")
+    parser.add_argument("--output", required=True, help="Output directory")
+    parser.add_argument("--fps", type=int, default=30, help="Video FPS (default: 30)")
+    parser.add_argument("--trail", type=int, default=20,
                         help="Trail length in frames for video (default: 20)")
     parser.add_argument("--overview-only", action="store_true",
                         help="Only write the static overview PNG; skip MP4 rendering")
+    parser.add_argument("--workers", type=int, default=0,
+                        help="CPU workers for video frames (0 = auto)")
     args = parser.parse_args()
 
     df = pd.read_csv(args.tracks)
     os.makedirs(args.output, exist_ok=True)
 
-    # Derive a base name from the tracks file
-    base = os.path.splitext(os.path.basename(args.tracks))[0]  # e.g. ..._tracks
-
-    make_overview(
-        df,
-        args.images,
-        os.path.join(args.output, f"{base}_overview.png"),
-    )
+    base = os.path.splitext(os.path.basename(args.tracks))[0]
+    overview_path = os.path.join(args.output, f"{base}_overview.png")
+    make_overview(df, args.images, overview_path)
 
     if not args.overview_only:
-        make_video(
-            df,
-            args.images,
-            os.path.join(args.output, f"{base}_video.mp4"),
-            fps=args.fps,
-            trail_frames=args.trail,
-        )
+        video_path = os.path.join(args.output, f"{base}_video.mp4")
+        make_video(df, args.images, video_path, fps=args.fps, trail_frames=args.trail,
+                   workers=args.workers)
 
 
 if __name__ == "__main__":

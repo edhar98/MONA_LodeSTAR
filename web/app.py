@@ -28,12 +28,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from pydantic import BaseModel
 
-SRC_DIR = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(SRC_DIR))
-sys.path.insert(0, str(SRC_DIR / "tracking"))
-sys.path.insert(0, str(SRC_DIR / "analysis"))
+from config import SRC_DIR as _CFG_SRC
+sys.path.insert(0, str(_CFG_SRC))
+sys.path.insert(0, str(_CFG_SRC / "tracking"))
+sys.path.insert(0, str(_CFG_SRC / "analysis"))
 
-from tdms_explorer import TDMSFileExplorer
+from services.tdms_cache import get_images
 import utils
 
 try:
@@ -53,111 +53,27 @@ except ImportError as _e:
     _analysis_available = False
 
 # ---------------------------------------------------------------------------
-# Paths and global state
+# Shared modules
 # ---------------------------------------------------------------------------
 
-WEB_DIR = Path(__file__).parent
-DATA_DIR = WEB_DIR / "data"
-USERS_FILE = WEB_DIR / "users.json"
-JOBS_FILE = WEB_DIR / "training_jobs.json"
-BG_JOBS_FILE = WEB_DIR / "background_jobs.json"
+from config import WEB_DIR, DATA_DIR, SRC_DIR, ALLOWED_UPLOAD_EXT, JUPYTER_MODE, resolve_identity
+import state
+from state import (
+    users, sessions, training_jobs, background_jobs, jobs_lock as _jobs_lock,
+    hash_password, save_users, load_users, save_training_jobs, load_training_jobs,
+    save_background_jobs, load_background_jobs, get_user_dir, save_user_session,
+    load_user_session, merged_dir as _merged_dir, safe_merged_name as _safe_merged_name,
+    require_user, ensure_jupyter_user,
+)
+from services.frames import (
+    extract_frame, parse_tdms_info as _parse_tdms_info,
+    normalize_tdms_frame as _normalize_tdms_frame,
+    normalize_tdms_stack as _normalize_tdms_stack,
+    load_file_stack as _load_file_stack,
+    build_session_frame_getter as _build_session_frame_getter,
+)
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-users: Dict[str, Dict[str, Any]] = {}
-sessions: Dict[str, Dict[str, Any]] = {}
-training_jobs: Dict[str, Dict[str, Any]] = {}
-background_jobs: Dict[str, Dict[str, Any]] = {}
-_jobs_lock = threading.Lock()
-
-# For WebSocket push from training thread
-_event_loop: Optional[asyncio.AbstractEventLoop] = None
-_ws_queues: Dict[str, asyncio.Queue] = {}
-
-
-def _push_ws(job_id: str, data: dict):
-    """Thread-safe push to WebSocket queue for a training job."""
-    if _event_loop is not None and job_id in _ws_queues:
-        asyncio.run_coroutine_threadsafe(
-            _ws_queues[job_id].put(data), _event_loop
-        )
-
-
-# ---------------------------------------------------------------------------
-# Persistence helpers
-# ---------------------------------------------------------------------------
-
-def save_training_jobs():
-    with open(JOBS_FILE, "w") as f:
-        json.dump(training_jobs, f, indent=2, default=str)
-
-
-def load_training_jobs():
-    global training_jobs
-    if JOBS_FILE.exists():
-        with open(JOBS_FILE) as f:
-            training_jobs = json.load(f)
-        for job in training_jobs.values():
-            if job.get("status") == "running":
-                job["status"] = "interrupted"
-
-
-def save_background_jobs():
-    with open(BG_JOBS_FILE, "w") as f:
-        json.dump(background_jobs, f, indent=2, default=str)
-
-
-def load_background_jobs():
-    global background_jobs
-    if BG_JOBS_FILE.exists():
-        with open(BG_JOBS_FILE) as f:
-            background_jobs = json.load(f)
-        for job in background_jobs.values():
-            if job.get("status") == "running":
-                job["status"] = "interrupted"
-
-
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-def save_users():
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2, default=str)
-
-
-def load_users():
-    global users
-    if USERS_FILE.exists():
-        with open(USERS_FILE) as f:
-            users = json.load(f)
-
-
-def get_user_dir(username: str) -> Path:
-    user_dir = DATA_DIR / username
-    for sub in ["uploads", "samples", "models", "results", "masks"]:
-        (user_dir / sub).mkdir(parents=True, exist_ok=True)
-    return user_dir
-
-
-def save_user_session(username: str):
-    user_dir = get_user_dir(username)
-    if username in sessions:
-        with open(user_dir / "session.json", "w") as f:
-            json.dump(sessions[username], f, indent=2, default=str)
-
-
-def load_user_session(username: str):
-    session_file = get_user_dir(username) / "session.json"
-    if session_file.exists():
-        with open(session_file) as f:
-            sessions[username] = json.load(f)
-    else:
-        sessions[username] = {
-            "files": {}, "samples": {}, "models": [], "masks": {}, "detect_files": {}
-        }
-    # Ensure detect_files key always exists
-    sessions[username].setdefault("detect_files", {})
+_ALLOWED_UPLOAD_EXT = ALLOWED_UPLOAD_EXT
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +87,8 @@ async def lifespan(app: FastAPI):
     load_users()
     load_training_jobs()
     load_background_jobs()
+    if JUPYTER_MODE:
+        ensure_jupyter_user()
     yield
     save_users()
     save_training_jobs()
@@ -208,6 +126,15 @@ async def general_exception_handler(request, exc):
     import traceback
     traceback.print_exc()
     return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+from auth import router as auth_router
+from routers.files import router as files_router
+from routers.tdms_explorer import router as tdms_router
+
+app.include_router(auth_router)
+app.include_router(files_router)
+app.include_router(tdms_router)
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +192,9 @@ class TdmsSettings(BaseModel):
 
 class BatchDetectRequest(BaseModel):
     username: str
-    file_id: str
     model_id: str
+    file_id: Optional[str] = None
+    file_ids: Optional[List[str]] = None
     alpha: float = 1.0
     beta: float = 0.0
     cutoff: float = 0.8
@@ -310,6 +238,23 @@ class VideoMergeRequest(BaseModel):
     fps: float = 30.0
 
 
+class MergeFromFilesRequest(BaseModel):
+    username: str
+    file_ids: List[str]
+    output_name: str = "merged"
+    fps: float = 30.0
+    normalize: bool = True
+
+
+class TrackVisualizeRequest(BaseModel):
+    username: str
+    tracks_csv: str
+    bg_dir: Optional[str] = None
+    file_ids: Optional[List[str]] = None
+    fps: int = 10
+    trail: int = 20
+
+
 class TdmsExportRequest(BaseModel):
     username: str
     file_id: str
@@ -341,36 +286,6 @@ class RenameModelRequest(BaseModel):
     new_name: str
 
 
-# ---------------------------------------------------------------------------
-# Frame extraction
-# ---------------------------------------------------------------------------
-
-def extract_frame(file_path: Path, file_info: dict, index: int):
-    if file_info["type"] == "tdms":
-        normalize = file_info.get("tdms_settings", {}).get("normalize", True)
-        explorer = TDMSFileExplorer(str(file_path))
-        images = explorer.extract_images()
-        if images is None:
-            raise ValueError(f"No image data in {file_path}")
-        if index < 0 or index >= len(images):
-            raise ValueError(f"Frame {index} out of range")
-        frame = images[index].astype(np.float32)
-        if normalize:
-            fmin, fmax = frame.min(), frame.max()
-            frame = ((frame - fmin) / (fmax - fmin + 1e-8) * 255).astype(np.uint8) if fmax > fmin \
-                else np.zeros_like(frame, dtype=np.uint8)
-        else:
-            if images[index].dtype == np.uint16:
-                frame = (images[index] >> 8).astype(np.uint8)
-            else:
-                frame = np.clip(frame, 0, 255).astype(np.uint8)
-        return Image.fromarray(frame, mode="L"), len(images)
-    else:
-        img = Image.open(file_path)
-        if img.mode != "L":
-            img = img.convert("L")
-        return img, 1
-
 
 # ---------------------------------------------------------------------------
 # Static routes
@@ -379,7 +294,12 @@ def extract_frame(file_path: Path, file_info: dict, index: int):
 @app.get("/", response_class=HTMLResponse)
 async def root():
     template = WEB_DIR / "templates" / "index.html"
-    return template.read_text() if template.exists() else HTMLResponse("<h1>MONA Track</h1>")
+    if not template.exists():
+        return HTMLResponse("<h1>MONA Track</h1>")
+    return HTMLResponse(
+        content=template.read_text(),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/favicon.ico")
@@ -400,234 +320,20 @@ async def icon():
 
 @app.get("/health")
 async def health():
-    return {
+    out = {
         "status": "ok",
         "gpu": torch.cuda.is_available(),
         "gpu_count": torch.cuda.device_count(),
         "tracking_available": _tracking_available,
         "analysis_available": _analysis_available,
+        "mode": "jupyter" if JUPYTER_MODE else "standalone",
+        "data_dir": str(DATA_DIR),
     }
+    if JUPYTER_MODE:
+        out["username"] = resolve_identity()
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
-
-@app.post("/auth/register")
-async def register(data: UserLogin):
-    if data.username in users:
-        return JSONResponse(status_code=400, content={"error": "Username already exists"})
-    if len(data.username) < 3:
-        return JSONResponse(status_code=400, content={"error": "Username must be at least 3 characters"})
-    if len(data.password) < 4:
-        return JSONResponse(status_code=400, content={"error": "Password must be at least 4 characters"})
-    users[data.username] = {
-        "password_hash": hash_password(data.password),
-        "created_at": datetime.now().isoformat(),
-    }
-    get_user_dir(data.username)
-    sessions[data.username] = {"files": {}, "samples": {}, "models": [], "masks": {}, "detect_files": {}}
-    save_users()
-    save_user_session(data.username)
-    return {"status": "registered", "username": data.username}
-
-
-@app.post("/auth/login")
-async def login(data: UserLogin):
-    if data.username not in users:
-        return JSONResponse(status_code=401, content={"error": "Invalid username or password"})
-    if users[data.username]["password_hash"] != hash_password(data.password):
-        return JSONResponse(status_code=401, content={"error": "Invalid username or password"})
-    load_user_session(data.username)
-    return {"status": "logged_in", "username": data.username}
-
-
-@app.get("/auth/check/{username}")
-async def check_user(username: str):
-    if username not in users:
-        return {"exists": False}
-    load_user_session(username)
-    return {"exists": True, "session": sessions.get(username, {})}
-
-
-# ---------------------------------------------------------------------------
-# Chunked upload
-# ---------------------------------------------------------------------------
-
-_ALLOWED_UPLOAD_EXT = {".tdms", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
-
-
-@app.post("/upload/start")
-async def upload_start(data: ChunkUploadStart):
-    if data.username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    file_id = str(uuid.uuid4())[:8]
-    ext = Path(data.filename).suffix.lower()
-    if ext not in _ALLOWED_UPLOAD_EXT:
-        return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
-    file_path = get_user_dir(data.username) / "uploads" / f"{file_id}{ext}"
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.touch()
-    return {"upload_id": file_id, "file_path": str(file_path), "settings": {"normalize": data.normalize}}
-
-
-@app.post("/upload/chunk/{upload_id}")
-async def upload_chunk(upload_id: str, request: Request, offset: int = 0):
-    body = await request.body()
-    # Search in sessions first
-    for session in sessions.values():
-        for finfo in session.get("files", {}).values():
-            if finfo.get("id") == upload_id:
-                with open(finfo["path"], "r+b") as f:
-                    f.seek(offset)
-                    f.write(body)
-                return {"received": len(body), "offset": offset}
-    # Fallback: scan upload dirs
-    for username in users:
-        user_dir = get_user_dir(username)
-        for ext in _ALLOWED_UPLOAD_EXT:
-            fp = user_dir / "uploads" / f"{upload_id}{ext}"
-            if fp.exists():
-                with open(fp, "r+b") as f:
-                    f.seek(offset)
-                    f.write(body)
-                return {"received": len(body), "offset": offset}
-    return JSONResponse(status_code=404, content={"error": "Upload not found"})
-
-
-def _parse_tdms_info(file_path: Path, file_info: dict):
-    try:
-        explorer = TDMSFileExplorer(str(file_path))
-        images = explorer.extract_images()
-        if images is not None:
-            file_info["frame_count"] = images.shape[0]
-            file_info["width"] = images.shape[2]
-            file_info["height"] = images.shape[1]
-            file_info["dtype"] = str(images.dtype)
-        else:
-            file_info["error"] = "Could not auto-detect image dimensions"
-    except Exception as e:
-        file_info["error"] = str(e)
-    return file_info
-
-
-@app.post("/upload/complete")
-async def upload_complete(data: ChunkUploadComplete):
-    if data.username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    if data.username not in sessions:
-        load_user_session(data.username)
-    ext = Path(data.filename).suffix.lower()
-    file_path = get_user_dir(data.username) / "uploads" / f"{data.upload_id}{ext}"
-    if not file_path.exists():
-        return JSONResponse(status_code=404, content={"error": "Upload file not found"})
-    file_info = {
-        "id": data.upload_id, "filename": data.filename, "path": str(file_path),
-        "type": "tdms" if ext == ".tdms" else "image",
-        "frame_count": 1, "tdms_settings": {"normalize": data.normalize},
-    }
-    if ext == ".tdms":
-        _parse_tdms_info(file_path, file_info)
-    else:
-        img = Image.open(file_path)
-        file_info["width"] = img.width
-        file_info["height"] = img.height
-    sessions[data.username]["files"][data.upload_id] = file_info
-    save_user_session(data.username)
-    return file_info
-
-
-@app.post("/upload")
-async def upload_file(request: Request):
-    try:
-        form = await request.form()
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": f"Form parsing failed: {e}"})
-
-    username = form.get("username")
-    file = form.get("file")
-    normalize = form.get("normalize", "true")
-
-    if not username:
-        return JSONResponse(status_code=400, content={"error": "Missing username"})
-    if not file:
-        return JSONResponse(status_code=400, content={"error": "Missing file"})
-    if username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    if username not in sessions:
-        load_user_session(username)
-
-    normalize_bool = str(normalize).lower() in ("true", "1", "yes")
-    file_id = str(uuid.uuid4())[:8]
-    filename = file.filename or f"upload_{file_id}"
-    ext = Path(filename).suffix.lower()
-    if ext not in _ALLOWED_UPLOAD_EXT:
-        return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
-
-    file_path = get_user_dir(username) / "uploads" / f"{file_id}{ext}"
-    content = await file.read()
-    file_path.write_bytes(content)
-
-    file_info = {
-        "id": file_id, "filename": filename, "path": str(file_path),
-        "type": "tdms" if ext == ".tdms" else "image",
-        "frame_count": 1, "tdms_settings": {"normalize": normalize_bool},
-    }
-    if ext == ".tdms":
-        _parse_tdms_info(file_path, file_info)
-    else:
-        img = Image.open(file_path)
-        file_info["width"] = img.width
-        file_info["height"] = img.height
-
-    sessions[username]["files"][file_id] = file_info
-    save_user_session(username)
-    return file_info
-
-
-@app.post("/upload/csv")
-async def upload_csv(
-    username: str = Form(...),
-    file: UploadFile = File(...),
-    file_type: str = Form("detection"),  # "detection" | "tracks"
-):
-    if username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    if not file.filename or not file.filename.endswith(".csv"):
-        return JSONResponse(status_code=400, content={"error": "Only CSV files are accepted"})
-
-    content = await file.read()
-    user_dir = get_user_dir(username)
-    save_path = user_dir / "results" / file.filename
-    save_path.write_bytes(content)
-
-    return {
-        "status": "uploaded",
-        "filename": file.filename,
-        "size": len(content),
-        "file_type": file_type,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Frame access
-# ---------------------------------------------------------------------------
-
-@app.get("/frame/{username}/{file_id}/{index}")
-async def get_frame(username: str, file_id: str, index: int):
-    if username not in sessions:
-        load_user_session(username)
-    if file_id not in sessions[username]["files"]:
-        raise HTTPException(status_code=404, detail="File not found")
-    file_info = sessions[username]["files"][file_id]
-    img, _ = extract_frame(Path(file_info["path"]), file_info, index)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return {
-        "image": f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}",
-        "width": img.width,
-        "height": img.height,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -646,17 +352,25 @@ async def save_sample(request: SampleRequest):
     x2 = min(img.width, request.x + request.width)
     y2 = min(img.height, request.y + request.height)
     cropped = img.crop((x1, y1, x2, y2))
+    existing = sessions[request.username]["samples"].get(request.particle_name, [])
+    if existing:
+        ref = existing[0]
+        cropped = cropped.resize((ref["width"], ref["height"]), Image.LANCZOS)
     sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
     sample_dir.mkdir(parents=True, exist_ok=True)
-    sample_path = sample_dir / f"{request.particle_name}.jpg"
+    crop_id = uuid.uuid4().hex[:8]
+    sample_path = sample_dir / f"crop_{crop_id}.jpg"
     cropped.save(sample_path, format="JPEG")
-    sample_info = {"path": str(sample_path), "width": cropped.width, "height": cropped.height}
-    sessions[request.username]["samples"][request.particle_name] = [sample_info]
+    sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped.width, "height": cropped.height}
+    sessions[request.username]["samples"].setdefault(request.particle_name, []).append(sample_info)
     buf = BytesIO()
     cropped.save(buf, format="PNG")
     save_user_session(request.username)
+    pool = sessions[request.username]["samples"][request.particle_name]
     return {"particle_name": request.particle_name, "sample": sample_info,
-            "preview": f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"}
+            "preview": f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}",
+            "crop_count": len(pool),
+            "pool_size": {"width": pool[0]["width"], "height": pool[0]["height"]}}
 
 
 @app.post("/mask")
@@ -698,14 +412,19 @@ async def save_mask(request: MaskRequest):
                 cropped = masked
 
             cropped_img = Image.fromarray(cropped, mode="L")
+            existing_mask = sessions[request.username]["samples"].get(request.particle_name, [])
+            if existing_mask:
+                ref = existing_mask[0]
+                cropped_img = cropped_img.resize((ref["width"], ref["height"]), Image.LANCZOS)
             sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
             sample_dir.mkdir(parents=True, exist_ok=True)
-            sample_path = sample_dir / f"{request.particle_name}.jpg"
+            crop_id = uuid.uuid4().hex[:8]
+            sample_path = sample_dir / f"crop_{crop_id}.jpg"
             cropped_img.save(sample_path, format="JPEG")
 
-            sample_info = {"path": str(sample_path), "width": cropped_img.width, "height": cropped_img.height,
+            sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped_img.width, "height": cropped_img.height,
                            "mask_type": "polygon"}
-            sessions[request.username]["samples"][request.particle_name] = [sample_info]
+            sessions[request.username]["samples"].setdefault(request.particle_name, []).append(sample_info)
 
             buf = BytesIO()
             cropped_img.save(buf, format="PNG")
@@ -739,17 +458,25 @@ async def apply_circular_mask(request: CircularMaskRequest):
     x2 = min(w, int(request.roi_center_x + request.roi_radius))
     y2 = min(h, int(request.roi_center_y + request.roi_radius))
     cropped = Image.fromarray(masked[y1:y2, x1:x2], mode="L")
+    existing_circ = sessions[request.username]["samples"].get(request.particle_name, [])
+    if existing_circ:
+        ref = existing_circ[0]
+        cropped = cropped.resize((ref["width"], ref["height"]), Image.LANCZOS)
     sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
     sample_dir.mkdir(parents=True, exist_ok=True)
-    sample_path = sample_dir / f"{request.particle_name}.jpg"
+    crop_id = uuid.uuid4().hex[:8]
+    sample_path = sample_dir / f"crop_{crop_id}.jpg"
     cropped.save(sample_path, format="JPEG")
-    sample_info = {"path": str(sample_path), "width": cropped.width, "height": cropped.height, "mask_type": "circular"}
-    sessions[request.username]["samples"][request.particle_name] = [sample_info]
+    sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped.width, "height": cropped.height, "mask_type": "circular"}
+    sessions[request.username]["samples"].setdefault(request.particle_name, []).append(sample_info)
     buf = BytesIO()
     cropped.save(buf, format="PNG")
     save_user_session(request.username)
+    pool = sessions[request.username]["samples"][request.particle_name]
     return {"particle_name": request.particle_name, "sample": sample_info,
-            "preview": f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"}
+            "preview": f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}",
+            "crop_count": len(pool),
+            "pool_size": {"width": pool[0]["width"], "height": pool[0]["height"]}}
 
 
 @app.get("/samples/{username}")
@@ -772,6 +499,35 @@ async def delete_sample(username: str, particle_name: str):
     return {"status": "deleted"}
 
 
+@app.delete("/sample/{username}/{particle_name}/{crop_id}")
+async def delete_crop(username: str, particle_name: str, crop_id: str):
+    if username not in sessions:
+        load_user_session(username)
+    samples = sessions[username]["samples"].get(particle_name, [])
+    crop = next((s for s in samples if s.get("id") == crop_id), None)
+    if crop:
+        Path(crop["path"]).unlink(missing_ok=True)
+        sessions[username]["samples"][particle_name] = [s for s in samples if s.get("id") != crop_id]
+        if not sessions[username]["samples"][particle_name]:
+            del sessions[username]["samples"][particle_name]
+        save_user_session(username)
+    return {"status": "deleted"}
+
+
+@app.get("/sample/preview/{username}/{particle_name}/{crop_id}")
+async def get_crop_preview(username: str, particle_name: str, crop_id: str):
+    if username not in sessions:
+        load_user_session(username)
+    samples = sessions[username]["samples"].get(particle_name, [])
+    crop = next((s for s in samples if s.get("id") == crop_id), None)
+    if not crop:
+        raise HTTPException(status_code=404)
+    p = Path(crop["path"])
+    if not p.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(str(p), media_type="image/jpeg")
+
+
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
@@ -789,36 +545,58 @@ def run_training(job_id: str, username: str, particle_name: str, config: dict):
             training_jobs[job_id]["start_time"] = start_time
             training_jobs[job_id]["losses"] = []
 
-        sample_path = get_user_dir(username) / "samples" / particle_name / f"{particle_name}.jpg"
-        if not sample_path.exists():
-            raise FileNotFoundError(f"Sample not found: {sample_path}")
+        sample_dir = get_user_dir(username) / "samples" / particle_name
+        crop_paths = sorted(sample_dir.glob("crop_*.jpg")) if sample_dir.exists() else []
+        if not crop_paths:
+            legacy = sample_dir / f"{particle_name}.jpg"
+            if legacy.exists():
+                crop_paths = [legacy]
+        if not crop_paths:
+            raise FileNotFoundError(f"No samples found for {particle_name}")
 
-        training_image = np.array(dt.LoadImage(str(sample_path)).resolve()).astype(np.float32)
-        if len(training_image.shape) == 3 and training_image.shape[-1] == 3:
-            training_image = np.dot(training_image[..., :3], [0.299, 0.587, 0.114])
-        if len(training_image.shape) == 2:
-            training_image = training_image[..., np.newaxis]
+        def _load_crop(path):
+            arr = np.array(dt.LoadImage(str(path)).resolve()).astype(np.float32)
+            if len(arr.shape) == 3 and arr.shape[-1] == 3:
+                arr = np.dot(arr[..., :3], [0.299, 0.587, 0.114])
+            if len(arr.shape) == 2:
+                arr = arr[..., np.newaxis]
+            return arr
 
-        pipeline_ops = [dt.Value(training_image)]
-        if config.get("use_affine", False):
-            pipeline_ops.append(dt.Affine(
-                scale=lambda: np.random.uniform(config["scale_min"], config["scale_max"]),
-                rotate=lambda: 2 * np.pi * np.random.uniform(config["rotation_min"], config["rotation_max"]),
-                translate=lambda: np.random.uniform(config["translate_min"], config["translate_max"], 2),
+        import random as _rnd
+        sample_pool = [_load_crop(p) for p in crop_paths]
+
+        sample_fn = lambda: _rnd.choice(sample_pool).copy()
+        pipeline = dt.Value(sample_fn)
+        use_affine = bool(config.get("use_affine", False))
+        if use_affine:
+            smin = float(config.get("scale_min", 0.9))
+            smax = float(config.get("scale_max", 1.1))
+            rmin = float(config.get("rotation_min", 0.0))
+            rmax = float(config.get("rotation_max", 1.0))
+            tmin = float(config.get("translate_min", -5.0))
+            tmax = float(config.get("translate_max", 5.0))
+            if smax < smin:
+                smin, smax = smax, smin
+            if rmax < rmin:
+                rmin, rmax = rmax, rmin
+            if tmax < tmin:
+                tmin, tmax = tmax, tmin
+            pipeline = pipeline >> dt.Affine(
+                scale=lambda: np.random.uniform(smin, smax),
+                rotate=lambda: 2 * np.pi * np.random.uniform(rmin, rmax),
+                translate=lambda: np.random.uniform(tmin, tmax, 2),
                 mode="constant",
-            ))
-        pipeline_ops.extend([
-            dt.Multiply(lambda: np.random.uniform(config["mul_min"], config["mul_max"])),
-            dt.Add(lambda: np.random.uniform(config["add_min"], config["add_max"])),
-            dt.MoveAxis(-1, 0),
-            dt.pytorch.ToTensor(dtype=torch.float32),
-        ])
-        pipeline = pipeline_ops[0]
-        for op in pipeline_ops[1:]:
-            pipeline = pipeline >> op
+            )
+        pipeline = (
+            pipeline
+            >> dt.Multiply(lambda: np.random.uniform(config["mul_min"], config["mul_max"]))
+            >> dt.Add(lambda: np.random.uniform(config["add_min"], config["add_max"]))
+            >> dt.MoveAxis(-1, 0)
+            >> dt.pytorch.ToTensor(dtype=torch.float32)
+        )
 
         dataset = dt.pytorch.Dataset(pipeline, length=config["length"], replace=False)
-        loader = dl.DataLoader(dataset, batch_size=config["batch_size"], shuffle=True, num_workers=4)
+        loader = dl.DataLoader(dataset, batch_size=config["batch_size"], shuffle=True, num_workers=0)
 
         lodestar = dl.LodeSTAR(n_transforms=config["n_transforms"], optimizer=dl.Adam(lr=config["lr"])).build()
         with torch.no_grad():
@@ -934,7 +712,7 @@ async def start_training(request: TrainRequest):
         raise HTTPException(status_code=400, detail="No sample found")
 
     job_id = str(uuid.uuid4())[:8]
-    config = request.dict()
+    config = request.model_dump()
     del config["username"]
     del config["particle_name"]
 
@@ -1084,7 +862,11 @@ def run_detection_on_image(lodestar, img: Image.Image, alpha: float, beta: float
         model_output = lodestar(image_tensor)
         detections = lodestar.detect(image_tensor, alpha=alpha, beta=beta, mode="constant", cutoff=cutoff)[0]
 
-    detections_list = detections[:, [1, 0]].cpu().tolist() if len(detections) > 0 else []
+    if len(detections) > 0:
+        d = detections[:, [1, 0]]
+        detections_list = d.cpu().tolist() if hasattr(d, 'cpu') else d.tolist()
+    else:
+        detections_list = []
 
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -1107,7 +889,7 @@ def run_detection_on_image(lodestar, img: Image.Image, alpha: float, beta: float
         wnorm = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
         wcol = (plt.cm.hot(wnorm)[:, :, :3] * 255).astype(np.uint8)
         wbuf = BytesIO()
-        Image.fromarray(wcol, mode="RGB").save(wbuf, format="PNG")
+        Image.fromarray(wcol).save(wbuf, format="PNG")
         result["weightmap"] = f"data:image/png;base64,{base64.b64encode(wbuf.getvalue()).decode()}"
 
     return result
@@ -1121,10 +903,10 @@ async def upload_detect_file(
 ):
     if not username or not file:
         return JSONResponse(status_code=400, content={"error": "Missing username or file"})
-    if username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    if username not in sessions:
-        load_user_session(username)
+    try:
+        username = require_user(username)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"error": str(e.detail)})
 
     normalize_bool = normalize.lower() in ("true", "1", "yes")
     file_id = str(uuid.uuid4())[:8]
@@ -1164,14 +946,17 @@ async def get_detect_frame(
     if username not in sessions:
         load_user_session(username)
     detect_files = sessions[username].get("detect_files", {})
-    if file_id not in detect_files:
+    file_info = detect_files.get(file_id) or sessions[username].get("files", {}).get(file_id)
+    if not file_info:
         raise HTTPException(status_code=404, detail="File not found")
-    file_info = detect_files[file_id]
-    img, _ = extract_frame(Path(file_info["path"]), file_info, index)
+    img, frame_count = extract_frame(Path(file_info["path"]), file_info, index)
+    if file_info.get("frame_count", 1) != frame_count:
+        file_info["frame_count"] = frame_count
+        save_user_session(username)
     lodestar = load_model(username, model_id)
     result = run_detection_on_image(lodestar, img, alpha, beta, cutoff, return_weightmap)
     result["frame_index"] = index
-    result["frame_count"] = file_info["frame_count"]
+    result["frame_count"] = frame_count
     return result
 
 
@@ -1193,31 +978,74 @@ async def run_detection(
     return result
 
 
-def run_batch_detection(job_id: str, username: str, file_info: dict,
+def _iter_detection_frames(file_info: dict):
+    stack = _load_file_stack(file_info)
+    for i in range(stack.shape[0]):
+        yield i, Image.fromarray(stack[i])
+
+
+
+def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
                         model_id: str, params: dict, output_csv: Path):
     try:
         background_jobs[job_id]["status"] = "running"
+        save_background_jobs()
         lodestar = load_model(username, model_id)
 
-        frame_count = file_info.get("frame_count", 1)
         rows = []
-        for i in range(frame_count):
-            img, _ = extract_frame(Path(file_info["path"]), file_info, i)
-            result = run_detection_on_image(
-                lodestar, img, params["alpha"], params["beta"], params["cutoff"], False
-            )
-            for det in result["detections"]:
-                rows.append({"x": det[0], "y": det[1], "phi": np.nan, "frame": i})
-            background_jobs[job_id]["progress"] = int((i + 1) / frame_count * 100)
-            background_jobs[job_id]["frames_done"] = i + 1
+        global_frame = 0
+        n_files = len(file_infos)
+        for fi, file_info in enumerate(file_infos):
+            background_jobs[job_id]["files_done"] = fi
+            background_jobs[job_id]["current_file"] = file_info.get("filename", "")
+            first_frame = True
+            for local_i, img in _iter_detection_frames(file_info):
+                if first_frame:
+                    remaining = sum(int(f.get("frame_count") or 1) for f in file_infos[fi + 1:])
+                    background_jobs[job_id]["frames_total"] = (
+                        global_frame + int(file_info["frame_count"]) + remaining
+                    )
+                    first_frame = False
+                result = run_detection_on_image(
+                    lodestar, img, params["alpha"], params["beta"], params["cutoff"], False
+                )
+                for det in result["detections"]:
+                    rows.append({
+                        "x": det[0], "y": det[1], "phi": np.nan,
+                        "frame": global_frame,
+                        "frame_local": local_i,
+                        "stack": fi,
+                        "source_file": file_info.get("filename", ""),
+                    })
+                global_frame += 1
+                total = max(1, int(background_jobs[job_id].get("frames_total") or global_frame))
+                background_jobs[job_id]["frames_done"] = global_frame
+                background_jobs[job_id]["progress"] = int(global_frame / total * 100)
+                if global_frame == 1 or global_frame % 10 == 0:
+                    save_background_jobs()
 
-        df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["x", "y", "phi", "frame"])
-        df.to_csv(output_csv)  # with default integer index — matches what test_single_particle.py writes
+            if username in sessions:
+                for store in ("files", "detect_files"):
+                    bucket = sessions[username].get(store, {})
+                    if file_info.get("id") in bucket:
+                        bucket[file_info["id"]]["frame_count"] = file_info["frame_count"]
+                        bucket[file_info["id"]]["width"] = file_info.get("width")
+                        bucket[file_info["id"]]["height"] = file_info.get("height")
+                save_user_session(username)
+
+        background_jobs[job_id]["files_done"] = n_files
+        background_jobs[job_id]["frames_total"] = global_frame
+        background_jobs[job_id]["progress"] = 100
+
+        cols = ["x", "y", "phi", "frame", "frame_local", "stack", "source_file"]
+        df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+        df.to_csv(output_csv)
 
         background_jobs[job_id]["status"] = "completed"
         background_jobs[job_id]["output_csv"] = output_csv.name
         background_jobs[job_id]["total_detections"] = len(df)
-        background_jobs[job_id]["frames"] = frame_count
+        background_jobs[job_id]["frames"] = global_frame
+        background_jobs[job_id]["files"] = n_files
         save_background_jobs()
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -1230,13 +1058,27 @@ def run_batch_detection(job_id: str, username: str, file_info: dict,
 async def detect_batch(request: BatchDetectRequest):
     if request.username not in sessions:
         load_user_session(request.username)
-    file_info = sessions[request.username].get("files", {}).get(request.file_id)
-    if not file_info:
-        file_info = sessions[request.username].get("detect_files", {}).get(request.file_id)
-    if not file_info:
-        raise HTTPException(status_code=404, detail="File not found in session")
 
-    base_name = request.output_name or Path(file_info["filename"]).stem
+    file_ids: List[str] = []
+    if request.file_ids:
+        file_ids.extend(request.file_ids)
+    if request.file_id and request.file_id not in file_ids:
+        file_ids.append(request.file_id)
+    if not file_ids:
+        raise HTTPException(status_code=400, detail="Select at least one file")
+
+    file_infos: List[dict] = []
+    for fid in file_ids:
+        file_info = sessions[request.username].get("files", {}).get(fid)
+        if not file_info:
+            file_info = sessions[request.username].get("detect_files", {}).get(fid)
+        if not file_info:
+            raise HTTPException(status_code=404, detail=f"File not found in session: {fid}")
+        file_infos.append(dict(file_info))
+
+    base_name = request.output_name or Path(file_infos[0]["filename"]).stem
+    if len(file_infos) > 1 and not request.output_name:
+        base_name = f"{base_name}_plus{len(file_infos) - 1}"
     output_csv = get_user_dir(request.username) / "results" / f"{base_name}_detections.csv"
 
     job_id = str(uuid.uuid4())[:8]
@@ -1245,7 +1087,9 @@ async def detect_batch(request: BatchDetectRequest):
         "username": request.username,
         "status": "queued", "progress": 0,
         "frames_done": 0,
-        "frames_total": file_info.get("frame_count", 1),
+        "frames_total": sum(int(f.get("frame_count") or 1) for f in file_infos),
+        "files_done": 0,
+        "files_total": len(file_infos),
         "output_csv": output_csv.name,
         "created_at": datetime.now().isoformat(),
     }
@@ -1254,11 +1098,11 @@ async def detect_batch(request: BatchDetectRequest):
     params = {"alpha": request.alpha, "beta": request.beta, "cutoff": request.cutoff}
     t = threading.Thread(
         target=run_batch_detection,
-        args=(job_id, request.username, file_info, request.model_id, params, output_csv),
+        args=(job_id, request.username, file_infos, request.model_id, params, output_csv),
         daemon=True,
     )
     t.start()
-    return {"job_id": job_id, "status": "queued", "output_csv": output_csv.name}
+    return {"job_id": job_id, "status": "queued", "output_csv": output_csv.name, "files": len(file_infos)}
 
 
 # ---------------------------------------------------------------------------
@@ -1349,6 +1193,135 @@ async def run_tracking(request: TrackRequest):
     )
     t.start()
     return {"job_id": job_id, "status": "queued", "output_csv": output_csv.name}
+
+
+# ---------------------------------------------------------------------------
+# Track visualization
+# ---------------------------------------------------------------------------
+
+try:
+    from visualize_tracks import make_overview, make_video as _viz_make_video
+    _viz_available = True
+except ImportError as _e:
+    print(f"[warn] visualize_tracks unavailable: {_e}")
+    _viz_available = False
+
+
+def _resolve_bg_dir(bg_dir: Optional[str]):
+    import tempfile
+    if bg_dir and Path(bg_dir).is_dir():
+        return bg_dir, None
+    tmpdir = tempfile.mkdtemp(prefix="mona_nobg_")
+    return tmpdir, tmpdir
+
+
+def _session_file_infos(username: str, file_ids: List[str]) -> List[dict]:
+    if username not in sessions:
+        load_user_session(username)
+    out: List[dict] = []
+    for fid in file_ids:
+        info = sessions[username].get("files", {}).get(fid)
+        if not info:
+            info = sessions[username].get("detect_files", {}).get(fid)
+        if not info:
+            raise HTTPException(status_code=404, detail=f"File not found in session: {fid}")
+        out.append(dict(info))
+    return out
+
+
+def _resolve_viz_source(request: TrackVisualizeRequest, frames_needed: Optional[set] = None):
+    if request.file_ids:
+        file_infos = _session_file_infos(request.username, list(request.file_ids))
+        get_frame = _build_session_frame_getter(file_infos, frames_needed=frames_needed)
+        return None, None, get_frame
+    images_dir, tmpdir = _resolve_bg_dir(request.bg_dir)
+    return images_dir, tmpdir, None
+
+
+@app.post("/tracks/visualize-overview")
+def visualize_tracks_overview(request: TrackVisualizeRequest):
+    if not _viz_available:
+        raise HTTPException(status_code=503, detail="visualize_tracks module unavailable")
+    results_dir = get_user_dir(request.username) / "results"
+    tracks_path = results_dir / request.tracks_csv
+    if not tracks_path.exists():
+        raise HTTPException(status_code=404, detail=f"Tracks CSV not found: {request.tracks_csv}")
+
+    df = pd.read_csv(tracks_path)
+    if "is_interpolated" not in df.columns:
+        df["is_interpolated"] = False
+    df["is_interpolated"] = df["is_interpolated"].astype(bool)
+
+    mid_frame = int(df["frame"].median())
+    images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed={mid_frame})
+    base = tracks_path.stem
+    output_path = results_dir / f"{base}_overview.png"
+    try:
+        make_overview(df, images_dir or "", str(output_path), get_frame=get_frame)
+    finally:
+        if tmpdir:
+            import shutil as _shutil
+            _shutil.rmtree(tmpdir, ignore_errors=True)
+
+    png_b64 = base64.b64encode(output_path.read_bytes()).decode()
+    return {
+        "status": "done",
+        "image": f"data:image/png;base64,{png_b64}",
+        "filename": f"{base}_overview.png",
+    }
+
+
+def _run_visualize_video(job_id: str, request: TrackVisualizeRequest, results_dir: Path):
+    try:
+        background_jobs[job_id]["status"] = "running"
+        tracks_path = results_dir / request.tracks_csv
+        df = pd.read_csv(tracks_path)
+        if "is_interpolated" not in df.columns:
+            df["is_interpolated"] = False
+        df["is_interpolated"] = df["is_interpolated"].astype(bool)
+
+        needed = set(int(f) for f in df["frame"].unique())
+        images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed=needed)
+        base = tracks_path.stem
+        output_path = results_dir / f"{base}_video.mp4"
+        try:
+            _viz_make_video(
+                df, images_dir or "", str(output_path),
+                fps=request.fps, trail_frames=request.trail, get_frame=get_frame,
+            )
+        finally:
+            if tmpdir:
+                import shutil as _shutil
+                _shutil.rmtree(tmpdir, ignore_errors=True)
+
+        background_jobs[job_id]["status"] = "completed"
+        background_jobs[job_id]["output_mp4"] = f"{base}_video.mp4"
+        save_background_jobs()
+    except Exception as e:
+        background_jobs[job_id]["status"] = "failed"
+        background_jobs[job_id]["error"] = str(e)
+        save_background_jobs()
+
+
+@app.post("/tracks/visualize-video")
+async def start_visualize_video(request: TrackVisualizeRequest):
+    if not _viz_available:
+        raise HTTPException(status_code=503, detail="visualize_tracks module unavailable")
+    results_dir = get_user_dir(request.username) / "results"
+    tracks_path = results_dir / request.tracks_csv
+    if not tracks_path.exists():
+        raise HTTPException(status_code=404, detail=f"Tracks CSV not found: {request.tracks_csv}")
+
+    job_id = str(uuid.uuid4())[:8]
+    background_jobs[job_id] = {
+        "id": job_id, "type": "visualize_video",
+        "username": request.username,
+        "status": "queued", "progress": 0,
+        "created_at": datetime.now().isoformat(),
+    }
+    save_background_jobs()
+    threading.Thread(target=_run_visualize_video, args=(job_id, request, results_dir), daemon=True).start()
+    return {"job_id": job_id, "status": "queued"}
 
 
 # ---------------------------------------------------------------------------
@@ -1463,105 +1436,10 @@ async def get_default_config():
     return defaults
 
 
-# ---------------------------------------------------------------------------
-# TDMS
-# ---------------------------------------------------------------------------
-
-@app.get("/tdms/structure/{username}/{file_id}")
-async def get_tdms_structure(username: str, file_id: str):
-    if username not in sessions:
-        load_user_session(username)
-    if file_id not in sessions[username]["files"]:
-        raise HTTPException(status_code=404, detail="File not found")
-    file_info = sessions[username]["files"][file_id]
-    if file_info["type"] != "tdms":
-        raise HTTPException(status_code=400, detail="Not a TDMS file")
-    explorer = TDMSFileExplorer(str(file_info["path"]))
-    return {"structure": explorer.list_contents()}
-
-
-@app.post("/tdms/export")
-async def export_tdms(request: TdmsExportRequest):
-    if request.username not in sessions:
-        load_user_session(request.username)
-    if request.file_id not in sessions[request.username]["files"]:
-        raise HTTPException(status_code=404, detail="File not found")
-    file_info = sessions[request.username]["files"][request.file_id]
-    if file_info["type"] != "tdms":
-        raise HTTPException(status_code=400, detail="Not a TDMS file")
-
-    import zipfile
-    explorer = TDMSFileExplorer(str(file_info["path"]))
-    if explorer.extract_images() is None:
-        raise HTTPException(status_code=400, detail="Could not extract images from TDMS file")
-
-    start = request.start_frame
-    end = request.end_frame
-    dtype_map = {"uint8": np.uint8, "uint16": np.uint16}
-    dtype = dtype_map.get(request.dtype, np.uint8)
-    user_dir = get_user_dir(request.username)
-    base_name = request.output_name or Path(file_info["filename"]).stem
-    frame_count = (end if end is not None else explorer.extract_images().shape[0]) - start
-
-    if request.output_format == "mp4":
-        output_path = user_dir / "results" / f"{base_name}.mp4"
-        explorer.write_video(str(output_path), start_frame=start, end_frame=end,
-                             fps=request.fps, dtype=dtype, force=True, normed=request.normalize)
-        if request.save_to_server:
-            return {"status": "saved", "path": str(output_path), "frames": frame_count}
-        return {"status": "ready",
-                "data": base64.b64encode(output_path.read_bytes()).decode(),
-                "filename": f"{base_name}.mp4", "frames": frame_count}
-    else:
-        export_dir = user_dir / "results" / base_name
-        explorer.write_images(str(export_dir), base_name=base_name, start_frame=start,
-                              end_frame=end, dtype=dtype, force=True, normed=request.normalize)
-        if request.save_to_server:
-            return {"status": "saved", "path": str(export_dir), "frames": frame_count}
-        zip_path = user_dir / "results" / f"{base_name}.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for img_file in export_dir.glob("*.png"):
-                zf.write(img_file, img_file.name)
-        return {"status": "ready",
-                "data": base64.b64encode(zip_path.read_bytes()).decode(),
-                "filename": f"{base_name}.zip", "frames": frame_count}
-
-
-# ---------------------------------------------------------------------------
-# File management
-# ---------------------------------------------------------------------------
-
-@app.get("/files/{username}")
-async def list_user_files(username: str, file_type: Optional[str] = None):
-    if username not in sessions:
-        load_user_session(username)
-    files = sessions[username].get("files", {})
-    if file_type:
-        files = {k: v for k, v in files.items() if v.get("type") == file_type}
-    return {"files": files}
-
-
-@app.delete("/files/{username}/{file_id}")
-async def delete_file(username: str, file_id: str):
-    if username not in users:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    if username not in sessions:
-        load_user_session(username)
-    if file_id not in sessions[username].get("files", {}):
-        return JSONResponse(status_code=404, content={"error": "File not found"})
-    fp = Path(sessions[username]["files"][file_id]["path"])
-    if fp.exists():
-        try:
-            fp.unlink()
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"error": f"Failed to delete: {e}"})
-    del sessions[username]["files"][file_id]
-    save_user_session(username)
-    return {"status": "deleted", "file_id": file_id}
-
 
 @app.get("/results/{username}")
 async def list_results(username: str):
+    username = require_user(username)
     results_dir = get_user_dir(username) / "results"
     results = []
     if results_dir.exists():
@@ -1575,12 +1453,59 @@ async def list_results(username: str):
 
 
 @app.get("/results/{username}/download/{filename}")
-async def download_result(username: str, filename: str):
+async def download_result(username: str, filename: str, inline: bool = False):
     results_dir = get_user_dir(username) / "results"
     fp = results_dir / filename
     if not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(fp, filename=filename)
+    media = None
+    suffix = fp.suffix.lower()
+    if suffix == ".mp4":
+        media = "video/mp4"
+    elif suffix == ".png":
+        media = "image/png"
+    elif suffix in (".jpg", ".jpeg"):
+        media = "image/jpeg"
+    disposition = "inline" if inline or suffix == ".mp4" else "attachment"
+    return FileResponse(fp, filename=filename, media_type=media, content_disposition_type=disposition)
+
+
+@app.get("/results/{username}/merged")
+async def list_merged_videos(username: str):
+    username = require_user(username)
+    merged = _merged_dir(username)
+    videos = []
+    for f in sorted(merged.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+        st = f.stat()
+        videos.append({
+            "name": f.name,
+            "size": st.st_size,
+            "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(),
+        })
+    return {"videos": videos}
+
+
+@app.get("/results/{username}/merged/{filename}")
+async def get_merged_video(username: str, filename: str):
+    username = require_user(username)
+    name = _safe_merged_name(filename)
+    fp = _merged_dir(username) / name
+    if not fp.exists() or not fp.is_file():
+        raise HTTPException(status_code=404, detail="Merged video not found")
+    return FileResponse(
+        fp, filename=name, media_type="video/mp4", content_disposition_type="inline",
+    )
+
+
+@app.delete("/results/{username}/merged/{filename}")
+async def delete_merged_video(username: str, filename: str):
+    username = require_user(username)
+    name = _safe_merged_name(filename)
+    fp = _merged_dir(username) / name
+    if not fp.exists() or not fp.is_file():
+        raise HTTPException(status_code=404, detail="Merged video not found")
+    fp.unlink()
+    return {"status": "deleted", "name": name}
 
 
 # ---------------------------------------------------------------------------
@@ -1589,8 +1514,7 @@ async def download_result(username: str, filename: str):
 
 @app.post("/video/merge")
 async def merge_videos(request: VideoMergeRequest):
-    if request.username not in users:
-        raise HTTPException(status_code=401, detail="User not found")
+    request.username = require_user(request.username)
     results_dir = get_user_dir(request.username) / "results"
     mp4_files = []
     for fid in request.file_ids:
@@ -1612,11 +1536,130 @@ async def merge_videos(request: VideoMergeRequest):
                 all_frames.append(frame)
             reader.close()
         output_path = results_dir / f"{request.output_name}.mp4"
-        imageio.mimwrite(str(output_path), all_frames, fps=request.fps, codec="libx264", quality=8)
+        imageio.mimwrite(str(output_path), all_frames, fps=request.fps, codec="libx264", quality=8, macro_block_size=1)
         return {"status": "merged", "path": str(output_path),
                 "total_frames": len(all_frames), "source_files": len(mp4_files)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/video/merge-from-files")
+async def merge_from_files(request: MergeFromFilesRequest):
+    request.username = require_user(request.username)
+    if not request.file_ids:
+        raise HTTPException(status_code=400, detail="No files selected")
+
+    out_name = _safe_merged_name(request.output_name or "merged")
+    output_path = _merged_dir(request.username) / out_name
+
+    job_id = str(uuid.uuid4())[:8]
+    background_jobs[job_id] = {
+        "id": job_id, "type": "merge_video",
+        "username": request.username,
+        "status": "queued", "progress": 0,
+        "files_done": 0, "files_total": len(request.file_ids),
+        "frames_done": 0, "output_mp4": out_name, "filename": out_name,
+        "created_at": datetime.now().isoformat(),
+    }
+    save_background_jobs()
+
+    t = threading.Thread(
+        target=_run_merge_job,
+        args=(job_id, request.username, list(request.file_ids),
+              output_path, request.fps, request.normalize),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "queued", "filename": out_name}
+
+
+def _run_merge_job(job_id: str, username: str, file_ids: List[str],
+                   output_path: Path, fps: float, normalize: bool):
+    try:
+        import imageio
+        background_jobs[job_id]["status"] = "running"
+        save_background_jobs()
+
+        if username not in sessions:
+            load_user_session(username)
+
+        writer = None
+        total_frames = 0
+        skipped = []
+        n_files = len(file_ids)
+
+        for fi, fid in enumerate(file_ids):
+            file_info = (sessions[username].get("files", {}).get(fid) or
+                         sessions[username].get("detect_files", {}).get(fid))
+            if not file_info:
+                skipped.append(fid)
+                continue
+            try:
+                if file_info["type"] == "tdms":
+                    images = get_images(str(file_info["path"]))
+                    if images is None:
+                        skipped.append(fid)
+                        continue
+                    for raw in images:
+                        frame = raw.astype(np.float32)
+                        if normalize:
+                            lo, hi = frame.min(), frame.max()
+                            frame = ((frame - lo) / (hi - lo + 1e-8) * 255).astype(np.uint8) if hi > lo \
+                                else np.zeros_like(frame, dtype=np.uint8)
+                        else:
+                            frame = np.clip(frame, 0, 255).astype(np.uint8)
+                        rgb = np.stack([frame, frame, frame], axis=-1)
+                        if writer is None:
+                            writer = imageio.get_writer(
+                                str(output_path), fps=fps, codec="libx264",
+                                quality=8, macro_block_size=1, format="FFMPEG",
+                            )
+                        writer.append_data(rgb)
+                        total_frames += 1
+                        if total_frames % 25 == 0:
+                            background_jobs[job_id]["frames_done"] = total_frames
+                else:
+                    img, _ = extract_frame(Path(file_info["path"]), file_info, 0)
+                    rgb = np.array(img.convert("RGB"))
+                    if writer is None:
+                        writer = imageio.get_writer(
+                            str(output_path), fps=fps, codec="libx264",
+                            quality=8, macro_block_size=1, format="FFMPEG",
+                        )
+                    writer.append_data(rgb)
+                    total_frames += 1
+            except Exception as e:
+                skipped.append(f"{fid}:{e}")
+
+            background_jobs[job_id]["files_done"] = fi + 1
+            background_jobs[job_id]["progress"] = int((fi + 1) / n_files * 100)
+            background_jobs[job_id]["frames_done"] = total_frames
+            save_background_jobs()
+
+        if writer is not None:
+            writer.close()
+
+        if total_frames == 0 or not output_path.exists():
+            raise RuntimeError(f"No frames written. Skipped: {skipped}")
+
+        background_jobs[job_id]["status"] = "completed"
+        background_jobs[job_id]["progress"] = 100
+        background_jobs[job_id]["total_frames"] = total_frames
+        background_jobs[job_id]["source_files"] = n_files - len(skipped)
+        background_jobs[job_id]["filename"] = output_path.name
+        background_jobs[job_id]["path"] = str(output_path)
+        save_background_jobs()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        background_jobs[job_id]["status"] = "failed"
+        background_jobs[job_id]["error"] = str(e)
+        save_background_jobs()
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1641,6 +1684,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
     try:
-        uvicorn.run(app, host="0.0.0.0", port=args.port, http="httptools", log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
     except Exception:
         uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
