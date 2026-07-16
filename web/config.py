@@ -42,4 +42,19 @@ else:
 
 SRC_DIR = WEB_DIR.parent / "src"
 
+DEFAULT_FEEDBACK_DIR = Path("/home/mona/mona_track_feedback")
+
+
+def resolve_feedback_dir() -> Path:
+    override = os.environ.get("MONA_TRACK_FEEDBACK_DIR", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    if JUPYTER_MODE:
+        return DEFAULT_FEEDBACK_DIR
+    return (WEB_DIR / "feedback").resolve()
+
+
+FEEDBACK_DIR = resolve_feedback_dir()
+FEEDBACK_FILE = FEEDBACK_DIR / "feedback.jsonl"
+
 ALLOWED_UPLOAD_EXT = {".tdms", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}

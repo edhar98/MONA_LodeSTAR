@@ -56,7 +56,10 @@ except ImportError as _e:
 # Shared modules
 # ---------------------------------------------------------------------------
 
-from config import WEB_DIR, DATA_DIR, SRC_DIR, ALLOWED_UPLOAD_EXT, JUPYTER_MODE, resolve_identity
+from config import (
+    WEB_DIR, DATA_DIR, SRC_DIR, ALLOWED_UPLOAD_EXT, JUPYTER_MODE,
+    resolve_identity, FEEDBACK_DIR, FEEDBACK_FILE,
+)
 import state
 from state import (
     users, sessions, training_jobs, background_jobs, jobs_lock as _jobs_lock,
@@ -329,6 +332,7 @@ async def health():
         "analysis_available": _analysis_available,
         "mode": "jupyter" if JUPYTER_MODE else "standalone",
         "data_dir": str(DATA_DIR),
+        "feedback_file": str(FEEDBACK_FILE),
     }
     if JUPYTER_MODE:
         out["username"] = resolve_identity()
@@ -358,22 +362,19 @@ async def submit_feedback(request: FeedbackRequest):
         "message": message,
         "mode": "jupyter" if JUPYTER_MODE else "standalone",
     }
-    user_dir = get_user_dir(username)
-    user_path = user_dir / "feedback.jsonl"
-    paths = [user_path]
-    shared = os.environ.get("MONA_TRACK_FEEDBACK_DIR", "").strip()
-    if shared:
-        sp = Path(shared).expanduser()
-        try:
-            sp.mkdir(parents=True, exist_ok=True)
-            paths.append(sp / "feedback.jsonl")
-        except Exception:
-            pass
-    line = json.dumps(entry, ensure_ascii=False) + "\n"
-    for fp in paths:
-        with open(fp, "a", encoding="utf-8") as f:
-            f.write(line)
-    return {"status": "ok", "saved_to": str(user_path)}
+    try:
+        FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
+        with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Shared feedback inbox unavailable ({FEEDBACK_FILE}): {e}. "
+                "Ask an admin to create a group-writable directory at that path."
+            ),
+        )
+    return {"status": "ok", "saved_to": str(FEEDBACK_FILE)}
 
 
 

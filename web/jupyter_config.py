@@ -25,6 +25,7 @@ def setup_mona_track():
         "environment": {
             "MONA_TRACK_JUPYTER": "1",
             "MONA_TRACK_HOME": home,
+            "MONA_TRACK_FEEDBACK_DIR": "/home/mona/mona_track_feedback",
             "MONA_TRACK_USER": hub_user,
             "JUPYTERHUB_USER": hub_user,
             "USER": hub_user,

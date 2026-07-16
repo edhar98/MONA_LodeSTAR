@@ -18,6 +18,7 @@ def main() -> None:
     os.environ["MONA_TRACK_HOME"] = os.environ.get(
         "MONA_TRACK_HOME", os.path.expanduser("~/mona_track")
     )
+    os.environ.setdefault("MONA_TRACK_FEEDBACK_DIR", "/home/mona/mona_track_feedback")
     os.environ["MONA_TRACK_USER"] = user
     os.environ.setdefault("USER", user)
     os.environ.setdefault("JUPYTERHUB_USER", user)

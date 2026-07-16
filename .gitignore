@@ -35,7 +35,7 @@ web/users.json
 web/uploads/
 web/samples/
 web/data/
-web/**/feedback.jsonl
+web/feedback/
 
 # Output directories
 detection_output/
