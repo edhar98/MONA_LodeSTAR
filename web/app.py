@@ -322,6 +322,7 @@ async def icon():
 async def health():
     out = {
         "status": "ok",
+        "version": "beta",
         "gpu": torch.cuda.is_available(),
         "gpu_count": torch.cuda.device_count(),
         "tracking_available": _tracking_available,
@@ -332,6 +333,47 @@ async def health():
     if JUPYTER_MODE:
         out["username"] = resolve_identity()
     return out
+
+
+class FeedbackRequest(BaseModel):
+    username: str
+    message: str
+    contact: str = ""
+    page: str = ""
+
+
+@app.post("/feedback")
+async def submit_feedback(request: FeedbackRequest):
+    username = require_user(request.username)
+    message = (request.message or "").strip()
+    if len(message) < 3:
+        raise HTTPException(status_code=400, detail="Feedback is too short")
+    if len(message) > 4000:
+        raise HTTPException(status_code=400, detail="Feedback is too long (max 4000 chars)")
+    entry = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "username": username,
+        "contact": (request.contact or "").strip()[:200],
+        "page": (request.page or "").strip()[:120],
+        "message": message,
+        "mode": "jupyter" if JUPYTER_MODE else "standalone",
+    }
+    user_dir = get_user_dir(username)
+    user_path = user_dir / "feedback.jsonl"
+    paths = [user_path]
+    shared = os.environ.get("MONA_TRACK_FEEDBACK_DIR", "").strip()
+    if shared:
+        sp = Path(shared).expanduser()
+        try:
+            sp.mkdir(parents=True, exist_ok=True)
+            paths.append(sp / "feedback.jsonl")
+        except Exception:
+            pass
+    line = json.dumps(entry, ensure_ascii=False) + "\n"
+    for fp in paths:
+        with open(fp, "a", encoding="utf-8") as f:
+            f.write(line)
+    return {"status": "ok", "saved_to": str(user_path)}
 
 
 

@@ -32,7 +32,36 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   padding: 18px 16px; font-size: 18px; font-weight: 700; letter-spacing: 2px;
   color: var(--accent); border-bottom: 1px solid var(--border); user-select: none;
 }
-.logo span { font-size: 11px; color: var(--text2); font-weight: 400; letter-spacing: 1px; display: block; margin-top: 2px; }
+.logo .logo-sub { font-size: 11px; color: var(--text2); font-weight: 400; letter-spacing: 1px; display: block; margin-top: 2px; }
+.badge-beta {
+  display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; padding: 2px 7px; border-radius: 3px;
+  background: rgba(224,147,58,0.18); color: var(--warn); border: 1px solid rgba(224,147,58,0.35);
+}
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 200;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  width: 420px; max-width: 100%; padding: 20px;
+}
+.modal-card h3 { font-size: 16px; margin-bottom: 6px; }
+.modal-card .modal-sub { font-size: 12px; color: var(--text2); margin-bottom: 14px; line-height: 1.4; }
+textarea {
+  width: 100%; min-height: 110px; padding: 8px 10px; resize: vertical;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 13px; font-family: var(--sans); outline: none;
+}
+textarea:focus { border-color: var(--accent); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#field-tip {
+  position: fixed; z-index: 9999; display: none; pointer-events: none;
+  max-width: 280px; padding: 7px 9px; border-radius: 4px;
+  background: #0a0c10; color: var(--text); border: 1px solid var(--border);
+  font-size: 11px; line-height: 1.35; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+}
 nav { flex: 1; padding: 8px 0; }
 .nav-btn {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px;
@@ -177,11 +206,27 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 .login-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 
+<div id="feedback-modal" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <h3>Send feedback</h3>
+    <p class="modal-sub">MONA Track is in beta. Report bugs, missing features, or anything that felt wrong.</p>
+    <label>Message</label>
+    <textarea id="feedback-message" placeholder="What happened? What did you expect?"></textarea>
+    <label>Contact (optional)</label>
+    <input type="text" id="feedback-contact" placeholder="email or name">
+    <div id="feedback-msg" class="status status-err hidden" style="margin-top:10px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="feedback-cancel" title="Close without sending">Cancel</button>
+      <button class="btn btn-primary" id="feedback-submit" title="Save feedback for the MONA Track team">Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== Login overlay ===== -->
 <div id="login-overlay">
   <div class="login-card">
-    <h2>MONA Track</h2>
-    <p>Particle detection &amp; tracking</p>
+    <h2>MONA Track <span class="badge-beta">BETA</span></h2>
+    <p>Particle detection &amp; tracking — beta preview, expect rough edges.</p>
     <div class="login-tabs">
       <button class="login-tab active" id="tab-login">Sign In</button>
       <button class="login-tab" id="tab-register">Register</button>
@@ -198,7 +243,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 <!-- ===== App shell ===== -->
 <div class="app" id="app" style="display:none">
   <aside class="sidebar">
-    <div class="logo">MONA<span>LodeSTAR</span></div>
+    <div class="logo">MONA<span class="logo-sub">LodeSTAR</span><span class="badge-beta">BETA</span></div>
     <nav>
       <button class="nav-btn active" data-panel="files"><span class="icon">&#128193;</span>TDMS Explorer</button>
       <button class="nav-btn" data-panel="training"><span class="icon">&#128300;</span>Training</button>
@@ -211,7 +256,8 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
         <strong id="sidebar-username"></strong>
         <div id="sidebar-data-dir" style="font-size:10px;color:var(--text2);margin-top:4px;word-break:break-all;line-height:1.3"></div>
         <span id="gpu-badge" class="badge">&#8212;</span>
-        <button class="btn btn-outline btn-sm" id="logout-btn" style="margin-top:8px;width:100%">Sign Out</button>
+        <button class="btn btn-outline btn-sm" id="feedback-btn" style="margin-top:8px;width:100%">Feedback</button>
+        <button class="btn btn-outline btn-sm" id="logout-btn" style="margin-top:6px;width:100%">Sign Out</button>
       </div>
     </div>
   </aside>
@@ -219,6 +265,10 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
   <main>
     <div class="topbar">
       <span class="topbar-title" id="panel-title">TDMS Explorer</span>
+      <div class="topbar-actions">
+        <span style="font-size:11px;color:var(--text2)">Beta version — feedback welcome</span>
+        <button class="btn btn-outline btn-sm" id="feedback-btn-top">Send feedback</button>
+      </div>
     </div>
 
     <!-- ===== TDMS EXPLORER ===== -->
@@ -831,6 +881,7 @@ function enterApp(u, session, mode, dir) {
 // INIT
 // ====================================================================
 window.onload = async () => {
+  applyFieldHints();
   const me = await api('/auth/me');
   if (me && me.mode === 'jupyter' && me.username) {
     localStorage.setItem('mona_user', me.username);
@@ -849,7 +900,118 @@ window.onload = async () => {
   }
 };
 
+const FIELD_HINTS = {
+  'login-username': 'Your MONA Track account name (standalone mode only).',
+  'login-password': 'Password for your MONA Track account.',
+  'feedback-message': 'Describe the issue or idea. Include what you clicked and what you expected.',
+  'feedback-contact': 'Optional. Email or name so we can follow up if needed.',
+  'normalize-check': 'Scale each TDMS frame to 0–255 using its own min/max before display and export.',
+  'server-path-input': 'Absolute path or glob on the server, e.g. /data/run/*.tdms. Files are linked into this session.',
+  'server-normalize-check': 'Normalize intensity when loading files from a server path.',
+  'viewer-cmap': 'Color lookup applied to the preview image. Gray is fastest.',
+  'channel-group': 'TDMS group that contains the numeric channel to plot.',
+  'channel-name': 'Channel inside the selected group.',
+  'analysis-frame': 'Zero-based frame index used for histogram, filters, edges, and profiles.',
+  'hist-bins': 'Number of histogram bins (higher = finer intensity distribution).',
+  'filter-type': 'Image filter applied to the selected frame.',
+  'filter-sigma': 'Filter strength: sigma for gaussian/bilateral, or kernel size for median.',
+  'edge-method': 'Edge detector used on the selected frame.',
+  'profile-dir': 'Direction of the intensity line profile across the frame.',
+  'profile-pos': 'Line position in pixels. Leave blank to use the frame center.',
+  'compare-a': 'First frame index for comparison.',
+  'compare-b': 'Second frame index for comparison.',
+  'compare-method': 'How the two frames are compared (pixel difference modes).',
+  'export-format': 'PNG zip exports individual frames; MP4 builds a video.',
+  'export-fps': 'Frames per second used when exporting MP4.',
+  'merge-name': 'Filename (without path) for the merged MP4 under results/merged/.',
+  'merge-fps': 'Playback frame rate for the merged video.',
+  'merge-normalize': 'Normalize each source frame before writing into the merged MP4.',
+  'merged-select': 'Previously saved merged videos in your results/merged folder.',
+  'train-particle': 'Name for this particle class / sample pool (used for training output).',
+  'train-file-select': 'Session file used as the source image stack for cropping samples.',
+  'adj-brightness': 'Brightness offset applied while previewing/cropping (does not change the file on disk).',
+  'adj-contrast': 'Contrast gain applied while previewing/cropping.',
+  'adj-gamma': 'Gamma curve for preview/crop. 1.00 is linear.',
+  'crop-aspect-mode': 'Constrain crop rectangle aspect ratio while dragging.',
+  'crop-aspect-w': 'Custom aspect width part (W in W:H).',
+  'crop-aspect-h': 'Custom aspect height part (H in W:H).',
+  'cfg-epochs': 'Number of training epochs (full passes over the augmented dataset).',
+  'cfg-batch': 'Samples per training batch. Lower if you run out of GPU/CPU memory.',
+  'cfg-lr': 'Adam learning rate. Typical LodeSTAR range is around 1e-4.',
+  'cfg-length': 'Synthetic dataset length: how many augmented samples are drawn per epoch cycle.',
+  'cfg-ntrans': 'LodeSTAR self-supervised transforms per sample.',
+  'cfg-mul-min': 'Minimum multiplicative intensity augmentation.',
+  'cfg-mul-max': 'Maximum multiplicative intensity augmentation.',
+  'cfg-add-min': 'Minimum additive intensity augmentation.',
+  'cfg-add-max': 'Maximum additive intensity augmentation.',
+  'cfg-affine': 'Enable random scale/rotate/translate augmentations during training.',
+  'cfg-scale-min': 'Minimum affine scale factor.',
+  'cfg-scale-max': 'Maximum affine scale factor.',
+  'cfg-rot-min': 'Minimum rotation as a fraction of a full turn (0–1).',
+  'cfg-rot-max': 'Maximum rotation as a fraction of a full turn (0–1).',
+  'cfg-trans-min': 'Minimum translation in pixels (can be negative).',
+  'cfg-trans-max': 'Maximum translation in pixels.',
+  'det-model-select': 'Trained LodeSTAR weights to use for detection.',
+  'det-file-select': 'One or more session files. Multi-select for batch runs (Ctrl/Cmd click).',
+  'det-frame': 'Zero-based frame index for single-frame detection preview.',
+  'det-alpha': 'LodeSTAR detect alpha: weight on the detection mode / local max scoring.',
+  'det-beta': 'LodeSTAR detect beta: secondary thresholding term.',
+  'det-cutoff': 'Confidence cutoff (0–1). Higher = fewer, stricter detections.',
+  'det-weightmap': 'Overlay the model weight/confidence map on the preview.',
+  'batch-output-name': 'Base name for the detections CSV written to your results folder.',
+  'track-csv-select': 'Detection CSV to link into tracks (usually from batch detection).',
+  'trk-min-dist': 'Within-frame NMS radius in pixels: nearby detections are merged.',
+  'trk-max-link': 'Maximum center-to-center distance (px) allowed when linking across frames.',
+  'trk-min-track': 'Discard tracks shorter than this many frames after linking.',
+  'trk-max-gap': 'Allow gaps of this many missing frames and interpolate through them.',
+  'trk-output-name': 'Base name for the tracks CSV. Leave empty for an automatic name.',
+  'trk-tracks-select': 'Tracks CSV used for download and visualization preview.',
+  'viz-bg-mode': 'Use session image/TDMS frames under the tracks, or a black canvas.',
+  'viz-file-select': 'Background stacks in the same order as the detection batch (global frames).',
+  'viz-fps': 'Frames per second for the preview video export.',
+  'viz-trail': 'How many past positions to draw as a trail per track.',
+  'abp-csv-select': 'Tracks CSV for Active Brownian Particle / MSD fitting.',
+  'abp-dt': 'Time between consecutive frames in seconds (e.g. 1/30 ≈ 0.0333).',
+  'abp-px': 'Physical size of one pixel in micrometers.',
+  'abp-maxlag': 'Largest time lag (in frames) used when computing MSD curves.',
+  'abp-mintrack': 'Only tracks with at least this many real (non-gap) frames enter the fit.',
+  'abp-include-interp': 'If checked, interpolated gap-fill points are included in MSD/ABP stats.',
+};
+
+function applyFieldHints() {
+  let tip = document.getElementById('field-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'field-tip';
+    document.body.appendChild(tip);
+  }
+  const show = (hint, ev) => {
+    tip.textContent = hint;
+    tip.style.display = 'block';
+    const x = Math.min(ev.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+    const y = Math.min(ev.clientY + 16, window.innerHeight - tip.offsetHeight - 8);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  };
+  const hide = () => { tip.style.display = 'none'; };
+  Object.entries(FIELD_HINTS).forEach(([id, hint]) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.hintBound) return;
+    el.dataset.hintBound = '1';
+    const targets = [el];
+    const lab = el.closest('label') || (el.previousElementSibling && el.previousElementSibling.tagName === 'LABEL'
+      ? el.previousElementSibling : null);
+    if (lab) targets.push(lab);
+    targets.forEach(t => {
+      t.addEventListener('mouseenter', e => show(hint, e));
+      t.addEventListener('mousemove', e => show(hint, e));
+      t.addEventListener('mouseleave', hide);
+    });
+  });
+}
+
 async function initApp() {
+  applyFieldHints();
   const h = await api('/health');
   const badge = document.getElementById('gpu-badge');
   if (h.gpu) { badge.textContent = 'GPU x' + h.gpu_count; badge.className = 'badge badge-gpu'; }
@@ -862,6 +1024,48 @@ async function initApp() {
   if (cfg.px_size) document.getElementById('abp-px').value = cfg.px_size;
   resumeActiveJobs();
 }
+
+const feedbackModal = document.getElementById('feedback-modal');
+function openFeedback() {
+  feedbackModal.classList.remove('hidden');
+  document.getElementById('feedback-msg').classList.add('hidden');
+  document.getElementById('feedback-message').focus();
+}
+function closeFeedback() { feedbackModal.classList.add('hidden'); }
+document.getElementById('feedback-btn').onclick = openFeedback;
+document.getElementById('feedback-btn-top').onclick = openFeedback;
+document.getElementById('feedback-cancel').onclick = closeFeedback;
+feedbackModal.addEventListener('click', e => { if (e.target === feedbackModal) closeFeedback(); });
+document.getElementById('feedback-submit').onclick = async () => {
+  if (!username) { alert('Sign in first'); return; }
+  const message = document.getElementById('feedback-message').value.trim();
+  const contact = document.getElementById('feedback-contact').value.trim();
+  const msgEl = document.getElementById('feedback-msg');
+  if (message.length < 3) {
+    msgEl.textContent = 'Please write a short message';
+    msgEl.className = 'status status-err';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+  const d = await api('/feedback', {
+    username,
+    message,
+    contact,
+    page: document.getElementById('panel-title').textContent || '',
+  });
+  if (d.error) {
+    msgEl.textContent = d.error;
+    msgEl.className = 'status status-err';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+  document.getElementById('feedback-message').value = '';
+  document.getElementById('feedback-contact').value = '';
+  msgEl.textContent = 'Thanks — feedback saved.';
+  msgEl.className = 'status status-ok';
+  msgEl.classList.remove('hidden');
+  setTimeout(closeFeedback, 900);
+};
 
 async function resumeActiveJobs() {
   const d = await api('/jobs/user/' + encodeURIComponent(username));
