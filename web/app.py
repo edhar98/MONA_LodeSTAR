@@ -9,7 +9,7 @@ import threading
 import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Literal, Tuple
 from contextlib import asynccontextmanager
 from io import BytesIO
 import base64
@@ -28,10 +28,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from pydantic import BaseModel
 
+WEB_APP_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(WEB_APP_DIR))
 from config import SRC_DIR as _CFG_SRC
 sys.path.insert(0, str(_CFG_SRC))
 sys.path.insert(0, str(_CFG_SRC / "tracking"))
 sys.path.insert(0, str(_CFG_SRC / "analysis"))
+sys.path.insert(0, str(_CFG_SRC / "detection"))
 
 from services.tdms_cache import get_images
 import utils
@@ -77,6 +80,17 @@ from services.frames import (
 )
 
 _ALLOWED_UPLOAD_EXT = ALLOWED_UPLOAD_EXT
+_event_loop: Optional[asyncio.AbstractEventLoop] = None
+_ws_queues: Dict[str, asyncio.Queue] = {}
+
+
+def _push_ws(job_id: str, message: Dict[str, Any]) -> None:
+    queue = _ws_queues.get(job_id)
+    if queue is None:
+        return
+    loop = _event_loop
+    if loop is not None and loop.is_running():
+        asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +193,7 @@ class SampleRequest(BaseModel):
     height: int
     file_id: str
     frame_index: int = 0
+    template_phi_deg: Optional[float] = None
 
 
 class MaskRequest(BaseModel):
@@ -201,6 +216,18 @@ class BatchDetectRequest(BaseModel):
     alpha: float = 1.0
     beta: float = 0.0
     cutoff: float = 0.8
+    detection_mode: Literal["standard", "area", "watershed", "template"] = "standard"
+    area_min_area: int = 200
+    area_max_area: int = 500
+    watershed_min_distance: int = 15
+    watershed_min_area: int = 20
+    template_particle_name: Optional[str] = None
+    template_crop_id: Optional[str] = None
+    template_path: Optional[str] = None
+    template_phi_deg: Optional[float] = None
+    template_angle_step: int = 2
+    template_refine_radius: int = 25
+    template_search_radius: int = 5
     output_name: Optional[str] = None
 
 
@@ -405,6 +432,10 @@ async def save_sample(request: SampleRequest):
     sample_path = sample_dir / f"crop_{crop_id}.jpg"
     cropped.save(sample_path, format="JPEG")
     sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped.width, "height": cropped.height}
+    if request.template_phi_deg is not None:
+        if not np.isfinite(request.template_phi_deg) or request.template_phi_deg < 0 or request.template_phi_deg > 360:
+            raise HTTPException(status_code=400, detail="template_phi_deg must be between 0 and 360")
+        sample_info["template_phi_deg"] = float(request.template_phi_deg)
     sessions[request.username]["samples"].setdefault(request.particle_name, []).append(sample_info)
     buf = BytesIO()
     cropped.save(buf, format="PNG")
@@ -829,12 +860,83 @@ async def ws_training(websocket: WebSocket, job_id: str):
 # Models
 # ---------------------------------------------------------------------------
 
-def load_model(username: str, model_id: str):
+def _src_config() -> Dict[str, Any]:
+    config_path = SRC_DIR / "config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        return utils.load_yaml(str(config_path)) or {}
+    except Exception:
+        return {}
+
+
+def _model_run_id(model_path: Path) -> str:
+    try:
+        return model_path.parent.name
+    except Exception:
+        return model_path.stem
+
+
+def _cli_model_entry(particle_name: str, info: Dict[str, Any], suffix: str = "") -> Optional[Dict[str, Any]]:
+    model_path_raw = info.get("model_path")
+    if not model_path_raw:
+        return None
+    model_path = Path(model_path_raw)
+    if not model_path.is_absolute():
+        model_path = WEB_DIR.parent / model_path
+    run_id = _model_run_id(model_path)
+    model_id = f"cli:{particle_name}:{run_id}{suffix}"
+    config = _src_config()
+    config.setdefault("lodestar_version", "default")
+    return {
+        "id": model_id,
+        "particle_name": particle_name,
+        "path": str(model_path),
+        "config": config,
+        "created_at": "",
+        "summary": {"runtime_formatted": "CLI", "device": "shared", "final_loss": None},
+        "source": "cli",
+        "read_only": True,
+        "run_id": run_id,
+    }
+
+
+def _discover_cli_models() -> List[Dict[str, Any]]:
+    summary_path = WEB_DIR.parent / "trained_models_summary.yaml"
+    if not summary_path.exists():
+        return []
+    try:
+        summary = utils.load_yaml(str(summary_path)) or {}
+    except Exception:
+        return []
+    models: List[Dict[str, Any]] = []
+    for particle_name, info in summary.items():
+        if not isinstance(info, dict):
+            continue
+        entry = _cli_model_entry(str(particle_name), info)
+        if entry is not None:
+            models.append(entry)
+        for index, extra in enumerate(info.get("additional_models", []) or [], start=1):
+            if isinstance(extra, dict):
+                extra_entry = _cli_model_entry(str(particle_name), extra, suffix=f":{index}")
+                if extra_entry is not None:
+                    models.append(extra_entry)
+    return models
+
+
+def _get_model_info(username: str, model_id: str) -> Dict[str, Any]:
     if username not in sessions:
         load_user_session(username)
-    model_info = next((m for m in sessions[username]["models"] if m["id"] == model_id), None)
+    model_info = next((m for m in sessions[username].get("models", []) if m["id"] == model_id), None)
+    if not model_info:
+        model_info = next((m for m in _discover_cli_models() if m["id"] == model_id), None)
     if not model_info:
         raise HTTPException(status_code=404, detail="Model not found")
+    return model_info
+
+
+def load_model(username: str, model_id: str) -> Any:
+    model_info = _get_model_info(username, model_id)
     model_path = Path(model_info["path"])
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="Model file not found")
@@ -842,7 +944,12 @@ def load_model(username: str, model_id: str):
     import deeptrack.deeplay as dl
     config = model_info.get("config", {})
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    lodestar = dl.LodeSTAR(n_transforms=config.get("n_transforms", 4), optimizer=dl.Adam(lr=config.get("lr", 0.0001))).build()
+    lodestar_version = config.get("lodestar_version", "default")
+    if lodestar_version == "default":
+        lodestar = dl.LodeSTAR(n_transforms=config.get("n_transforms", 4), optimizer=dl.Adam(lr=config.get("lr", 0.0001))).build()
+    else:
+        from custom_lodestar import customLodeSTAR
+        lodestar = customLodeSTAR(n_transforms=config.get("n_transforms", 4), optimizer=dl.Adam(lr=config.get("lr", 0.0001))).build()
     lodestar.load_state_dict(torch.load(model_path, map_location=device))
     lodestar.eval()
     lodestar = lodestar.to(device)
@@ -853,7 +960,15 @@ def load_model(username: str, model_id: str):
 async def get_models(username: str):
     if username not in sessions:
         load_user_session(username)
-    return {"models": sessions[username].get("models", [])}
+    web_models = []
+    for model in sessions[username].get("models", []):
+        item = dict(model)
+        item.setdefault("source", "web")
+        item.setdefault("read_only", False)
+        item.setdefault("config", {})
+        item["config"].setdefault("lodestar_version", "default")
+        web_models.append(item)
+    return {"models": web_models + _discover_cli_models()}
 
 
 @app.delete("/models/{username}/{model_id}")
@@ -863,7 +978,11 @@ async def delete_model(username: str, model_id: str):
     models = sessions[username].get("models", [])
     model_info = next((m for m in models if m["id"] == model_id), None)
     if not model_info:
+        if any(m["id"] == model_id for m in _discover_cli_models()):
+            raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
         raise HTTPException(status_code=404, detail="Model not found")
+    if model_info.get("source") == "cli" or model_info.get("read_only"):
+        raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
     mp = Path(model_info["path"])
     if mp.exists():
         mp.unlink()
@@ -879,7 +998,11 @@ async def rename_model(username: str, model_id: str, request: RenameModelRequest
     models = sessions[username].get("models", [])
     model_info = next((m for m in models if m["id"] == model_id), None)
     if not model_info:
+        if any(m["id"] == model_id for m in _discover_cli_models()):
+            raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
         raise HTTPException(status_code=404, detail="Model not found")
+    if model_info.get("source") == "cli" or model_info.get("read_only"):
+        raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
     old = Path(model_info["path"])
     new = old.parent / f"{request.new_name}_weights.pth"
     if old.exists():
@@ -894,22 +1017,196 @@ async def rename_model(username: str, model_id: str, request: RenameModelRequest
 # Detection (single-frame and batch)
 # ---------------------------------------------------------------------------
 
-def run_detection_on_image(lodestar, img: Image.Image, alpha: float, beta: float, cutoff: float, return_weightmap: bool):
+DetectionMode = Literal["standard", "area", "watershed", "template"]
+
+
+def _finite_optional_float(value: Optional[float], name: str) -> Optional[float]:
+    if value is None:
+        return None
+    if not np.isfinite(value):
+        raise HTTPException(status_code=400, detail=f"{name} must be finite")
+    return float(value)
+
+
+def _resolve_template_path(username: str, particle_name: Optional[str],
+                           crop_id: Optional[str], template_path: Optional[str]) -> Optional[Path]:
+    if particle_name and crop_id:
+        if username not in sessions:
+            load_user_session(username)
+        samples = sessions[username].get("samples", {}).get(particle_name, [])
+        crop = next((s for s in samples if s.get("id") == crop_id), None)
+        if not crop:
+            raise HTTPException(status_code=404, detail="Template crop not found")
+        path = Path(crop["path"])
+    elif template_path:
+        path = Path(template_path)
+        if not path.is_absolute():
+            path = get_user_dir(username) / path
+    else:
+        return None
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Template image not found: {path}")
+    return path
+
+
+def _validate_detection_params(username: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    mode = params.get("detection_mode", "standard")
+    if mode not in ("standard", "area", "watershed", "template"):
+        raise HTTPException(status_code=400, detail="detection_mode must be one of standard, area, watershed, template")
+    out = dict(params)
+    out["detection_mode"] = mode
+    out["alpha"] = float(out.get("alpha", 1.0))
+    out["beta"] = float(out.get("beta", 0.0))
+    out["cutoff"] = float(out.get("cutoff", 0.8))
+    if not 0 <= out["cutoff"] <= 1:
+        raise HTTPException(status_code=400, detail="cutoff must be between 0 and 1")
+    if mode == "area":
+        out["area_min_area"] = int(out.get("area_min_area", 200))
+        out["area_max_area"] = int(out.get("area_max_area", 500))
+        if out["area_min_area"] <= 0 or out["area_max_area"] <= 0:
+            raise HTTPException(status_code=400, detail="area min_area and max_area must be positive")
+        if out["area_min_area"] > out["area_max_area"]:
+            raise HTTPException(status_code=400, detail="area min_area must be <= max_area")
+    if mode == "watershed":
+        out["watershed_min_distance"] = int(out.get("watershed_min_distance", 15))
+        out["watershed_min_area"] = int(out.get("watershed_min_area", 20))
+        if out["watershed_min_distance"] <= 0 or out["watershed_min_area"] <= 0:
+            raise HTTPException(status_code=400, detail="watershed min_distance and min_area must be positive")
+    if mode == "template":
+        out["template_angle_step"] = int(out.get("template_angle_step", 2))
+        out["template_refine_radius"] = int(out.get("template_refine_radius", 25))
+        out["template_search_radius"] = int(out.get("template_search_radius", 5))
+        if out["template_angle_step"] <= 0 or out["template_angle_step"] > 360:
+            raise HTTPException(status_code=400, detail="template angle_step must be between 1 and 360")
+        if out["template_refine_radius"] <= 0:
+            raise HTTPException(status_code=400, detail="template refine_radius must be positive")
+        if out["template_search_radius"] < 0:
+            raise HTTPException(status_code=400, detail="template search radius must be non-negative")
+        phi = _finite_optional_float(out.get("template_phi_deg"), "template_phi_deg")
+        if phi is not None and not 0 <= phi <= 360:
+            raise HTTPException(status_code=400, detail="template_phi_deg must be between 0 and 360")
+        if phi is None and out.get("template_particle_name") and out.get("template_crop_id"):
+            if username not in sessions:
+                load_user_session(username)
+            samples = sessions[username].get("samples", {}).get(out["template_particle_name"], [])
+            crop = next((s for s in samples if s.get("id") == out["template_crop_id"]), None)
+            if crop and crop.get("template_phi_deg") is not None:
+                phi = _finite_optional_float(crop.get("template_phi_deg"), "template_phi_deg")
+                if phi is not None and not 0 <= phi <= 360:
+                    raise HTTPException(status_code=400, detail="stored template_phi_deg must be between 0 and 360")
+        template_path = _resolve_template_path(
+            username,
+            out.get("template_particle_name"),
+            out.get("template_crop_id"),
+            out.get("template_path"),
+        )
+        if template_path is None:
+            raise HTTPException(status_code=400, detail="template mode requires a template crop or template_path")
+        if phi is None and "phi" not in template_path.name:
+            raise HTTPException(status_code=400, detail="template_phi_deg is required because the template filename does not contain phi<angle>")
+        out["template_path"] = str(template_path)
+        out["template_phi_deg"] = phi
+    return out
+
+
+def _build_template_bank(params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if params.get("detection_mode") != "template":
+        return None
+    try:
+        return utils.build_template_bank(
+            sample_path=params["template_path"],
+            angle_step=params["template_angle_step"],
+            template_phi_deg=params.get("template_phi_deg"),
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _weights_from_output(model_output: Optional[torch.Tensor], height: int, width: int) -> Optional[np.ndarray]:
+    if model_output is None:
+        return None
+    if len(model_output.shape) == 4 and model_output.shape[1] >= 3:
+        weights = model_output[0, -1].detach().cpu().numpy()
+    elif len(model_output.shape) == 4:
+        weights = model_output[0, 0].detach().cpu().numpy()
+    else:
+        return None
+    if weights.shape != (height, width):
+        weights = cv2.resize(weights, (width, height), interpolation=cv2.INTER_LINEAR)
+    return weights
+
+
+def _detect_arrays(lodestar: Any, image: np.ndarray, params: Dict[str, Any],
+                   template_bank: Optional[Dict[str, Any]]) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+    image = utils.preprocess_image(image).astype(np.float32)
+    height, width = image.shape
+    device = next(lodestar.parameters()).device
+    image_tensor = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().to(device)
+    with torch.no_grad():
+        model_output = lodestar(image_tensor)
+        weights = _weights_from_output(model_output, height, width)
+        mode = params["detection_mode"]
+        orientations = None
+        orientation_ncc = None
+        if mode == "area":
+            detections = utils.detect_by_area(
+                weights,
+                cutoff=params["cutoff"],
+                min_area=params["area_min_area"],
+                max_area=params["area_max_area"],
+            )
+        elif mode == "watershed":
+            detections = utils.detect_by_watershed(
+                weights,
+                cutoff=params["cutoff"],
+                min_distance=params["watershed_min_distance"],
+                min_area=params["watershed_min_area"],
+            )
+        else:
+            raw = lodestar.detect(
+                image_tensor,
+                alpha=params["alpha"],
+                beta=params["beta"],
+                mode="constant",
+                cutoff=params["cutoff"],
+            )[0]
+            if len(raw) > 0:
+                detections_xy = raw[:, [1, 0]]
+                detections_np = detections_xy.detach().cpu().numpy() if hasattr(detections_xy, "detach") else np.asarray(detections_xy)
+            else:
+                detections_np = np.empty((0, 2))
+            if mode == "template":
+                if template_bank is None:
+                    raise HTTPException(status_code=400, detail="template mode requires a template bank")
+                clustered = utils.cluster_nearby_detections(detections_np, distance_threshold=20)
+                oriented = utils.orientation_postprocess(
+                    image=image,
+                    detections=clustered,
+                    template_bank=template_bank,
+                    refine_radius=params["template_refine_radius"],
+                    search_r=params["template_search_radius"],
+                )
+                detections = oriented[:, :2]
+                orientations = oriented[:, 2]
+                orientation_ncc = oriented[:, 3]
+            else:
+                detections = detections_np
+    return detections, weights, orientations, orientation_ncc
+
+
+def run_detection_on_image(lodestar: Any, img: Image.Image, params: Dict[str, Any],
+                           return_weightmap: bool, template_bank: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if img.mode != "L":
         img = img.convert("L")
     image = np.array(img).astype(np.float32)
-    device = next(lodestar.parameters()).device
-    image_tensor = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().to(device)
-
-    with torch.no_grad():
-        model_output = lodestar(image_tensor)
-        detections = lodestar.detect(image_tensor, alpha=alpha, beta=beta, mode="constant", cutoff=cutoff)[0]
-
-    if len(detections) > 0:
-        d = detections[:, [1, 0]]
-        detections_list = d.cpu().tolist() if hasattr(d, 'cpu') else d.tolist()
-    else:
-        detections_list = []
+    detections, weights, orientations, orientation_ncc = _detect_arrays(lodestar, image, params, template_bank)
+    detections_list: List[List[float]] = []
+    for i, det in enumerate(detections):
+        row = [float(det[0]), float(det[1])]
+        if orientations is not None and i < len(orientations):
+            row.append(float(orientations[i]))
+            row.append(float(orientation_ncc[i]) if orientation_ncc is not None and i < len(orientation_ncc) else float("nan"))
+        detections_list.append(row)
 
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -920,15 +1217,13 @@ def run_detection_on_image(lodestar, img: Image.Image, alpha: float, beta: float
         "width": img.width,
         "height": img.height,
     }
+    if orientations is not None:
+        result["phi"] = [float(v) for v in orientations]
+    if orientation_ncc is not None:
+        result["orientation_ncc"] = [float(v) for v in orientation_ncc]
 
-    if return_weightmap and model_output is not None:
-        if model_output.shape[1] >= 3:
-            weights = model_output[0, -1].detach().cpu().numpy()
-        else:
-            weights = model_output[0, 0].detach().cpu().numpy()
+    if return_weightmap and weights is not None:
         h, w = result["height"], result["width"]
-        if weights.shape != (h, w):
-            weights = cv2.resize(weights, (w, h), interpolation=cv2.INTER_LINEAR)
         wnorm = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
         wcol = (plt.cm.hot(wnorm)[:, :, :3] * 255).astype(np.uint8)
         wbuf = BytesIO()
@@ -984,6 +1279,18 @@ async def get_detect_frame(
     username: str, file_id: str, index: int,
     model_id: str,
     alpha: float = 1.0, beta: float = 0.0, cutoff: float = 0.8,
+    detection_mode: DetectionMode = "standard",
+    area_min_area: int = 200,
+    area_max_area: int = 500,
+    watershed_min_distance: int = 15,
+    watershed_min_area: int = 20,
+    template_particle_name: Optional[str] = None,
+    template_crop_id: Optional[str] = None,
+    template_path: Optional[str] = None,
+    template_phi_deg: Optional[float] = None,
+    template_angle_step: int = 2,
+    template_refine_radius: int = 25,
+    template_search_radius: int = 5,
     return_weightmap: bool = False,
 ):
     if username not in sessions:
@@ -997,7 +1304,25 @@ async def get_detect_frame(
         file_info["frame_count"] = frame_count
         save_user_session(username)
     lodestar = load_model(username, model_id)
-    result = run_detection_on_image(lodestar, img, alpha, beta, cutoff, return_weightmap)
+    params = _validate_detection_params(username, {
+        "alpha": alpha,
+        "beta": beta,
+        "cutoff": cutoff,
+        "detection_mode": detection_mode,
+        "area_min_area": area_min_area,
+        "area_max_area": area_max_area,
+        "watershed_min_distance": watershed_min_distance,
+        "watershed_min_area": watershed_min_area,
+        "template_particle_name": template_particle_name,
+        "template_crop_id": template_crop_id,
+        "template_path": template_path,
+        "template_phi_deg": template_phi_deg,
+        "template_angle_step": template_angle_step,
+        "template_refine_radius": template_refine_radius,
+        "template_search_radius": template_search_radius,
+    })
+    template_bank = _build_template_bank(params)
+    result = run_detection_on_image(lodestar, img, params, return_weightmap, template_bank)
     result["frame_index"] = index
     result["frame_count"] = frame_count
     return result
@@ -1011,13 +1336,43 @@ async def run_detection(
     alpha: float = Form(1.0),
     beta: float = Form(0.0),
     cutoff: float = Form(0.8),
+    detection_mode: DetectionMode = Form("standard"),
+    area_min_area: int = Form(200),
+    area_max_area: int = Form(500),
+    watershed_min_distance: int = Form(15),
+    watershed_min_area: int = Form(20),
+    template_particle_name: Optional[str] = Form(None),
+    template_crop_id: Optional[str] = Form(None),
+    template_path: Optional[str] = Form(None),
+    template_phi_deg: Optional[float] = Form(None),
+    template_angle_step: int = Form(2),
+    template_refine_radius: int = Form(25),
+    template_search_radius: int = Form(5),
     return_weightmap: bool = Form(False),
 ):
     lodestar = load_model(username, model_id)
     content = await file.read()
     img = Image.open(BytesIO(content))
-    result = run_detection_on_image(lodestar, img, alpha, beta, cutoff, return_weightmap)
-    result["params"] = {"alpha": alpha, "beta": beta, "cutoff": cutoff}
+    params = _validate_detection_params(username, {
+        "alpha": alpha,
+        "beta": beta,
+        "cutoff": cutoff,
+        "detection_mode": detection_mode,
+        "area_min_area": area_min_area,
+        "area_max_area": area_max_area,
+        "watershed_min_distance": watershed_min_distance,
+        "watershed_min_area": watershed_min_area,
+        "template_particle_name": template_particle_name,
+        "template_crop_id": template_crop_id,
+        "template_path": template_path,
+        "template_phi_deg": template_phi_deg,
+        "template_angle_step": template_angle_step,
+        "template_refine_radius": template_refine_radius,
+        "template_search_radius": template_search_radius,
+    })
+    template_bank = _build_template_bank(params)
+    result = run_detection_on_image(lodestar, img, params, return_weightmap, template_bank)
+    result["params"] = params
     return result
 
 
@@ -1034,6 +1389,7 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
         background_jobs[job_id]["status"] = "running"
         save_background_jobs()
         lodestar = load_model(username, model_id)
+        template_bank = _build_template_bank(params)
 
         rows = []
         global_frame = 0
@@ -1050,15 +1406,21 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
                     )
                     first_frame = False
                 result = run_detection_on_image(
-                    lodestar, img, params["alpha"], params["beta"], params["cutoff"], False
+                    lodestar, img, params, False, template_bank
                 )
                 for det in result["detections"]:
-                    rows.append({
-                        "x": det[0], "y": det[1], "phi": np.nan,
+                    row = {
+                        "x": det[0], "y": det[1],
+                        "phi": det[2] if len(det) > 2 else np.nan,
                         "frame": global_frame,
                         "frame_local": local_i,
                         "stack": fi,
                         "source_file": file_info.get("filename", ""),
+                    }
+                    if len(det) > 3:
+                        row["orientation_ncc"] = det[3]
+                    rows.append({
+                        **row
                     })
                 global_frame += 1
                 total = max(1, int(background_jobs[job_id].get("frames_total") or global_frame))
@@ -1080,8 +1442,12 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
         background_jobs[job_id]["frames_total"] = global_frame
         background_jobs[job_id]["progress"] = 100
 
-        cols = ["x", "y", "phi", "frame", "frame_local", "stack", "source_file"]
+        cols = ["x", "y", "phi", "orientation_ncc", "frame", "frame_local", "stack", "source_file"]
         df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+        for col in cols:
+            if col not in df.columns:
+                df[col] = np.nan if col in ("phi", "orientation_ncc") else ""
+        df = df[cols]
         df.to_csv(output_csv)
 
         background_jobs[job_id]["status"] = "completed"
@@ -1138,7 +1504,7 @@ async def detect_batch(request: BatchDetectRequest):
     }
     save_background_jobs()
 
-    params = {"alpha": request.alpha, "beta": request.beta, "cutoff": request.cutoff}
+    params = _validate_detection_params(request.username, request.model_dump(exclude={"username", "model_id", "file_id", "file_ids", "output_name"}))
     t = threading.Thread(
         target=run_batch_detection,
         args=(job_id, request.username, file_infos, request.model_id, params, output_csv),
@@ -1390,11 +1756,16 @@ async def analyze_abp(request: AbpRequest):
     n_tracks = int(tracks["track_id"].nunique())
     n_real = int((~tracks["is_interpolated"]).sum())
 
+    has_orientation = bool(tracks["phi"].notna().any())
+
     msd_df = compute_msd(tracks, request.max_lag, request.min_track, request.include_interpolated)
-    amsd_df = compute_angular_msd(tracks, request.max_lag, request.min_track, request.include_interpolated)
+    if has_orientation:
+        amsd_df = compute_angular_msd(tracks, request.max_lag, request.min_track, request.include_interpolated)
+    else:
+        amsd_df = pd.DataFrame(columns=["lag", "amsd"])
 
     fit_params_px = fit_msd(msd_df, request.dt)
-    D_r_angular = fit_angular_msd(amsd_df, request.dt)
+    D_r_angular = fit_angular_msd(amsd_df, request.dt) if has_orientation else None
 
     px = request.px_size
     msd_df["msd_um2"] = msd_df["msd"] * px ** 2
@@ -1407,9 +1778,12 @@ async def analyze_abp(request: AbpRequest):
     result: Dict[str, Any] = {
         "n_tracks": n_tracks,
         "n_real_rows": n_real,
-        "D_r_angular": float(D_r_angular) if D_r_angular is not None else None,
         "plot_name": f"{plot_base}_msd.png",
     }
+    if D_r_angular is not None:
+        result["D_r_angular"] = float(D_r_angular)
+    if not has_orientation:
+        result["orientation_note"] = "Orientation data is absent; these tracks were produced without template-mode phi, so angular MSD and D_r_angular are omitted."
 
     if fit_params_px is not None:
         D_t_px, v0_px, D_r_msd = fit_params_px
@@ -1462,6 +1836,9 @@ async def get_default_config():
     defaults = {
         "n_transforms": 4, "max_epochs": 100, "batch_size": 8, "lr": 0.0001, "length": 400,
         "alpha": 1.0, "beta": 0.0, "cutoff": 0.8,
+        "area_detection": {"min_area": 200, "max_area": 500},
+        "watershed_detection": {"min_distance": 15, "min_area": 20},
+        "orientation": {"template_sample": None, "angle_step": 2, "refine_radius": 25, "ncc_search_r": 5},
         "mul_min": 0.9, "mul_max": 1.1, "add_min": -0.1, "add_max": 0.1,
         "scale_min": 0.9, "scale_max": 1.1, "rotation_min": 0.0, "rotation_max": 1.0,
         "translate_min": -5.0, "translate_max": 5.0,
@@ -1474,6 +1851,12 @@ async def get_default_config():
             for key in defaults:
                 if key in config:
                     defaults[key] = config[key]
+            if "area_detection" in config:
+                defaults["area_detection"].update(config.get("area_detection") or {})
+            if "watershed_detection" in config:
+                defaults["watershed_detection"].update(config.get("watershed_detection") or {})
+            if "orientation" in config:
+                defaults["orientation"].update(config.get("orientation") or {})
         except Exception:
             pass
     return defaults

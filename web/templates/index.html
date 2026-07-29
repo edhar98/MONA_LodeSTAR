@@ -15,8 +15,25 @@
   --success: #3dca7a;
   --warn: #e0943a;
   --error: #e05555;
+  --tip-bg: #0a0c10;
+  --tip-shadow: 0 4px 14px rgba(0,0,0,0.45);
   --mono: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f6fa;
+  --bg2: #ffffff;
+  --bg3: #e9edf5;
+  --border: #ccd3df;
+  --text: #172033;
+  --text2: #5c6678;
+  --accent: #256fd5;
+  --success: #20875a;
+  --warn: #b96b18;
+  --error: #c83f3f;
+  --tip-bg: #ffffff;
+  --tip-shadow: 0 8px 24px rgba(23,32,51,0.16);
 }
 
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
@@ -59,8 +76,8 @@ textarea:focus { border-color: var(--accent); }
 #field-tip {
   position: fixed; z-index: 9999; display: none; pointer-events: none;
   max-width: 280px; padding: 7px 9px; border-radius: 4px;
-  background: #0a0c10; color: var(--text); border: 1px solid var(--border);
-  font-size: 11px; line-height: 1.35; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  background: var(--tip-bg); color: var(--text); border: 1px solid var(--border);
+  font-size: 11px; line-height: 1.35; box-shadow: var(--tip-shadow);
 }
 nav { flex: 1; padding: 8px 0; }
 .nav-btn {
@@ -94,6 +111,32 @@ main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
 /* Cards */
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.resizable-card {
+  position: relative;
+  min-width: 220px;
+  min-height: 120px;
+  overflow: auto;
+}
+.resize-grip {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  opacity: 0.75;
+  z-index: 2;
+}
+.resize-grip:hover { border-color: var(--accent); opacity: 1; }
+.resizing-card { user-select: none; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.help-card h3 { font-size: 14px; margin-bottom: 8px; color: var(--text); }
+.help-card p { color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
+.help-card ul { color: var(--text2); line-height: 1.5; padding-left: 18px; }
+.help-card li { margin-bottom: 6px; }
+.help-term { color: var(--text); font-weight: 600; }
 .card-title {
   font-size: 12px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.8px; color: var(--text2); margin-bottom: 12px;
@@ -250,6 +293,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       <button class="nav-btn" data-panel="detection"><span class="icon">&#128269;</span>Detection</button>
       <button class="nav-btn" data-panel="tracking"><span class="icon">&#128739;</span>Tracking</button>
       <button class="nav-btn" data-panel="analysis"><span class="icon">&#128202;</span>Analysis</button>
+      <button class="nav-btn" data-panel="help"><span class="icon">&#10067;</span>Help</button>
     </nav>
     <div class="sidebar-bottom">
       <div class="user-badge">
@@ -267,6 +311,8 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       <span class="topbar-title" id="panel-title">TDMS Explorer</span>
       <div class="topbar-actions">
         <span style="font-size:11px;color:var(--text2)">Beta version — feedback welcome</span>
+        <button class="btn btn-outline btn-sm" id="theme-toggle-btn">Light</button>
+        <button class="btn btn-outline btn-sm" id="layout-reset-btn">Reset layout</button>
         <button class="btn btn-outline btn-sm" id="feedback-btn-top">Send feedback</button>
       </div>
     </div>
@@ -294,6 +340,11 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
           <label><input type="checkbox" id="server-normalize-check" checked> Normalize</label>
           <div id="server-path-status" style="margin-top:6px;font-size:12px"></div>
           <div class="card-title" style="margin-top:16px">Session files</div>
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" id="file-move-up-btn" title="Move selected file up">&#9650;</button>
+            <button class="btn btn-outline btn-sm" id="file-move-down-btn" title="Move selected file down">&#9660;</button>
+            <button class="btn btn-danger btn-sm" id="file-delete-selected-btn" title="Remove selected files">&#10005; Selected</button>
+          </div>
           <div id="file-list" class="file-list"><div style="color:var(--text2)">No files loaded</div></div>
         </div>
 
@@ -466,6 +517,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
         <video id="merged-video" controls style="width:100%;max-height:420px;margin-top:10px;border-radius:4px;background:#000"></video>
         <a class="btn btn-outline btn-sm" id="merged-download-btn" style="margin-top:8px;display:inline-flex" href="#" download>&#11015; Download</a>
       </div>
+
     </div>
 
     <!-- ===== TRAINING ===== -->
@@ -505,6 +557,10 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
               <span style="align-self:center;color:var(--text2)">:</span>
               <input type="number" id="crop-aspect-h" value="1" min="1" step="1" style="flex:1" title="Height">
             </div>
+            <div class="card-title" style="margin-top:16px">Orientation</div>
+            <label><input type="checkbox" id="crop-orientation-enabled"> Store template direction</label>
+            <label>Reference angle <span id="crop-orientation-val" class="mono" style="float:right">--</span></label>
+            <input type="number" id="crop-orientation-angle" value="" min="0" max="360" step="0.1" placeholder="Draw arrow on crop">
             <div id="train-selection-info" style="font-size:11px;color:var(--text2);margin-top:10px;min-height:32px">Drag to select. Drag inside a selection to move it.</div>
             <button class="btn btn-primary btn-sm" id="crop-sample-btn" style="width:100%;margin-top:8px" disabled>Add to Pool</button>
             <div id="sample-status" style="margin-top:6px;font-size:12px"></div>
@@ -606,6 +662,30 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
           <label>Alpha</label><input type="number" id="det-alpha" value="1.0" step="0.1">
           <label>Beta</label><input type="number" id="det-beta" value="0.0" step="0.1">
           <label>Cutoff</label><input type="number" id="det-cutoff" value="0.8" step="0.05" min="0" max="1">
+          <label>Mode</label>
+          <select id="det-mode">
+            <option value="standard">Standard</option>
+            <option value="area">Area</option>
+            <option value="watershed">Watershed</option>
+            <option value="template">Template</option>
+          </select>
+          <div id="det-area-params" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg3);border-radius:4px">
+            <label>Area min</label><input type="number" id="det-area-min" value="200" min="1">
+            <label>Area max</label><input type="number" id="det-area-max" value="500" min="1">
+          </div>
+          <div id="det-watershed-params" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg3);border-radius:4px">
+            <label>Minimum distance</label><input type="number" id="det-watershed-distance" value="15" min="1">
+            <label>Minimum area</label><input type="number" id="det-watershed-area" value="20" min="1">
+          </div>
+          <div id="det-template-params" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg3);border-radius:4px">
+            <label>Template crop</label>
+            <select id="det-template-crop"><option value="">&#8212; Select crop &#8212;</option></select>
+            <label>Reference angle</label><input type="number" id="det-template-phi" value="" min="0" max="360" step="0.1" placeholder="Stored on crop or type 0-360">
+            <div style="font-size:11px;color:var(--text2);line-height:1.35;margin-top:4px">Uses the angle stored when the crop was made. Type a fallback angle for older crops.</div>
+            <label>Angle step</label><input type="number" id="det-template-step" value="2" min="1" max="360">
+            <label>Refine radius</label><input type="number" id="det-template-refine" value="25" min="1">
+            <label>NCC search radius</label><input type="number" id="det-template-search" value="5" min="0">
+          </div>
           <label><input type="checkbox" id="det-weightmap"> Show weight map</label>
           <button class="btn btn-primary" id="det-run-btn" style="margin-top:12px;width:100%">&#9654; Detect Frame</button>
         </div>
@@ -738,6 +818,68 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
         </div>
       </div>
     </div>
+
+    <div class="panel" id="panel-help">
+      <div class="card help-card">
+        <div class="card-title">LodeSTAR Overview</div>
+        <p><span class="help-term">LodeSTAR</span> means Localization and detection from Symmetries, Translations And Rotations. It is a self-supervised microscopy detector: instead of needing manually labelled particle centers, it learns from transformed versions of the same particle image.</p>
+        <p>The model predicts a dense map over the image. At each pixel it estimates an x displacement, a y displacement, and a confidence value. Detection then converts those dense predictions into particle centers.</p>
+      </div>
+
+      <div class="help-grid">
+        <div class="card help-card">
+          <h3>Training</h3>
+          <ul>
+            <li><span class="help-term">Samples</span> are crops of one particle class. They define what the model should detect.</li>
+            <li><span class="help-term">Transforms</span> are random rotations, shifts, intensity changes, and other augmentations used to create the self-supervised training signal.</li>
+            <li><span class="help-term">Epochs</span> are full passes over the generated training samples. More epochs can improve the model but take longer.</li>
+          </ul>
+        </div>
+
+        <div class="card help-card">
+          <h3>Detection</h3>
+          <ul>
+            <li><span class="help-term">Standard mode</span> uses the LodeSTAR confidence map and local maxima to find particle centers.</li>
+            <li><span class="help-term">Area mode</span> keeps connected high-confidence regions whose size is inside the configured area range.</li>
+            <li><span class="help-term">Watershed mode</span> separates touching high-confidence regions using seed spacing and minimum area parameters.</li>
+            <li><span class="help-term">Template mode</span> first detects positions, then compares a rotated crop template around each detection to estimate orientation angle phi.</li>
+          </ul>
+        </div>
+
+        <div class="card help-card">
+          <h3>Orientation</h3>
+          <p>Template-mode orientation needs a crop with a known reference angle. In the Training sample view, enable <span class="help-term">Store template direction</span>, draw the direction arrow on the crop, and add it to the pool. Detection can then use that crop as the template.</p>
+          <p>The batch detection CSV stores <span class="help-term">phi</span> as the orientation angle in radians and <span class="help-term">orientation_ncc</span> as the template-match quality score.</p>
+        </div>
+
+        <div class="card help-card">
+          <h3>Tracking</h3>
+          <ul>
+            <li><span class="help-term">Non-maximum suppression</span> removes duplicate detections that are too close in the same frame.</li>
+            <li><span class="help-term">Hungarian linking</span> assigns detections between consecutive frames using the globally shortest valid set of links.</li>
+            <li><span class="help-term">Gap interpolation</span> fills short missing segments and marks those rows as interpolated.</li>
+          </ul>
+        </div>
+
+        <div class="card help-card">
+          <h3>Analysis</h3>
+          <ul>
+            <li><span class="help-term">Mean squared displacement</span> measures how far particles move as a function of time lag.</li>
+            <li><span class="help-term">Active Brownian Particle fitting</span> estimates physical parameters such as translational diffusion, propulsion speed, and rotational diffusion.</li>
+            <li><span class="help-term">Angular mean squared displacement</span> needs finite orientation values. If tracks were made without template mode, angular results are omitted.</li>
+          </ul>
+        </div>
+
+        <div class="card help-card">
+          <h3>File Terms</h3>
+          <ul>
+            <li><span class="help-term">TDMS</span> is National Instruments Technical Data Management Streaming format, commonly used for instrument data.</li>
+            <li><span class="help-term">CSV</span> is a comma-separated values table used here for detections, tracks, and analysis outputs.</li>
+            <li><span class="help-term">FPS</span> means frames per second for video export and playback.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -798,6 +940,7 @@ async function api(path, body, method) {
 // ---- State ----
 let username = localStorage.getItem('mona_user') || '';
 let uploadedFiles = {}, detFiles = {}, models = [];
+let selectedSessionFileIds = new Set();
 let currentFileId = null, currentFrame = 0;
 let detFileId = null, detFrame = 0, detFileCount = 1;
 let trainJobId = null, trainWs = null;
@@ -808,6 +951,125 @@ let cropImage = null, cropScale = 1, cropStart = null, cropRect = null;
 let cropMode = null, cropMoveOff = null, cropResizeCorner = null;
 let cropSourceCanvas = null;
 let cropAdjustedCache = null;
+let cropOrientationDeg = null;
+let lastSessionFileSelectIndex = null;
+
+function applyTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('mona_theme', next);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = next === 'light' ? 'Dark' : 'Light';
+}
+
+applyTheme(localStorage.getItem('mona_theme') || 'dark');
+document.getElementById('theme-toggle-btn').onclick = () => {
+  const current = document.documentElement.dataset.theme || 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+};
+
+function layoutStorageKey() {
+  return 'mona_card_layout:' + (username || 'anonymous');
+}
+
+function loadCardLayout() {
+  try { return JSON.parse(localStorage.getItem(layoutStorageKey()) || '{}'); }
+  catch (_) { return {}; }
+}
+
+function saveCardLayout(layout) {
+  localStorage.setItem(layoutStorageKey(), JSON.stringify(layout));
+}
+
+function cardLayoutKey(card, index) {
+  const panel = card.closest('.panel');
+  const panelId = panel ? panel.id : 'app';
+  const title = card.querySelector('.card-title');
+  const name = title ? title.textContent.trim().replace(/\s+/g, '-').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) : 'card';
+  return panelId + ':' + index + ':' + name;
+}
+
+function applyCardSize(card, size) {
+  if (!size) return;
+  if (size.width) {
+    card.style.width = size.width + 'px';
+    card.style.maxWidth = '100%';
+    if (card.classList.contains('col')) card.style.flex = '0 0 ' + size.width + 'px';
+  }
+  if (size.height) card.style.height = size.height + 'px';
+}
+
+function resetCardSize(card) {
+  card.style.width = card.dataset.initialWidth || '';
+  card.style.height = card.dataset.initialHeight || '';
+  card.style.maxWidth = card.dataset.initialMaxWidth || '';
+  if (card.classList.contains('col')) card.style.flex = card.dataset.initialFlex || '';
+}
+
+function initResizableCards() {
+  const layout = loadCardLayout();
+  document.querySelectorAll('#app .card').forEach((card, index) => {
+    if (card.dataset.resizeBound) return;
+    card.dataset.resizeBound = '1';
+    card.dataset.layoutKey = cardLayoutKey(card, index);
+    card.dataset.initialWidth = card.style.width || '';
+    card.dataset.initialHeight = card.style.height || '';
+    card.dataset.initialMaxWidth = card.style.maxWidth || '';
+    card.dataset.initialFlex = card.style.flex || '';
+    card.classList.add('resizable-card');
+    applyCardSize(card, layout[card.dataset.layoutKey]);
+    const grip = document.createElement('div');
+    grip.className = 'resize-grip';
+    grip.title = 'Drag to resize. Double-click to reset this panel.';
+    card.appendChild(grip);
+    grip.addEventListener('dblclick', e => {
+      e.preventDefault();
+      resetCardSize(card);
+      const next = loadCardLayout();
+      delete next[card.dataset.layoutKey];
+      saveCardLayout(next);
+    });
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const rect = card.getBoundingClientRect();
+      const parent = card.parentElement ? card.parentElement.getBoundingClientRect() : document.body.getBoundingClientRect();
+      const maxWidth = Math.max(240, parent.width - 8);
+      const maxHeight = Math.max(160, window.innerHeight - rect.top - 24);
+      document.body.classList.add('resizing-card');
+      grip.setPointerCapture(e.pointerId);
+      const move = ev => {
+        const width = Math.min(maxWidth, Math.max(220, rect.width + ev.clientX - startX));
+        const height = Math.min(maxHeight, Math.max(120, rect.height + ev.clientY - startY));
+        card.style.width = width + 'px';
+        card.style.maxWidth = '100%';
+        card.style.height = height + 'px';
+        if (card.classList.contains('col')) card.style.flex = '0 0 ' + width + 'px';
+      };
+      const up = ev => {
+        document.body.classList.remove('resizing-card');
+        try { grip.releasePointerCapture(ev.pointerId); } catch (_) {}
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        const next = loadCardLayout();
+        next[card.dataset.layoutKey] = {
+          width: Math.round(card.getBoundingClientRect().width),
+          height: Math.round(card.getBoundingClientRect().height),
+        };
+        saveCardLayout(next);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  });
+}
+
+document.getElementById('layout-reset-btn').onclick = () => {
+  localStorage.removeItem(layoutStorageKey());
+  document.querySelectorAll('#app .resizable-card').forEach(resetCardSize);
+};
 
 // ====================================================================
 // LOGIN
@@ -905,27 +1167,32 @@ const FIELD_HINTS = {
   'login-password': 'Password for your MONA Track account.',
   'feedback-message': 'Describe the issue or idea. Include what you clicked and what you expected.',
   'feedback-contact': 'Optional. Email or name so we can follow up if needed.',
-  'normalize-check': 'Scale each TDMS frame to 0–255 using its own min/max before display and export.',
+  'theme-toggle-btn': 'Switch between dark theme and light theme.',
+  'layout-reset-btn': 'Restore all resizable cards to their default widths and heights.',
+  'normalize-check': 'Scale each Technical Data Management Streaming frame to 0-255 using its own minimum and maximum before display and export.',
   'server-path-input': 'Absolute path or glob on the server, e.g. /data/run/*.tdms. Files are linked into this session.',
   'server-normalize-check': 'Normalize intensity when loading files from a server path.',
-  'viewer-cmap': 'Color lookup applied to the preview image. Gray is fastest.',
-  'channel-group': 'TDMS group that contains the numeric channel to plot.',
+  'file-move-up-btn': 'Move the selected session file earlier in batch and visualization order.',
+  'file-move-down-btn': 'Move the selected session file later in batch and visualization order.',
+  'file-delete-selected-btn': 'Remove checked session files. Server-linked originals are not deleted.',
+  'viewer-cmap': 'Colormap: the color lookup table applied to the preview image. Gray is fastest.',
+  'channel-group': 'Technical Data Management Streaming group that contains the numeric channel to plot.',
   'channel-name': 'Channel inside the selected group.',
   'analysis-frame': 'Zero-based frame index used for histogram, filters, edges, and profiles.',
   'hist-bins': 'Number of histogram bins (higher = finer intensity distribution).',
   'filter-type': 'Image filter applied to the selected frame.',
-  'filter-sigma': 'Filter strength: sigma for gaussian/bilateral, or kernel size for median.',
+  'filter-sigma': 'Filter strength: sigma is the blur width for gaussian/bilateral filters, or kernel size for median filtering.',
   'edge-method': 'Edge detector used on the selected frame.',
   'profile-dir': 'Direction of the intensity line profile across the frame.',
   'profile-pos': 'Line position in pixels. Leave blank to use the frame center.',
   'compare-a': 'First frame index for comparison.',
   'compare-b': 'Second frame index for comparison.',
   'compare-method': 'How the two frames are compared (pixel difference modes).',
-  'export-format': 'PNG zip exports individual frames; MP4 builds a video.',
+  'export-format': 'Portable Network Graphics zip exports individual frames; MPEG-4 builds a video.',
   'export-fps': 'Frames per second used when exporting MP4.',
-  'merge-name': 'Filename (without path) for the merged MP4 under results/merged/.',
+  'merge-name': 'Filename without path for the merged MPEG-4 video under results/merged/.',
   'merge-fps': 'Playback frame rate for the merged video.',
-  'merge-normalize': 'Normalize each source frame before writing into the merged MP4.',
+  'merge-normalize': 'Normalize each source frame before writing it into the merged MPEG-4 video.',
   'merged-select': 'Previously saved merged videos in your results/merged folder.',
   'train-particle': 'Name for this particle class / sample pool (used for training output).',
   'train-file-select': 'Session file used as the source image stack for cropping samples.',
@@ -933,13 +1200,15 @@ const FIELD_HINTS = {
   'adj-contrast': 'Contrast gain applied while previewing/cropping.',
   'adj-gamma': 'Gamma curve for preview/crop. 1.00 is linear.',
   'crop-aspect-mode': 'Constrain crop rectangle aspect ratio while dragging.',
+  'crop-orientation-enabled': 'Store a reference direction with the crop for template-mode orientation detection.',
+  'crop-orientation-angle': 'Reference angle in degrees. When enabled, drag inside the crop to draw the direction arrow.',
   'crop-aspect-w': 'Custom aspect width part (W in W:H).',
   'crop-aspect-h': 'Custom aspect height part (H in W:H).',
   'cfg-epochs': 'Number of training epochs (full passes over the augmented dataset).',
-  'cfg-batch': 'Samples per training batch. Lower if you run out of GPU/CPU memory.',
-  'cfg-lr': 'Adam learning rate. Typical LodeSTAR range is around 1e-4.',
+  'cfg-batch': 'Samples per training batch. Lower this if the graphics processing unit or central processing unit runs out of memory.',
+  'cfg-lr': 'Adam optimizer learning rate. Typical LodeSTAR values are around 0.0001.',
   'cfg-length': 'Synthetic dataset length: how many augmented samples are drawn per epoch cycle.',
-  'cfg-ntrans': 'LodeSTAR self-supervised transforms per sample.',
+  'cfg-ntrans': 'Number of self-supervised transforms applied to each sample before LodeSTAR compares consistency.',
   'cfg-mul-min': 'Minimum multiplicative intensity augmentation.',
   'cfg-mul-max': 'Maximum multiplicative intensity augmentation.',
   'cfg-add-min': 'Minimum additive intensity augmentation.',
@@ -951,31 +1220,41 @@ const FIELD_HINTS = {
   'cfg-rot-max': 'Maximum rotation as a fraction of a full turn (0–1).',
   'cfg-trans-min': 'Minimum translation in pixels (can be negative).',
   'cfg-trans-max': 'Maximum translation in pixels.',
-  'det-model-select': 'Trained LodeSTAR weights to use for detection.',
+  'det-model-select': 'Trained LodeSTAR model weights to use for particle detection.',
   'det-file-select': 'One or more session files. Multi-select for batch runs (Ctrl/Cmd click).',
   'det-frame': 'Zero-based frame index for single-frame detection preview.',
-  'det-alpha': 'LodeSTAR detect alpha: weight on the detection mode / local max scoring.',
-  'det-beta': 'LodeSTAR detect beta: secondary thresholding term.',
-  'det-cutoff': 'Confidence cutoff (0–1). Higher = fewer, stricter detections.',
+  'det-alpha': 'LodeSTAR alpha controls how strongly the confidence weight map contributes to the detection score.',
+  'det-beta': 'LodeSTAR beta controls how strongly local prediction consistency contributes to the detection score.',
+  'det-cutoff': 'Confidence cutoff from 0 to 1. Higher values keep fewer, stricter detections.',
+  'det-mode': 'Detection algorithm for this run: standard, area, watershed, or template orientation mode.',
+  'det-area-min': 'Smallest connected confidence region kept as a particle.',
+  'det-area-max': 'Largest connected confidence region kept as a particle.',
+  'det-watershed-distance': 'Minimum pixel spacing between watershed seeds.',
+  'det-watershed-area': 'Smallest watershed region kept as a particle.',
+  'det-template-crop': 'Existing crop used as the orientation template for this model particle.',
+  'det-template-phi': 'Known orientation of that template crop in degrees.',
+  'det-template-step': 'Template rotation step in degrees. Smaller is slower and finer.',
+  'det-template-refine': 'Pixel radius used to refine each detection center before matching.',
+  'det-template-search': 'Pixel search radius around each refined center for normalized cross-correlation template matching.',
   'det-weightmap': 'Overlay the model weight/confidence map on the preview.',
-  'batch-output-name': 'Base name for the detections CSV written to your results folder.',
-  'track-csv-select': 'Detection CSV to link into tracks (usually from batch detection).',
-  'trk-min-dist': 'Within-frame NMS radius in pixels: nearby detections are merged.',
+  'batch-output-name': 'Base name for the detections comma-separated values file written to your results folder.',
+  'track-csv-select': 'Detection comma-separated values file to link into tracks, usually from batch detection.',
+  'trk-min-dist': 'Within-frame non-maximum suppression radius in pixels: nearby duplicate detections are merged.',
   'trk-max-link': 'Maximum center-to-center distance (px) allowed when linking across frames.',
   'trk-min-track': 'Discard tracks shorter than this many frames after linking.',
   'trk-max-gap': 'Allow gaps of this many missing frames and interpolate through them.',
-  'trk-output-name': 'Base name for the tracks CSV. Leave empty for an automatic name.',
-  'trk-tracks-select': 'Tracks CSV used for download and visualization preview.',
-  'viz-bg-mode': 'Use session image/TDMS frames under the tracks, or a black canvas.',
+  'trk-output-name': 'Base name for the tracks comma-separated values file. Leave empty for an automatic name.',
+  'trk-tracks-select': 'Tracks comma-separated values file used for download and visualization preview.',
+  'viz-bg-mode': 'Use session image or Technical Data Management Streaming frames under the tracks, or a black canvas.',
   'viz-file-select': 'Background stacks in the same order as the detection batch (global frames).',
   'viz-fps': 'Frames per second for the preview video export.',
   'viz-trail': 'How many past positions to draw as a trail per track.',
-  'abp-csv-select': 'Tracks CSV for Active Brownian Particle / MSD fitting.',
+  'abp-csv-select': 'Tracks comma-separated values file for Active Brownian Particle and mean squared displacement fitting.',
   'abp-dt': 'Time between consecutive frames in seconds (e.g. 1/30 ≈ 0.0333).',
   'abp-px': 'Physical size of one pixel in micrometers.',
-  'abp-maxlag': 'Largest time lag (in frames) used when computing MSD curves.',
+  'abp-maxlag': 'Largest time lag in frames used when computing mean squared displacement curves.',
   'abp-mintrack': 'Only tracks with at least this many real (non-gap) frames enter the fit.',
-  'abp-include-interp': 'If checked, interpolated gap-fill points are included in MSD/ABP stats.',
+  'abp-include-interp': 'If checked, interpolated gap-fill points are included in mean squared displacement and Active Brownian Particle statistics.',
 };
 
 function applyFieldHints() {
@@ -1012,6 +1291,7 @@ function applyFieldHints() {
 
 async function initApp() {
   applyFieldHints();
+  initResizableCards();
   const h = await api('/health');
   const badge = document.getElementById('gpu-badge');
   if (h.gpu) { badge.textContent = 'GPU x' + h.gpu_count; badge.className = 'badge badge-gpu'; }
@@ -1022,7 +1302,26 @@ async function initApp() {
   const cfg = await api('/config/defaults');
   if (cfg.dt) document.getElementById('abp-dt').value = cfg.dt;
   if (cfg.px_size) document.getElementById('abp-px').value = cfg.px_size;
+  applyDetectionDefaults(cfg);
   resumeActiveJobs();
+}
+
+function applyDetectionDefaults(cfg) {
+  if (!cfg) return;
+  if (cfg.alpha != null) document.getElementById('det-alpha').value = cfg.alpha;
+  if (cfg.beta != null) document.getElementById('det-beta').value = cfg.beta;
+  if (cfg.cutoff != null) document.getElementById('det-cutoff').value = cfg.cutoff;
+  const area = cfg.area_detection || {};
+  if (area.min_area != null) document.getElementById('det-area-min').value = area.min_area;
+  if (area.max_area != null) document.getElementById('det-area-max').value = area.max_area;
+  const ws = cfg.watershed_detection || {};
+  if (ws.min_distance != null) document.getElementById('det-watershed-distance').value = ws.min_distance;
+  if (ws.min_area != null) document.getElementById('det-watershed-area').value = ws.min_area;
+  const orientation = cfg.orientation || {};
+  if (orientation.angle_step != null) document.getElementById('det-template-step').value = orientation.angle_step;
+  if (orientation.refine_radius != null) document.getElementById('det-template-refine').value = orientation.refine_radius;
+  if (orientation.ncc_search_r != null) document.getElementById('det-template-search').value = orientation.ncc_search_r;
+  updateDetectionModeUI();
 }
 
 const feedbackModal = document.getElementById('feedback-modal');
@@ -1153,8 +1452,8 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('panel-' + name).classList.add('active');
     document.getElementById('panel-title').textContent = btn.textContent.trim();
     if (name === 'tracking' || name === 'analysis') { refreshResultFiles(); refreshVizFileList(); }
-    if (name === 'detection') refreshModels();
-    if (name === 'files') refreshMergedVideos();
+  if (name === 'detection') refreshModels();
+  if (name === 'files') refreshMergedVideos();
     if (name === 'training') { refreshModels(); refreshFileList(); refreshCropPool(); }
   };
 });
@@ -1166,7 +1465,9 @@ function refreshFileList() {
   const list = document.getElementById('file-list');
   const trainSel = document.getElementById('train-file-select');
   const detSel = document.getElementById('det-file-select');
+  const prevTrain = trainFileId || trainSel.value;
   const prevDet = [...detSel.selectedOptions].map(o => o.value);
+  selectedSessionFileIds = new Set([...selectedSessionFileIds].filter(fid => uploadedFiles[fid]));
   trainSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
   detSel.innerHTML = '';
   const keys = Object.keys(uploadedFiles);
@@ -1175,6 +1476,7 @@ function refreshFileList() {
   });
   if (!Object.keys(uploadedFiles).length && !Object.keys(detFiles).length) {
     list.innerHTML = '<div style="color:var(--text2)">No files loaded</div>';
+    selectedSessionFileIds.clear();
     refreshMergeList();
     return;
   }
@@ -1186,7 +1488,7 @@ function refreshFileList() {
     const srcBadge = f.server_path ? ' &middot; <span style="color:var(--accent)">server</span>' : '';
     item.innerHTML = `
       <div style="min-width:0">
-        <div class="file-name">${esc(f.filename)}</div>
+        <div class="file-name"><label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" class="session-file-check" data-file-id="${fid}" ${selectedSessionFileIds.has(fid) ? 'checked' : ''}> <span>${esc(f.filename)}</span></label></div>
         <div class="file-meta">${f.type.toUpperCase()} &middot; ${f.frame_count || 1} frame(s) &middot; ${f.width || '?'}x${f.height || '?'}${srcBadge}</div>
       </div>
       <div class="file-actions">
@@ -1206,10 +1508,99 @@ function refreshFileList() {
     const opt = [...detSel.options].find(o => o.value === v);
     if (opt) opt.selected = true;
   });
+  if (prevTrain && uploadedFiles[prevTrain]) {
+    trainSel.value = prevTrain;
+  }
+  list.querySelectorAll('.session-file-check').forEach((cb, index) => {
+    cb.onclick = e => {
+      if (e.shiftKey && lastSessionFileSelectIndex != null) {
+        const checks = [...list.querySelectorAll('.session-file-check')];
+        const start = Math.min(lastSessionFileSelectIndex, index);
+        const end = Math.max(lastSessionFileSelectIndex, index);
+        for (let i = start; i <= end; i++) {
+          checks[i].checked = e.target.checked;
+          const fid = checks[i].dataset.fileId;
+          if (checks[i].checked) selectedSessionFileIds.add(fid);
+          else selectedSessionFileIds.delete(fid);
+        }
+      }
+      lastSessionFileSelectIndex = index;
+    };
+    cb.onchange = e => {
+      const fid = e.target.dataset.fileId;
+      if (e.target.checked) selectedSessionFileIds.add(fid);
+      else selectedSessionFileIds.delete(fid);
+    };
+  });
   syncDetFileSelection();
   refreshMergeList();
   refreshVizFileList();
 }
+
+function orderedSessionFileIds() {
+  return Object.keys(uploadedFiles);
+}
+
+function replaceUploadedFilesOrder(ids) {
+  const next = {};
+  ids.forEach(fid => { if (uploadedFiles[fid]) next[fid] = uploadedFiles[fid]; });
+  uploadedFiles = next;
+}
+
+async function persistFileOrder(ids) {
+  const d = await api('/files/reorder', { username, file_ids: ids });
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+async function moveSelectedSessionFile(direction) {
+  const selected = orderedSessionFileIds().filter(fid => selectedSessionFileIds.has(fid));
+  if (selected.length !== 1) {
+    alert('Select exactly one session file to move.');
+    return;
+  }
+  const ids = orderedSessionFileIds();
+  const i = ids.indexOf(selected[0]);
+  const j = i + direction;
+  if (j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  try {
+    await persistFileOrder(ids);
+    replaceUploadedFilesOrder(ids);
+    selectedSessionFileIds = new Set([selected[0]]);
+    refreshFileList();
+    setStatus('server-path-status', 'Session file order updated', 'ok');
+  } catch (err) {
+    setStatus('server-path-status', err.message, 'err');
+  }
+}
+
+document.getElementById('file-move-up-btn').onclick = () => moveSelectedSessionFile(-1);
+document.getElementById('file-move-down-btn').onclick = () => moveSelectedSessionFile(1);
+document.getElementById('file-delete-selected-btn').onclick = async () => {
+  const ids = orderedSessionFileIds().filter(fid => selectedSessionFileIds.has(fid));
+  if (!ids.length) { alert('Select one or more session files.'); return; }
+  if (!confirm(`Remove ${ids.length} selected file${ids.length === 1 ? '' : 's'} from the session? Server-linked originals will not be deleted.`)) return;
+  const d = await api('/files/bulk-delete', { username, file_ids: ids });
+  if (d.error) { alert(d.error); return; }
+  ids.forEach(fid => {
+    delete uploadedFiles[fid];
+    selectedSessionFileIds.delete(fid);
+    if (currentFileId === fid) currentFileId = null;
+    if (trainFileId === fid) trainFileId = null;
+  });
+  if (!currentFileId) {
+    document.getElementById('frame-preview-wrap').innerHTML = '<span style="color:var(--text2)">Select a file to preview</span>';
+    document.getElementById('frame-nav').classList.add('hidden');
+    document.getElementById('tdms-meta').textContent = 'Select a TDMS file';
+  }
+  if (!trainFileId) {
+    trainCropCanvas.style.display = 'none';
+    document.getElementById('train-crop-hint').style.display = '';
+    document.getElementById('train-frame-counter').textContent = 'No file';
+  }
+  refreshFileList();
+};
 
 function syncDetFileSelection() {
   const sel = document.getElementById('det-file-select');
@@ -1751,6 +2142,28 @@ function redrawCropView() {
   [[0,0],[cropRect.w,0],[0,cropRect.h],[cropRect.w,cropRect.h]].forEach(([dx, dy]) => {
     trainCropCtx.fillRect(cropRect.x + dx - hs / 2, cropRect.y + dy - hs / 2, hs, hs);
   });
+  if (document.getElementById('crop-orientation-enabled').checked && cropOrientationDeg != null) {
+    const phi = cropOrientationDeg * Math.PI / 180;
+    const cx = cropRect.x + cropRect.w / 2;
+    const cy = cropRect.y + cropRect.h / 2;
+    const len = Math.max(18, Math.min(cropRect.w, cropRect.h) * 0.42);
+    const x1 = cx + Math.cos(phi) * len;
+    const y1 = cy + Math.sin(phi) * len;
+    const ah = Math.max(6, len * 0.18);
+    trainCropCtx.strokeStyle = 'rgba(255,230,90,0.95)';
+    trainCropCtx.fillStyle = 'rgba(255,230,90,0.95)';
+    trainCropCtx.lineWidth = 2;
+    trainCropCtx.beginPath();
+    trainCropCtx.moveTo(cx, cy);
+    trainCropCtx.lineTo(x1, y1);
+    trainCropCtx.stroke();
+    trainCropCtx.beginPath();
+    trainCropCtx.moveTo(x1, y1);
+    trainCropCtx.lineTo(x1 - Math.cos(phi - 0.45) * ah, y1 - Math.sin(phi - 0.45) * ah);
+    trainCropCtx.lineTo(x1 - Math.cos(phi + 0.45) * ah, y1 - Math.sin(phi + 0.45) * ah);
+    trainCropCtx.closePath();
+    trainCropCtx.fill();
+  }
 }
 
 function drawCropOverlay() { redrawCropView(); }
@@ -1858,15 +2271,34 @@ function updateSelectionInfo() {
   const yi = Math.round(cropRect.y / cropScale);
   const wi = Math.round(cropRect.w / cropScale);
   const hi = Math.round(cropRect.h / cropScale);
+  const orient = document.getElementById('crop-orientation-enabled').checked
+    ? ` — direction ${cropOrientationDeg == null ? 'not set' : cropOrientationDeg.toFixed(1) + '°'}`
+    : '';
   document.getElementById('train-selection-info').textContent =
-    `Selected: x=${xi} y=${yi}  ${wi}×${hi} px — move inside / resize corners`;
+    `Selected: x=${xi} y=${yi}  ${wi}×${hi} px${orient}`;
   document.getElementById('crop-sample-btn').disabled = false;
+}
+
+function setCropOrientationFromPoint(p) {
+  if (!cropRect) return;
+  const cx = cropRect.x + cropRect.w / 2;
+  const cy = cropRect.y + cropRect.h / 2;
+  let deg = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
+  if (deg < 0) deg += 360;
+  cropOrientationDeg = deg;
+  document.getElementById('crop-orientation-angle').value = deg.toFixed(1);
+  document.getElementById('crop-orientation-val').textContent = deg.toFixed(1) + '°';
+  redrawCropView();
+  updateSelectionInfo();
 }
 
 document.getElementById('train-file-select').onchange = async e => {
   trainFileId = e.target.value || null;
   trainFrameIdx = 0;
   cropRect = null; cropImage = null; cropSourceCanvas = null;
+  cropOrientationDeg = null;
+  document.getElementById('crop-orientation-angle').value = '';
+  document.getElementById('crop-orientation-val').textContent = '--';
   document.getElementById('crop-sample-btn').disabled = true;
   if (!trainFileId) {
     trainCropCanvas.style.display = 'none';
@@ -1896,8 +2328,31 @@ async function loadTrainFrame() {
   document.getElementById('train-frame-counter').textContent =
     `Frame ${trainFrameIdx + 1} / ${trainFrameCount}`;
 
-  const d = await api(`/frame/${username}/${trainFileId}/${trainFrameIdx}`);
+  const f = uploadedFiles[trainFileId];
+  const path = f && f.type === 'tdms'
+    ? `/tdms/frame/${username}/${trainFileId}/${trainFrameIdx}`
+    : `/frame/${username}/${trainFileId}/${trainFrameIdx}`;
+  const d = await api(path);
   if (d.error) { hint.textContent = d.error; return; }
+  let metaChanged = false;
+  if (uploadedFiles[trainFileId]) {
+    if (d.frame_count && uploadedFiles[trainFileId].frame_count !== d.frame_count) {
+      uploadedFiles[trainFileId].frame_count = d.frame_count;
+      trainFrameCount = d.frame_count;
+      metaChanged = true;
+    }
+    if (d.width && uploadedFiles[trainFileId].width !== d.width) {
+      uploadedFiles[trainFileId].width = d.width;
+      metaChanged = true;
+    }
+    if (d.height && uploadedFiles[trainFileId].height !== d.height) {
+      uploadedFiles[trainFileId].height = d.height;
+      metaChanged = true;
+    }
+  }
+  document.getElementById('train-frame-counter').textContent =
+    `Frame ${trainFrameIdx + 1} / ${trainFrameCount}`;
+  if (metaChanged) refreshFileList();
 
   const img = new Image();
   img.onload = () => {
@@ -1935,7 +2390,11 @@ function onCropPointerDown(e) {
   if (e.cancelable) e.preventDefault();
   const p = canvasPos(e);
   const corner = hitCropCorner(p);
-  if (corner) {
+  if (document.getElementById('crop-orientation-enabled').checked && cropRect && pointInCrop(p) && !corner) {
+    cropMode = 'orient';
+    setCropOrientationFromPoint(p);
+    trainCropCanvas.style.cursor = 'crosshair';
+  } else if (corner) {
     cropMode = 'resize';
     cropResizeCorner = corner;
     trainCropCanvas.style.cursor = cursorForCorner(corner);
@@ -1966,6 +2425,9 @@ function onCropPointerMove(e) {
   const p = canvasPos(e);
   if (cropMode === 'draw' && cropStart) {
     cropRect = constrainAspect(null, cropStart.x, cropStart.y, p.x, p.y);
+    cropOrientationDeg = null;
+    document.getElementById('crop-orientation-angle').value = '';
+    document.getElementById('crop-orientation-val').textContent = '--';
     redrawCropView();
   } else if (cropMode === 'move' && cropRect && cropMoveOff) {
     cropRect = clampCropRect({
@@ -1978,6 +2440,8 @@ function onCropPointerMove(e) {
   } else if (cropMode === 'resize' && cropRect && cropResizeCorner) {
     cropRect = resizeFromCorner(cropResizeCorner, p);
     redrawCropView();
+  } else if (cropMode === 'orient') {
+    setCropOrientationFromPoint(p);
   }
 }
 
@@ -2023,23 +2487,55 @@ document.getElementById('crop-aspect-mode').onchange = e => {
   if (e.target.value === 'custom') custom.classList.remove('hidden');
   else custom.classList.add('hidden');
 };
+document.getElementById('crop-orientation-enabled').onchange = e => {
+  if (!e.target.checked) {
+    cropOrientationDeg = null;
+    document.getElementById('crop-orientation-angle').value = '';
+    document.getElementById('crop-orientation-val').textContent = '--';
+  }
+  redrawCropView();
+  updateSelectionInfo();
+};
+document.getElementById('crop-orientation-angle').onchange = e => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v) && v >= 0 && v <= 360) {
+    cropOrientationDeg = v;
+    document.getElementById('crop-orientation-val').textContent = v.toFixed(1) + '°';
+  } else {
+    cropOrientationDeg = null;
+    e.target.value = '';
+    document.getElementById('crop-orientation-val').textContent = '--';
+  }
+  redrawCropView();
+  updateSelectionInfo();
+};
 updateAdjLabels();
 
 document.getElementById('crop-sample-btn').onclick = async () => {
   if (!cropRect || !trainFileId) return;
   const name = document.getElementById('train-particle').value.trim();
   if (!name) { setStatus('sample-status', 'Enter particle name', 'warn'); return; }
-  const d = await api('/sample', {
+  const orientationEnabled = document.getElementById('crop-orientation-enabled').checked;
+  if (orientationEnabled && cropOrientationDeg == null) {
+    setStatus('sample-status', 'Draw the template direction arrow inside the crop', 'warn');
+    return;
+  }
+  const payload = {
     username, particle_name: name, file_id: trainFileId,
     frame_index: trainFrameIdx,
     x: Math.round(cropRect.x / cropScale),
     y: Math.round(cropRect.y / cropScale),
     width: Math.round(cropRect.w / cropScale),
     height: Math.round(cropRect.h / cropScale),
-  });
+  };
+  if (orientationEnabled) payload.template_phi_deg = cropOrientationDeg;
+  const d = await api('/sample', payload);
   if (d.error) { setStatus('sample-status', esc(d.error), 'err'); return; }
-  appendCropThumb(name, d.sample.id, d.preview);
+  appendCropThumb(name, d.sample.id, d.preview, d.sample);
   cropRect = null;
+  cropOrientationDeg = null;
+  document.getElementById('crop-orientation-angle').value = '';
+  document.getElementById('crop-orientation-val').textContent = '--';
   redrawCropView();
   document.getElementById('crop-sample-btn').disabled = true;
   document.getElementById('train-selection-info').textContent = 'Drag to add another crop to the pool';
@@ -2049,7 +2545,7 @@ document.getElementById('crop-sample-btn').onclick = async () => {
   setStatus('sample-status', `Pool: ${n} crop${n === 1 ? '' : 's'}${sizeHint}`, 'ok');
 };
 
-function appendCropThumb(particleName, cropId, src) {
+function appendCropThumb(particleName, cropId, src, meta = {}) {
   const pool = document.getElementById('crop-pool');
   const div = document.createElement('div');
   div.dataset.cropId = cropId;
@@ -2057,12 +2553,20 @@ function appendCropThumb(particleName, cropId, src) {
   const img = document.createElement('img');
   img.src = src;
   img.style.cssText = 'width:100%;height:100%;object-fit:contain;background:var(--bg3)';
+  img.title = meta.template_phi_deg != null ? `${cropId} · ${Number(meta.template_phi_deg).toFixed(1)}°` : cropId;
+  let badge = null;
+  if (meta.template_phi_deg != null) {
+    badge = document.createElement('div');
+    badge.textContent = Number(meta.template_phi_deg).toFixed(1) + '°';
+    badge.style.cssText = 'position:absolute;left:1px;bottom:1px;background:rgba(0,0,0,0.72);color:#ffe65a;font-size:9px;padding:1px 3px;border-radius:2px';
+  }
   const btn = document.createElement('button');
   btn.textContent = '×';
   btn.title = 'Remove crop';
   btn.style.cssText = 'position:absolute;top:1px;right:1px;background:rgba(224,85,85,0.9);color:#fff;border:none;border-radius:2px;width:14px;height:14px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1';
   btn.onclick = () => removeCrop(particleName, cropId, div);
   div.appendChild(img);
+  if (badge) div.appendChild(badge);
   div.appendChild(btn);
   pool.appendChild(div);
 }
@@ -2085,7 +2589,7 @@ async function refreshCropPool() {
   const withId = crops.filter(c => c.id);
   withId.forEach(c => {
     const src = `${API_BASE}/sample/preview/${encodeURIComponent(username)}/${encodeURIComponent(name)}/${c.id}`;
-    appendCropThumb(name, c.id, src);
+    appendCropThumb(name, c.id, src, c);
   });
   if (withId.length > 0) {
     const ref = withId[0];
@@ -2226,19 +2730,25 @@ async function refreshModels() {
   list.innerHTML = '';
   models.forEach(m => {
     const s = m.summary || {};
+    const source = m.source || 'web';
+    const sourceLabel = source === 'cli' ? 'CLI shared' : 'Web';
+    const actions = m.read_only
+      ? '<span class="file-meta">Read-only</span>'
+      : `<button class="btn btn-danger btn-sm" onclick="deleteModel('${esc(m.id)}')">&#10005;</button>`;
     const item = document.createElement('div');
     item.className = 'file-item';
     item.innerHTML = `
       <div>
         <div class="file-name">${esc(m.particle_name)}</div>
-        <div class="file-meta">${(m.created_at || '').slice(0, 16)} &middot; ${s.runtime_formatted || ''} &middot; ${s.device || ''} &middot; loss: ${s.final_loss != null ? s.final_loss.toFixed(5) : '?'}</div>
+        <div class="file-meta">${sourceLabel} &middot; ${(m.created_at || '').slice(0, 16)} &middot; ${s.runtime_formatted || ''} &middot; ${s.device || ''} &middot; loss: ${s.final_loss != null ? s.final_loss.toFixed(5) : '?'}</div>
       </div>
       <div class="file-actions">
-        <button class="btn btn-danger btn-sm" onclick="deleteModel('${esc(m.id)}')">&#10005;</button>
+        ${actions}
       </div>`;
     list.appendChild(item);
-    detSel.appendChild(new Option(m.particle_name + ' (' + m.id + ')', m.id));
+    detSel.appendChild(new Option(m.particle_name + ' (' + sourceLabel + ' ' + m.id + ')', m.id));
   });
+  refreshDetectionTemplateCrops();
 }
 
 async function deleteModel(id) {
@@ -2250,6 +2760,84 @@ async function deleteModel(id) {
 // ====================================================================
 // DETECTION PANEL
 // ====================================================================
+function selectedDetectionModel() {
+  const modelId = document.getElementById('det-model-select').value;
+  return models.find(m => m.id === modelId) || null;
+}
+
+function updateDetectionModeUI() {
+  const mode = document.getElementById('det-mode').value;
+  document.getElementById('det-area-params').classList.toggle('hidden', mode !== 'area');
+  document.getElementById('det-watershed-params').classList.toggle('hidden', mode !== 'watershed');
+  document.getElementById('det-template-params').classList.toggle('hidden', mode !== 'template');
+  if (mode === 'template') refreshDetectionTemplateCrops();
+}
+
+async function refreshDetectionTemplateCrops() {
+  const sel = document.getElementById('det-template-crop');
+  if (!sel) return;
+  const previous = sel.value;
+  sel.innerHTML = '<option value="">&#8212; Select crop &#8212;</option>';
+  const model = selectedDetectionModel();
+  if (!model || !model.particle_name || !username) return;
+  const d = await fetch(`${API_BASE}/samples/${encodeURIComponent(username)}`).then(r => r.json()).catch(() => ({}));
+  const crops = (d.samples || {})[model.particle_name] || [];
+  crops.filter(c => c.id).forEach(c => {
+    const angle = c.template_phi_deg != null ? Number(c.template_phi_deg).toFixed(1) + '°' : 'no angle';
+    const label = `${model.particle_name} crop ${c.id} · ${angle}${c.width && c.height ? ` (${c.width}×${c.height})` : ''}`;
+    const opt = new Option(label, c.id);
+    if (c.template_phi_deg != null) opt.dataset.templatePhiDeg = c.template_phi_deg;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o => o.value === previous)) sel.value = previous;
+  applySelectedTemplateAngle();
+}
+
+function applySelectedTemplateAngle() {
+  const opt = document.getElementById('det-template-crop').selectedOptions[0];
+  const angle = opt && opt.dataset ? opt.dataset.templatePhiDeg : null;
+  if (angle != null && angle !== '') document.getElementById('det-template-phi').value = angle;
+}
+
+function detectionParamsForRequest() {
+  const mode = document.getElementById('det-mode').value;
+  const model = selectedDetectionModel();
+  const params = {
+    detection_mode: mode,
+    area_min_area: parseInt(document.getElementById('det-area-min').value),
+    area_max_area: parseInt(document.getElementById('det-area-max').value),
+    watershed_min_distance: parseInt(document.getElementById('det-watershed-distance').value),
+    watershed_min_area: parseInt(document.getElementById('det-watershed-area').value),
+    template_angle_step: parseInt(document.getElementById('det-template-step').value),
+    template_refine_radius: parseInt(document.getElementById('det-template-refine').value),
+    template_search_radius: parseInt(document.getElementById('det-template-search').value),
+  };
+  if (mode === 'template') {
+    const cropId = document.getElementById('det-template-crop').value;
+    const opt = document.getElementById('det-template-crop').selectedOptions[0];
+    const storedPhi = opt && opt.dataset ? opt.dataset.templatePhiDeg : '';
+    const phiText = document.getElementById('det-template-phi').value.trim() || storedPhi;
+    if (!cropId) throw new Error('Select a template crop');
+    if (!phiText) throw new Error('This crop has no stored reference angle. Type a fallback angle or recreate the crop with Store template direction enabled.');
+    params.template_particle_name = model ? model.particle_name : '';
+    params.template_crop_id = cropId;
+    params.template_phi_deg = parseFloat(phiText);
+  }
+  return params;
+}
+
+function detectionParamsQuery() {
+  const params = detectionParamsForRequest();
+  const usp = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') usp.set(key, value);
+  });
+  return usp.toString();
+}
+
+document.getElementById('det-mode').onchange = updateDetectionModeUI;
+document.getElementById('det-model-select').onchange = refreshDetectionTemplateCrops;
+document.getElementById('det-template-crop').onchange = applySelectedTemplateAngle;
 document.getElementById('det-upload-btn').onclick = () => document.getElementById('det-file-input').click();
 document.getElementById('det-file-input').onchange = async e => {
   const file = e.target.files[0]; if (!file) return;
@@ -2288,11 +2876,18 @@ document.getElementById('det-run-btn').onclick = async () => {
   const beta = parseFloat(document.getElementById('det-beta').value);
   const cutoff = parseFloat(document.getElementById('det-cutoff').value);
   const wmap = document.getElementById('det-weightmap').checked;
+  let modeQuery = '';
+  try {
+    modeQuery = detectionParamsQuery();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
   document.getElementById('det-run-btn').disabled = true;
   const wrap = document.getElementById('detect-canvas-wrap');
   wrap.innerHTML = '<span class="spinner" style="margin:40px auto;display:block"></span>';
   const d = await api(
-    `/detect/frame/${username}/${detFileId}/${detFrame}?model_id=${modelId}&alpha=${alpha}&beta=${beta}&cutoff=${cutoff}&return_weightmap=${wmap}`
+    `/detect/frame/${username}/${detFileId}/${detFrame}?model_id=${encodeURIComponent(modelId)}&alpha=${alpha}&beta=${beta}&cutoff=${cutoff}&return_weightmap=${wmap}&${modeQuery}`
   );
   document.getElementById('det-run-btn').disabled = false;
   if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
@@ -2314,6 +2909,28 @@ document.getElementById('det-run-btn').onclick = async () => {
       ctx.arc(x * scale, y * scale, 3, 0, 2 * Math.PI);
       ctx.fill();
     });
+    d.detections.forEach(det => {
+      const x = det[0], y = det[1], phi = det[2];
+      if (phi == null || !Number.isFinite(phi)) return;
+      const len = 18 * scale;
+      const x0 = x * scale, y0 = y * scale;
+      const x1 = x0 + Math.cos(phi) * len;
+      const y1 = y0 + Math.sin(phi) * len;
+      const ah = Math.max(4, 5 * scale);
+      ctx.strokeStyle = 'rgba(255,230,90,0.95)';
+      ctx.fillStyle = 'rgba(255,230,90,0.95)';
+      ctx.lineWidth = Math.max(1, 1.5 * scale);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - Math.cos(phi - 0.45) * ah, y1 - Math.sin(phi - 0.45) * ah);
+      ctx.lineTo(x1 - Math.cos(phi + 0.45) * ah, y1 - Math.sin(phi + 0.45) * ah);
+      ctx.closePath();
+      ctx.fill();
+    });
   };
   srcImg.src = (wmap && d.weightmap) ? d.weightmap : d.image;
   document.getElementById('det-count-badge').textContent = d.count + ' particles';
@@ -2326,12 +2943,20 @@ document.getElementById('batch-detect-btn').onclick = async () => {
   if (!fileIds.length) { setStatus('batch-status', 'Select one or more files', 'warn'); return; }
   lastDetFileIds = fileIds.slice();
   const outName = document.getElementById('batch-output-name').value.trim() || undefined;
+  let modeParams = {};
+  try {
+    modeParams = detectionParamsForRequest();
+  } catch (err) {
+    setStatus('batch-status', esc(err.message), 'warn');
+    return;
+  }
   setStatus('batch-status', `<span class="spinner"></span> Starting batch on ${fileIds.length} file(s)…`, 'info');
   const d = await api('/detect/batch', {
     username, file_ids: fileIds, model_id: modelId,
     alpha: parseFloat(document.getElementById('det-alpha').value),
     beta: parseFloat(document.getElementById('det-beta').value),
     cutoff: parseFloat(document.getElementById('det-cutoff').value),
+    ...modeParams,
     output_name: outName,
   });
   if (d.error) { setStatus('batch-status', esc(d.error), 'err'); return; }

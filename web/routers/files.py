@@ -37,6 +37,16 @@ class PathLoadRequest(BaseModel):
     normalize: bool = True
 
 
+class BulkDeleteFilesRequest(BaseModel):
+    username: str
+    file_ids: list[str]
+
+
+class ReorderFilesRequest(BaseModel):
+    username: str
+    file_ids: list[str]
+
+
 @router.post("/upload/start")
 async def upload_start(data: ChunkUploadStart):
     try:
@@ -250,11 +260,9 @@ async def list_files(username: str, file_type: str = None):
     return {"files": files}
 
 
-@router.delete("/files/{username}/{file_id}")
-async def delete_file(username: str, file_id: str):
-    sess = state.require_session(username)
+def _remove_session_file(sess: dict, file_id: str) -> bool:
     if file_id not in sess.get("files", {}):
-        raise HTTPException(status_code=404, detail="File not found")
+        return False
     finfo = sess["files"][file_id]
     from services.tdms_cache import invalidate
     invalidate(finfo.get("path"))
@@ -264,5 +272,41 @@ async def delete_file(username: str, file_id: str):
         except Exception:
             pass
     del sess["files"][file_id]
+    return True
+
+
+@router.delete("/files/{username}/{file_id}")
+async def delete_file(username: str, file_id: str):
+    sess = state.require_session(username)
+    if file_id not in sess.get("files", {}):
+        raise HTTPException(status_code=404, detail="File not found")
+    _remove_session_file(sess, file_id)
     state.save_user_session(username)
     return {"status": "deleted", "id": file_id}
+
+
+@router.post("/files/bulk-delete")
+async def bulk_delete_files(data: BulkDeleteFilesRequest):
+    sess = state.require_session(data.username)
+    if not data.file_ids:
+        raise HTTPException(status_code=400, detail="Select at least one file")
+    deleted = []
+    missing = []
+    for file_id in data.file_ids:
+        if _remove_session_file(sess, file_id):
+            deleted.append(file_id)
+        else:
+            missing.append(file_id)
+    state.save_user_session(data.username)
+    return {"status": "deleted", "deleted": deleted, "missing": missing}
+
+
+@router.post("/files/reorder")
+async def reorder_files(data: ReorderFilesRequest):
+    sess = state.require_session(data.username)
+    files = sess.get("files", {})
+    if set(data.file_ids) != set(files.keys()):
+        raise HTTPException(status_code=400, detail="Reorder list must contain exactly the current session file ids")
+    sess["files"] = {file_id: files[file_id] for file_id in data.file_ids}
+    state.save_user_session(data.username)
+    return {"status": "reordered", "file_ids": data.file_ids}
