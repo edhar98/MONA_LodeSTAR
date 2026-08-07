@@ -89,6 +89,7 @@ class CrescentMeasurement:
     background_value: float
     mean_disk_intensity: float
     mean_crescent_intensity: float
+    normalized: bool
     polarity: str
     detection_method: str
     qc_status: str
@@ -154,6 +155,33 @@ def normalize_uint8(image: np.ndarray, lower_percentile: float = 0.5, upper_perc
         return np.zeros(img.shape, dtype=np.uint8)
     scaled = (img - lo) / (hi - lo)
     return np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
+
+
+def normalize_frame_uint8(image: np.ndarray) -> np.ndarray:
+    gray = to_grayscale(np.asarray(image)).astype(np.float32)
+    minimum = float(np.min(gray))
+    maximum = float(np.max(gray))
+    if maximum <= minimum:
+        return np.zeros(gray.shape, dtype=np.uint8)
+    scaled = (gray - minimum) / (maximum - minimum + 1e-8)
+    return np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
+
+
+def display_uint8(image: np.ndarray, normalize: bool = False) -> np.ndarray:
+    array = np.asarray(image)
+    gray = to_grayscale(array)
+    if normalize:
+        return normalize_frame_uint8(gray)
+    if np.issubdtype(array.dtype, np.integer):
+        minimum = float(np.min(gray))
+        maximum = float(np.max(gray))
+        if minimum >= 0 and maximum <= 65535 and maximum > 255:
+            return np.floor(gray / 256.0).astype(np.uint8)
+        limits = np.iinfo(array.dtype)
+        if limits.max > 255 or limits.min < 0:
+            scaled = (gray - limits.min) / float(limits.max - limits.min)
+            return np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
+    return np.clip(gray, 0, 255).astype(np.uint8)
 
 
 def select_analysis_crop(
@@ -381,8 +409,12 @@ def measure_frame(
     hough_param2: float = 22.0,
     threshold_percentile: float | None = None,
     selected_crop: CropRegion | None = None,
+    normalize: bool = False,
 ) -> tuple[CrescentMeasurement, dict[str, np.ndarray | ParticleDetection | CropRegion]]:
+    source_gray = np.asarray(frame) if np.asarray(frame).ndim == 2 else to_grayscale(frame)
     gray = to_grayscale(frame)
+    if normalize:
+        gray = normalize_frame_uint8(gray).astype(np.float64)
     requested_center_x = crop_center_x if crop_center_x is not None else (seed.center_x if seed is not None else None)
     requested_center_y = crop_center_y if crop_center_y is not None else (seed.center_y if seed is not None else None)
     if selected_crop is None:
@@ -459,6 +491,7 @@ def measure_frame(
         background_value=float(background),
         mean_disk_intensity=float(np.mean(disk_values)) if disk_values.size else float("nan"),
         mean_crescent_intensity=float(np.mean(crescent_values)) if crescent_values.size else float("nan"),
+        normalized=normalize,
         polarity=polarity,
         detection_method=detection.method,
         qc_status=qc_status,
@@ -466,6 +499,7 @@ def measure_frame(
     )
     debug = {
         "gray": gray,
+        "source_gray": source_gray,
         "crop": crop,
         "crop_region": crop_region,
         "detection": detection,
@@ -508,24 +542,22 @@ def save_overlay(
     gray: np.ndarray,
     disk: np.ndarray,
     interior: np.ndarray,
-    background: np.ndarray,
     crescent: np.ndarray,
     detection: ParticleDetection,
     crop_region: CropRegion,
     title: str | None = None,
+    normalize: bool = False,
 ) -> None:
     if isinstance(output_path, Path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(1, 7, figsize=(24, 4), constrained_layout=True)
-    image_u8 = normalize_uint8(gray)
+    fig, axes = plt.subplots(1, 5, figsize=(18, 4), constrained_layout=True)
+    image_u8 = display_uint8(gray, normalize=normalize)
     crop_u8 = crop_region.extract(image_u8)
     excluded_annulus = disk & ~interior
     overlays = [
-        ("cropped frame", None),
         ("particle disk", crop_region.extract(disk)),
         ("measurement interior", crop_region.extract(interior)),
         ("excluded bright rim", crop_region.extract(excluded_annulus)),
-        ("background annulus", crop_region.extract(background)),
         ("crescent mask", crop_region.extract(crescent)),
     ]
 
@@ -552,7 +584,6 @@ def save_overlay(
                 "particle disk": (0.1, 0.8, 1.0, 0.35),
                 "measurement interior": (0.2, 0.9, 0.4, 0.35),
                 "excluded bright rim": (1.0, 0.35, 0.1, 0.55),
-                "background annulus": (1.0, 0.8, 0.1, 0.35),
                 "crescent mask": (1.0, 0.1, 0.1, 0.55),
             }[label]
             rgba[mask] = color
@@ -581,6 +612,7 @@ def analyze_files(
     max_radius: int = 35,
     rim_exclusion_px: float = 5.0,
     hough_param2: float = 22.0,
+    normalize: bool = False,
 ) -> pd.DataFrame:
     output_dir.mkdir(parents=True, exist_ok=True)
     seeds = load_seed_csv(seed_csv)
@@ -593,6 +625,7 @@ def analyze_files(
                 frame,
                 path,
                 root=root,
+                normalize=normalize,
                 polarity=polarity,
                 seed=seed_for_path(seeds, path),
                 crop_size=crop_size,
@@ -623,14 +656,14 @@ def analyze_files(
             safe_folder = measurement.folder.replace("/", "_")
             save_overlay(
                 overlay_dir / f"{safe_folder}_{stem}_frame0_overlay.png",
-                debug["gray"],  # type: ignore[arg-type]
+                debug["source_gray"],
                 debug["disk"],  # type: ignore[arg-type]
                 debug["interior"],  # type: ignore[arg-type]
-                debug["background"],  # type: ignore[arg-type]
                 debug["crescent"],  # type: ignore[arg-type]
                 debug["detection"],  # type: ignore[arg-type]
                 debug["crop_region"],  # type: ignore[arg-type]
                 title=f"{measurement.folder}/{measurement.file} ratio={measurement.crescent_area_ratio:.3f}",
+                normalize=measurement.normalized,
             )
     df = pd.DataFrame(rows)
     df.to_csv(output_dir / "janus_crescent_ratio_frame0_measurements.csv", index=False)
@@ -676,6 +709,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Output directory.")
     parser.add_argument("--recursive", action=argparse.BooleanOptionalAction, default=True, help="Recursively discover TDMS files.")
     parser.add_argument("--polarity", choices=["bright", "dark"], default="bright", help="Whether the crescent is brighter or darker than background.")
+    parser.add_argument("--normalize", action=argparse.BooleanOptionalAction, default=False, help="Scale each frame minimum and maximum to 0-255 before measurement.")
     parser.add_argument("--seed-csv", type=Path, default=None, help="Optional CSV with file/path, center_x, center_y, radius_px.")
     parser.add_argument("--overlay-limit", type=int, default=20, help="Maximum number of QC overlay PNGs to write.")
     parser.add_argument(
@@ -712,6 +746,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "input_root": str(args.input_root),
         "n_files": len(files),
         "polarity": args.polarity,
+        "normalize": args.normalize,
         "frame": 0,
         "crop_size": args.crop_size,
         "crop_center_x": args.crop_center_x,
@@ -728,6 +763,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         root=args.input_root,
         output_dir=args.output_dir,
         polarity=args.polarity,
+        normalize=args.normalize,
         seed_csv=args.seed_csv,
         overlay_limit=args.overlay_limit,
         crop_size=args.crop_size,

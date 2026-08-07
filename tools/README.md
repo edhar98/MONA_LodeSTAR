@@ -45,8 +45,8 @@ In the current JupyterHub image, the duplicate is caused by old `~dms_explorer-1
 `janus_crescent_ratio/` measures the bright or dark projected area of a Janus particle, reports the polar cosine angle and one-sided out-of-plane angle, and provides interactive crop, circle, and segmentation review tools.
 
 ```bash
-python tools/janus_crescent_ratio/src/crescent_ratio.py --input-root data/ --output-dir tools/janus_crescent_ratio/outputs
-python tools/janus_crescent_ratio/src/crescent_ratio_gui.py input.tdms
+python tools/janus_crescent_ratio/src/crescent_ratio.py --input-root data/ --output-dir tools/janus_crescent_ratio/outputs --normalize
+python tools/janus_crescent_ratio/src/crescent_ratio_gui.py input.tdms --normalize
 ```
 
 The MONA Track web interface imports this implementation directly and exposes it under Janus Orientation.

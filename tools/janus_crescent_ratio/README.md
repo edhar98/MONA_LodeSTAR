@@ -27,6 +27,8 @@ Pass one TDMS or image path to the guided GUI:
   --output-dir tools/janus_crescent_ratio/outputs/gui
 ```
 
+Add `--normalize` to scale each frame's minimum and maximum intensity to 0-255 before circle detection and segmentation.
+
 The window proceeds through three stages:
 
 1. Draw, move, or resize the frame-0 crop.
@@ -51,7 +53,7 @@ From the repository root:
   --input-root "/mnt/75/Data/Akshay/5CB paper/Measurements/Janus/30.07.26/Janus" \
   --output-dir tools/janus_crescent_ratio/outputs \
   --crop-size 180 --min-radius 18 --max-radius 35 \
-  --rim-exclusion-px 5 --polarity bright
+  --rim-exclusion-px 5 --polarity bright --normalize
 ```
 
 The pipeline first extracts a 180 x 180 px crop around the frame center, then
@@ -59,6 +61,8 @@ runs circle detection only inside that crop. The 18–35 px radius constraint is
 for the inner Janus particle and deliberately excludes the much larger circular
 ring surrounding it. Detected centers are converted back to full-frame pixel
 coordinates before they are written to CSV.
+
+Intensity normalization is opt-in. `--normalize` applies the same per-frame minimum-to-maximum 8-bit scaling as TDMS Explorer, and the measurement CSV records the choice in its `normalized` column. Without normalization, non-negative camera values use a fixed 16-bit display scale while measurement uses the original intensities. Crop previews and all five quality-control panels use the same setting as the measurement.
 
 The detected radius defines the particle disk. Crescent thresholding and area
 normalization are performed within an inner disk whose radius is 5 px smaller.
@@ -95,7 +99,7 @@ The default output directory is `tools/janus_crescent_ratio/outputs/`.
 - `janus_crescent_ratio_file_summary.csv`: per-file ratio summary.
 - `janus_crescent_ratio_folder_summary.csv`: per-folder ratio summary.
 - `janus_crescent_ratio_histogram.png`: distribution of ratios.
-- `overlays/*_overlay.png`: crop, full disk, allowed interior, excluded bright rim, background, and crescent masks.
+- `overlays/*_overlay.png`: full frame with crop, particle disk, allowed interior, excluded bright rim, and crescent mask.
 - `run_config.json`: run configuration.
 
 ## Manual Seeds

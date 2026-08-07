@@ -847,6 +847,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
             <div class="col"><label>Crop size</label><input type="number" id="crescent-crop-size" value="180" min="20"></div>
             <div class="col"><label>Polarity</label><select id="crescent-polarity"><option value="bright">Bright crescent</option><option value="dark">Dark crescent</option></select></div>
           </div>
+          <label><input type="checkbox" id="crescent-normalize"> Normalize frame intensity</label>
           <div class="row" style="gap:8px">
             <div class="col"><label>Min radius</label><input type="number" id="crescent-min-radius" value="18" min="1"></div>
             <div class="col"><label>Max radius</label><input type="number" id="crescent-max-radius" value="35" min="1"></div>
@@ -1253,9 +1254,9 @@ const FIELD_HINTS = {
   'feedback-contact': 'Optional. Email or name so we can follow up if needed.',
   'theme-toggle-btn': 'Switch between dark theme and light theme.',
   'layout-reset-btn': 'Restore all resizable cards to their default widths and heights.',
-  'normalize-check': 'Scale each Technical Data Management Streaming frame to 0-255 using its own minimum and maximum before display and export.',
+  'normalize-check': 'Scale uploaded Technical Data Management Streaming frames to 0-255 using each frame minimum and maximum. The current value controls Preview and export.',
   'server-path-input': 'Absolute path or glob on the server, e.g. /data/run/*.tdms. Files are linked into this session.',
-  'server-normalize-check': 'Normalize intensity when loading files from a server path.',
+  'server-normalize-check': 'Scale server-linked Technical Data Management Streaming frames to 0-255. The current value controls Preview for server-path files.',
   'file-move-up-btn': 'Move the selected session file earlier in batch and visualization order.',
   'file-move-down-btn': 'Move the selected session file later in batch and visualization order.',
   'file-delete-selected-btn': 'Remove checked session files. Server-linked originals are not deleted.',
@@ -1343,6 +1344,7 @@ const FIELD_HINTS = {
   'crescent-frame': 'Zero-based frame index to measure. The standalone tool uses frame 0 by default.',
   'crescent-crop-size': 'Square crop size in pixels around the search center for finding the inner Janus particle.',
   'crescent-polarity': 'Whether the crescent appears brighter or darker than its local particle background.',
+  'crescent-normalize': 'Scale the selected frame minimum and maximum to 0-255 before circle detection and crescent segmentation, matching Technical Data Management Streaming Explorer. When unchecked, camera values retain a fixed 16-bit display scale.',
   'crescent-min-radius': 'Smallest allowed inner Janus particle radius in pixels.',
   'crescent-max-radius': 'Largest allowed inner Janus particle radius in pixels. Keep this below any larger enclosing ring.',
   'crescent-rim': 'Pixels excluded from the outer particle rim before measuring crescent area.',
@@ -1741,8 +1743,11 @@ async function showFrame(fid, idx) {
   if (!wrap.querySelector('img')) wrap.innerHTML = '<span class="spinner"></span>';
   const f = uploadedFiles[fid];
   const cmap = (document.getElementById('viewer-cmap') || {}).value || 'gray';
+  const normalize = f && f.server_path
+    ? document.getElementById('server-normalize-check').checked
+    : document.getElementById('normalize-check').checked;
   const path = (f && f.type === 'tdms')
-    ? `/tdms/frame/${username}/${fid}/${idx}?cmap=${encodeURIComponent(cmap)}`
+    ? `/tdms/frame/${username}/${fid}/${idx}?cmap=${encodeURIComponent(cmap)}&normalize=${normalize}`
     : `/frame/${username}/${fid}/${idx}`;
   const d = await api(path);
   if (d.error) { wrap.innerHTML = `<div class="status status-err">${esc(d.error)}</div>`; return; }
@@ -3604,15 +3609,13 @@ crescentCanvas.onwheel = event => {
   }
 };
 
-async function loadCrescentFrame() {
+async function loadCrescentFrame(preserveSelection = false) {
   const fileId = document.getElementById('crescent-file-select').value;
   if (!fileId) return;
   const frameInput = document.getElementById('crescent-frame');
   const frameIndex = Math.max(0, parseInt(frameInput.value) || 0);
-  const fileInfo = uploadedFiles[fileId];
-  const path = fileInfo && fileInfo.type === 'tdms'
-    ? `/tdms/frame/${username}/${fileId}/${frameIndex}`
-    : `/frame/${username}/${fileId}/${frameIndex}`;
+  const normalize = document.getElementById('crescent-normalize').checked;
+  const path = `/analyze/janus-crescent-frame/${username}/${fileId}/${frameIndex}?normalize=${normalize}`;
   document.getElementById('crescent-canvas-empty').textContent = 'Loading';
   document.getElementById('crescent-canvas-empty').style.display = '';
   crescentCanvas.style.display = 'none';
@@ -3627,23 +3630,33 @@ async function loadCrescentFrame() {
     if (uploadedFiles[fileId]) uploadedFiles[fileId].frame_count = data.frame_count;
   }
   const image = new Image();
-  image.onload = () => {
-    crescentImage = image;
-    const requestedSize = parseInt(document.getElementById('crescent-crop-size').value) || 180;
-    const size = Math.min(requestedSize, image.naturalWidth, image.naturalHeight);
-    crescentCrop = null;
-    clearCrescentCircle();
-    document.getElementById('crescent-rim').max = '15';
-    document.getElementById('crescent-canvas-empty').style.display = 'none';
-    crescentCanvas.style.display = 'block';
-    setCrescentCrop((image.naturalWidth - size) / 2, (image.naturalHeight - size) / 2, size);
-    setCrescentStage('crop', false);
-    setStatus('crescent-status-wrap', `Frame ${frameIndex} loaded`, 'ok');
-  };
-  image.onerror = () => {
-    document.getElementById('crescent-canvas-empty').textContent = 'Could not decode frame preview';
-  };
-  image.src = data.image;
+  const previousStage = crescentStage;
+  await new Promise(resolve => {
+    image.onload = () => {
+      crescentImage = image;
+      document.getElementById('crescent-canvas-empty').style.display = 'none';
+      crescentCanvas.style.display = 'block';
+      if (preserveSelection && crescentCrop) {
+        setCrescentStage(previousStage, false);
+      } else {
+        const requestedSize = parseInt(document.getElementById('crescent-crop-size').value) || 180;
+        const size = Math.min(requestedSize, image.naturalWidth, image.naturalHeight);
+        crescentCrop = null;
+        clearCrescentCircle();
+        document.getElementById('crescent-rim').max = '15';
+        setCrescentCrop((image.naturalWidth - size) / 2, (image.naturalHeight - size) / 2, size);
+        setCrescentStage('crop', false);
+      }
+      const mode = normalize ? 'normalized' : 'source intensity';
+      setStatus('crescent-status-wrap', `Frame ${frameIndex} loaded (${mode})`, 'ok');
+      resolve();
+    };
+    image.onerror = () => {
+      document.getElementById('crescent-canvas-empty').textContent = 'Could not decode frame preview';
+      resolve();
+    };
+    image.src = data.image;
+  });
 }
 
 function updateCrescentRangeLabels() {
@@ -3665,6 +3678,7 @@ function crescentRequest(previewOnly, includeCircle) {
     username,
     file_id: document.getElementById('crescent-file-select').value,
     frame_index: parseInt(document.getElementById('crescent-frame').value) || 0,
+    normalize: document.getElementById('crescent-normalize').checked,
     polarity: document.getElementById('crescent-polarity').value,
     crop_size: parseInt(document.getElementById('crescent-crop-size').value),
     min_radius: parseInt(document.getElementById('crescent-min-radius').value),
@@ -3711,7 +3725,7 @@ document.getElementById('crescent-file-select').onchange = async () => {
   document.getElementById('crescent-frame').value = '0';
   await loadCrescentFrame();
 };
-document.getElementById('crescent-frame').onchange = loadCrescentFrame;
+document.getElementById('crescent-frame').onchange = () => loadCrescentFrame();
 document.getElementById('crescent-crop-size').onchange = () => {
   if (!crescentImage || !crescentCrop) return;
   const size = parseInt(document.getElementById('crescent-crop-size').value) || 180;
@@ -3741,7 +3755,11 @@ document.getElementById('crescent-threshold').onchange = () => {
   if (crescentStage === 'review') previewCrescentMeasurement();
 };
 document.getElementById('crescent-threshold-auto').onchange = event => {
-  document.getElementById('crescent-threshold').disabled = event.target.checked;
+    document.getElementById('crescent-threshold').disabled = event.target.checked;
+    if (crescentStage === 'review') previewCrescentMeasurement();
+};
+document.getElementById('crescent-normalize').onchange = async () => {
+  await loadCrescentFrame(true);
   if (crescentStage === 'review') previewCrescentMeasurement();
 };
 updateCrescentRangeLabels();
@@ -3768,6 +3786,7 @@ function showCrescentResults(d, saved) {
     ['Center', `${formatCrescentNumber(d.center_x, 1)}, ${formatCrescentNumber(d.center_y, 1)}`, 'px'],
     ['Radius', formatCrescentNumber(d.radius_px, 2), 'px'],
     ['Threshold', formatCrescentNumber(d.threshold_value, 3), 'intensity'],
+    ['Normalized', d.normalized ? 'Yes' : 'No', ''],
     ['Quality', d.qc_status || '', d.qc_reason || ''],
   ];
   if (saved) {

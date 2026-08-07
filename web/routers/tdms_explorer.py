@@ -60,12 +60,18 @@ async def get_tdms_structure(username: str, file_id: str):
 
 
 @router.get("/frame/{username}/{file_id}/{index}")
-async def get_tdms_frame(username: str, file_id: str, index: int, cmap: str = "gray"):
+async def get_tdms_frame(
+    username: str,
+    file_id: str,
+    index: int,
+    cmap: str = "gray",
+    normalize: Optional[bool] = None,
+):
     info = _tdms_file(username, file_id)
-    normalize = info.get("tdms_settings", {}).get("normalize", True)
+    effective_normalize = info.get("tdms_settings", {}).get("normalize", True) if normalize is None else normalize
     try:
         image, frame_count, width, height = tdms_ops.get_frame_image(
-            info["path"], index, normalize=normalize, cmap=cmap
+            info["path"], index, normalize=effective_normalize, cmap=cmap
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -81,6 +87,7 @@ async def get_tdms_frame(username: str, file_id: str, index: int, cmap: str = "g
         "frame_count": frame_count,
         "frame_index": index,
         "cmap": cmap,
+        "normalized": effective_normalize,
     }
 
 

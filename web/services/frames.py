@@ -13,8 +13,11 @@ def normalize_tdms_frame(frame: np.ndarray, normalize: bool) -> np.ndarray:
         if fmax > fmin:
             return ((frame.astype(np.float32) - fmin) / (fmax - fmin + 1e-8) * 255).astype(np.uint8)
         return np.zeros_like(frame, dtype=np.uint8)
-    if frame.dtype == np.uint16:
-        return (frame >> 8).astype(np.uint8)
+    if np.issubdtype(frame.dtype, np.integer):
+        minimum = int(frame.min())
+        maximum = int(frame.max())
+        if minimum >= 0 and maximum <= 65535 and maximum > 255:
+            return np.right_shift(frame, 8).astype(np.uint8)
     return np.clip(frame, 0, 255).astype(np.uint8)
 
 

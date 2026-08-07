@@ -62,6 +62,7 @@ try:
     from crescent_ratio import (
         CropRegion,
         ParticleDetection,
+        display_uint8 as display_crescent_uint8,
         measure_frame,
         save_overlay as save_crescent_overlay,
     )
@@ -270,6 +271,7 @@ class CrescentRatioRequest(BaseModel):
     username: str
     file_id: str
     frame_index: int = 0
+    normalize: bool = False
     polarity: Literal["bright", "dark"] = "bright"
     crop_size: int = 180
     crop_center_x: Optional[float] = None
@@ -1895,6 +1897,60 @@ def _crescent_output_base(request: CrescentRatioRequest, file_info: Dict[str, An
     return base[:120] or f"crescent_ratio_{uuid.uuid4().hex[:8]}"
 
 
+def _load_crescent_source_frame(file_info: Dict[str, Any], index: int) -> Tuple[np.ndarray, int]:
+    path = Path(file_info["path"])
+    if file_info.get("type") == "tdms":
+        images = get_images(str(path))
+        if images is None:
+            raise HTTPException(status_code=400, detail=f"Could not extract images from {path.name}")
+        frame_count = int(images.shape[0])
+        if index >= frame_count:
+            raise HTTPException(status_code=400, detail=f"Frame index {index} is outside 0-{frame_count - 1}")
+        return np.asarray(images[index]), frame_count
+    if index != 0:
+        raise HTTPException(status_code=400, detail="Image files contain only frame 0")
+    with Image.open(path) as image:
+        return np.asarray(image.convert("L")), 1
+
+
+@app.get("/analyze/janus-crescent-frame/{username}/{file_id}/{index}")
+async def get_janus_crescent_frame(
+    username: str,
+    file_id: str,
+    index: int,
+    normalize: bool = False,
+):
+    if not _crescent_ratio_available:
+        raise HTTPException(status_code=503, detail="Janus crescent ratio module unavailable")
+    username = require_user(username)
+    if index < 0:
+        raise HTTPException(status_code=400, detail="Frame index must be non-negative")
+    if username not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    file_info = (
+        sessions[username].get("files", {}).get(file_id)
+        or sessions[username].get("detect_files", {}).get(file_id)
+    )
+    if not file_info:
+        raise HTTPException(status_code=404, detail="File not found in this session")
+    source_frame, frame_count = _load_crescent_source_frame(file_info, index)
+    frame = (
+        _normalize_tdms_frame(source_frame, normalize)
+        if file_info.get("type") == "tdms"
+        else display_crescent_uint8(source_frame, normalize=normalize)
+    )
+    buffer = BytesIO()
+    Image.fromarray(frame).save(buffer, format="PNG")
+    return {
+        "image": f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}",
+        "width": int(frame.shape[1]),
+        "height": int(frame.shape[0]),
+        "frame_count": frame_count,
+        "frame_index": index,
+        "normalized": normalize,
+    }
+
+
 @app.post("/analyze/janus-crescent-ratio")
 async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
     if not _crescent_ratio_available:
@@ -1910,10 +1966,7 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
     if not file_info:
         raise HTTPException(status_code=404, detail="File not found in this session")
 
-    stack = _load_file_stack(file_info)
-    if request.frame_index >= stack.shape[0]:
-        raise HTTPException(status_code=400, detail=f"Frame index {request.frame_index} is outside 0-{stack.shape[0] - 1}")
-    frame = np.asarray(stack[request.frame_index])
+    frame, _ = _load_crescent_source_frame(file_info, request.frame_index)
 
     selected_crop = None
     if request.crop_x0 is not None:
@@ -1933,6 +1986,7 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
         measurement, debug = measure_frame(
             frame,
             Path(file_info.get("filename", request.file_id)),
+            normalize=request.normalize,
             polarity=request.polarity,
             seed=seed,
             crop_size=request.crop_size,
@@ -1958,14 +2012,14 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
         overlay_buffer = BytesIO()
         save_crescent_overlay(
             overlay_buffer,
-            debug["gray"],
+            debug["source_gray"],
             debug["disk"],
             debug["interior"],
-            debug["background"],
             debug["crescent"],
             debug["detection"],
             debug["crop_region"],
             title=overlay_title,
+            normalize=request.normalize,
         )
         data["overlay_b64"] = f"data:image/png;base64,{base64.b64encode(overlay_buffer.getvalue()).decode()}"
         return _sanitize_crescent_response(data=data)
@@ -1978,14 +2032,14 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
     pd.DataFrame([data]).to_csv(csv_path, index=False)
     save_crescent_overlay(
         overlay_path,
-        debug["gray"],
+        debug["source_gray"],
         debug["disk"],
         debug["interior"],
-        debug["background"],
         debug["crescent"],
         debug["detection"],
         debug["crop_region"],
         title=overlay_title,
+        normalize=request.normalize,
     )
     data["csv_name"] = csv_path.name
     data["overlay_name"] = overlay_path.name

@@ -41,9 +41,10 @@ from PIL import Image
 from crescent_ratio import (
     CropRegion,
     ParticleDetection,
+    display_uint8,
     load_frame0,
     measure_frame,
-    normalize_uint8,
+    normalize_frame_uint8,
     save_overlay,
     select_analysis_crop,
     to_grayscale,
@@ -60,12 +61,16 @@ class CrescentRatioGUI:
         crop_size: int = 180,
         rim_exclusion_px: float = 5.0,
         threshold_percentile: float | None = None,
+        normalize: bool = False,
     ) -> None:
         self.input_path = Path(input_path)
         self.output_dir = Path(output_dir)
         self.frame = load_frame0(self.input_path)
         self.gray = to_grayscale(self.frame)
-        self.display = normalize_uint8(self.gray)
+        self.normalize = normalize
+        if self.normalize:
+            self.gray = normalize_frame_uint8(self.gray).astype(np.float64)
+        self.display = display_uint8(self.frame, normalize=self.normalize)
         self.height, self.width = self.gray.shape
         _, self.crop_region = select_analysis_crop(self.gray, crop_size=crop_size)
         self.rim_exclusion_px = float(rim_exclusion_px)
@@ -207,7 +212,7 @@ class CrescentRatioGUI:
     def show_circle_stage(self, _event=None) -> None:
         self._reset_figure()
         self.crop_gray = self.crop_region.extract(self.gray)
-        self.crop_display = normalize_uint8(self.crop_gray)
+        self.crop_display = self.crop_region.extract(self.display)
         self.ax = self.figure.add_axes([0.05, 0.14, 0.90, 0.80])
         self.ax.imshow(self.crop_display, cmap="gray", origin="upper")
         self.ax.set_title("2. Left-drag from particle center to edge; right-click moves center; scroll changes radius")
@@ -316,6 +321,7 @@ class CrescentRatioGUI:
         self.measurement, self.debug = measure_frame(
             self.frame,
             self.input_path,
+            normalize=self.normalize,
             polarity="bright",
             seed=detection,
             rim_exclusion_px=self.rim_exclusion_px,
@@ -326,7 +332,7 @@ class CrescentRatioGUI:
     def _auto_threshold_percentile(self) -> float:
         self._measure(None)
         interior = self.debug["interior"]
-        values = self.gray[interior] - self.measurement.background_value
+        values = self.debug["gray"][interior] - self.measurement.background_value
         if values.size == 0:
             return 90.0
         percentile = 100.0 * float(np.mean(values <= self.measurement.threshold_value))
@@ -446,6 +452,7 @@ class CrescentRatioGUI:
             "crop": asdict(self.crop_region),
             "circle": asdict(self._manual_detection()),
             "polarity": "bright",
+            "normalized": self.normalize,
             "rim_exclusion_px": self.rim_exclusion_px,
             "threshold_percentile": self.threshold_percentile,
             "crescent_area_ratio": self.measurement.crescent_area_ratio,
@@ -453,17 +460,17 @@ class CrescentRatioGUI:
             "out_of_plane_angle_deg": self.measurement.out_of_plane_angle_deg,
         }
         json_path.write_text(json.dumps(selection, indent=2))
-        Image.fromarray(normalize_uint8(self.crop_region.extract(self.gray))).save(crop_path)
+        Image.fromarray(self.crop_region.extract(self.display)).save(crop_path)
         save_overlay(
             overlay_path,
-            self.debug["gray"],
+            self.debug["source_gray"],
             self.debug["disk"],
             self.debug["interior"],
-            self.debug["background"],
             self.debug["crescent"],
             self.debug["detection"],
             self.debug["crop_region"],
             title=f"{self.input_path.name} ratio={self.measurement.crescent_area_ratio:.4f}",
+            normalize=self.normalize,
         )
 
         print(f"Saved ratio {self.measurement.crescent_area_ratio:.6f}")
@@ -484,6 +491,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--crop-size", type=int, default=180, help="Initial square crop size in pixels.")
     parser.add_argument("--rim-exclusion-px", type=float, default=5.0, help="Initial excluded rim width.")
+    parser.add_argument("--normalize", action=argparse.BooleanOptionalAction, default=False, help="Scale the frame minimum and maximum to 0-255 before measurement.")
     parser.add_argument(
         "--threshold-percentile",
         type=float,
@@ -511,6 +519,7 @@ def main(argv: list[str] | None = None) -> int:
             crop_size=args.crop_size,
             rim_exclusion_px=args.rim_exclusion_px,
             threshold_percentile=args.threshold_percentile,
+            normalize=args.normalize,
         )
         plt.show()
     except Exception as exc:
