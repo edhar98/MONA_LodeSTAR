@@ -179,6 +179,21 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
 .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
 .tab-pane { display:none; }
 .tab-pane.active { display:block; }
+.crescent-stage-bar { display:flex; border-bottom:1px solid var(--border); margin-bottom:12px; }
+.crescent-stage-btn {
+  flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text2);
+  padding:8px 10px; cursor:pointer; font-size:12px; font-family:var(--sans);
+}
+.crescent-stage-btn:hover:not(:disabled) { color:var(--text); }
+.crescent-stage-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+.crescent-stage-btn:disabled { opacity:0.4; cursor:not-allowed; }
+#crescent-canvas-wrap {
+  min-height:360px; display:flex; align-items:center; justify-content:center; overflow:auto;
+  background:#050608; border:1px solid var(--border); border-radius:4px;
+}
+#crescent-canvas { max-width:100%; display:none; touch-action:none; }
+.crescent-stage-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+.range-value { color:var(--text); font-family:var(--mono); float:right; }
 .meta-box {
   font-family:var(--mono); font-size:11px; color:var(--text2); background:var(--bg);
   border:1px solid var(--border); border-radius:4px; padding:10px; white-space:pre-wrap;
@@ -293,6 +308,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       <button class="nav-btn" data-panel="detection"><span class="icon">&#128269;</span>Detection</button>
       <button class="nav-btn" data-panel="tracking"><span class="icon">&#128739;</span>Tracking</button>
       <button class="nav-btn" data-panel="analysis"><span class="icon">&#128202;</span>Analysis</button>
+      <button class="nav-btn" data-panel="janus"><span class="icon">&#9680;</span>Janus Orientation</button>
       <button class="nav-btn" data-panel="help"><span class="icon">&#10067;</span>Help</button>
     </nav>
     <div class="sidebar-bottom">
@@ -819,6 +835,67 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       </div>
     </div>
 
+    <div class="panel" id="panel-janus">
+      <div class="row">
+        <div class="col card" style="max-width:360px">
+          <div class="card-title">Janus Crescent Ratio</div>
+          <label>Source file</label>
+          <select id="crescent-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+          <label>Frame</label>
+          <input type="number" id="crescent-frame" value="0" min="0">
+          <div class="row" style="gap:8px">
+            <div class="col"><label>Crop size</label><input type="number" id="crescent-crop-size" value="180" min="20"></div>
+            <div class="col"><label>Polarity</label><select id="crescent-polarity"><option value="bright">Bright crescent</option><option value="dark">Dark crescent</option></select></div>
+          </div>
+          <div class="row" style="gap:8px">
+            <div class="col"><label>Min radius</label><input type="number" id="crescent-min-radius" value="18" min="1"></div>
+            <div class="col"><label>Max radius</label><input type="number" id="crescent-max-radius" value="35" min="1"></div>
+          </div>
+          <label>Rim exclusion <span class="range-value" id="crescent-rim-value">5.0 px</span></label>
+          <input type="range" id="crescent-rim" value="5" min="0" max="15" step="0.5" style="width:100%">
+          <label><input type="checkbox" id="crescent-threshold-auto" checked> Automatic threshold</label>
+          <label>Threshold percentile <span class="range-value" id="crescent-threshold-value">90.0%</span></label>
+          <input type="range" id="crescent-threshold" value="90" min="1" max="99" step="0.5" style="width:100%" disabled>
+          <div class="card-title" style="margin-top:16px">Manual Circle (optional)</div>
+          <div class="row" style="gap:8px">
+            <div class="col"><label>Center X</label><input type="number" id="crescent-center-x" step="0.1" placeholder="auto"></div>
+            <div class="col"><label>Center Y</label><input type="number" id="crescent-center-y" step="0.1" placeholder="auto"></div>
+            <div class="col"><label>Radius</label><input type="number" id="crescent-radius" min="1" step="0.1" placeholder="auto"></div>
+          </div>
+          <label>Output name</label>
+          <input type="text" id="crescent-output-name" placeholder="auto">
+          <button class="btn btn-primary" id="crescent-run-btn" style="margin-top:14px;width:100%" disabled>Save Measurement</button>
+        </div>
+
+        <div class="col card" style="min-width:min(420px,100%)">
+          <div class="card-title">Interactive Selection</div>
+          <div class="crescent-stage-bar">
+            <button class="crescent-stage-btn active" id="crescent-stage-crop" data-stage="crop">1 Crop</button>
+            <button class="crescent-stage-btn" id="crescent-stage-circle" data-stage="circle" disabled>2 Circle</button>
+            <button class="crescent-stage-btn" id="crescent-stage-review" data-stage="review" disabled>3 Review</button>
+          </div>
+          <div id="crescent-canvas-wrap">
+            <span id="crescent-canvas-empty" style="color:var(--text2)">Select a source file</span>
+            <canvas id="crescent-canvas"></canvas>
+          </div>
+          <div id="crescent-selection-info" class="mono" style="font-size:11px;color:var(--text2);margin-top:8px"></div>
+          <div class="crescent-stage-actions">
+            <button class="btn btn-outline btn-sm hidden" id="crescent-back-crop-btn">Back to Crop</button>
+            <button class="btn btn-outline btn-sm hidden" id="crescent-auto-circle-btn">Auto Circle</button>
+            <button class="btn btn-primary btn-sm" id="crescent-use-crop-btn" disabled>Use Crop</button>
+            <button class="btn btn-primary btn-sm hidden" id="crescent-preview-btn">Review Masks</button>
+          </div>
+
+          <div class="card-title" style="margin-top:16px">Crescent Measurement</div>
+          <div id="crescent-status-wrap"><span style="color:var(--text2)">No measurement yet</span></div>
+          <div id="crescent-results-wrap" class="hidden" style="margin-top:12px">
+            <table class="results-table"><tbody id="crescent-table"></tbody></table>
+            <img id="crescent-overlay-img" alt="Janus crescent ratio overlay" style="max-width:100%;border-radius:4px;margin-top:12px;display:block">
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="panel-help">
       <div class="card help-card">
         <div class="card-title">LodeSTAR Overview</div>
@@ -868,6 +945,13 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
             <li><span class="help-term">Active Brownian Particle fitting</span> estimates physical parameters such as translational diffusion, propulsion speed, and rotational diffusion.</li>
             <li><span class="help-term">Angular mean squared displacement</span> needs finite orientation values. If tracks were made without template mode, angular results are omitted.</li>
           </ul>
+        </div>
+
+        <div class="card help-card">
+          <h3>Janus Crescent Ratio</h3>
+          <p>The crescent-ratio tool measures the segmented bright or dark crescent area divided by the rim-excluded Janus particle disk area. It is saved as a CSV plus a quality-control overlay.</p>
+          <p>Theta is the polar cosine angle: ratios 1, 0.5, and 0 correspond to 0, 90, and 180 degrees. Out-of-plane angle retains the one-sided sine convention: ratios 0.5, 0.25, and 0 correspond to 0, 30, and 90 degrees.</p>
+          <p>Both mappings assume an ideal half-coated sphere. Experimental calibration is still recommended when focus or contrast changes.</p>
         </div>
 
         <div class="card help-card">
@@ -1255,6 +1339,25 @@ const FIELD_HINTS = {
   'abp-maxlag': 'Largest time lag in frames used when computing mean squared displacement curves.',
   'abp-mintrack': 'Only tracks with at least this many real (non-gap) frames enter the fit.',
   'abp-include-interp': 'If checked, interpolated gap-fill points are included in mean squared displacement and Active Brownian Particle statistics.',
+  'crescent-file-select': 'Loaded Janus particle file used for crescent-area ratio measurement.',
+  'crescent-frame': 'Zero-based frame index to measure. The standalone tool uses frame 0 by default.',
+  'crescent-crop-size': 'Square crop size in pixels around the search center for finding the inner Janus particle.',
+  'crescent-polarity': 'Whether the crescent appears brighter or darker than its local particle background.',
+  'crescent-min-radius': 'Smallest allowed inner Janus particle radius in pixels.',
+  'crescent-max-radius': 'Largest allowed inner Janus particle radius in pixels. Keep this below any larger enclosing ring.',
+  'crescent-rim': 'Pixels excluded from the outer particle rim before measuring crescent area.',
+  'crescent-threshold': 'Percentile threshold for manual crescent segmentation. Disable Automatic threshold to use this slider.',
+  'crescent-threshold-auto': 'Use automatic Otsu threshold selection instead of the manual percentile slider.',
+  'crescent-center-x': 'Optional manual full-frame x coordinate for the particle center.',
+  'crescent-center-y': 'Optional manual full-frame y coordinate for the particle center.',
+  'crescent-radius': 'Optional manual particle radius in pixels. Fill center x, center y, and radius together.',
+  'crescent-output-name': 'Optional base filename for the saved crescent-ratio CSV and overlay image.',
+  'crescent-stage-crop': 'Drag a square crop, drag inside it to move it, drag a corner to resize it, or use the mouse wheel over it.',
+  'crescent-stage-circle': 'Left-drag from the particle center to its edge. Right-click moves the center and the mouse wheel changes radius.',
+  'crescent-stage-review': 'Preview the disk, excluded rim, measurement interior, and segmented crescent before saving.',
+  'crescent-auto-circle-btn': 'Detect the inner Janus particle circle automatically inside the selected crop.',
+  'crescent-use-crop-btn': 'Accept the current square crop and continue to particle-circle selection.',
+  'crescent-preview-btn': 'Generate a non-persistent mask preview using the current crop, circle, rim, and threshold.',
 };
 
 function applyFieldHints() {
@@ -1452,6 +1555,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('panel-' + name).classList.add('active');
     document.getElementById('panel-title').textContent = btn.textContent.trim();
     if (name === 'tracking' || name === 'analysis') { refreshResultFiles(); refreshVizFileList(); }
+    if (name === 'janus') { refreshFileList(); refreshResultFiles(); }
   if (name === 'detection') refreshModels();
   if (name === 'files') refreshMergedVideos();
     if (name === 'training') { refreshModels(); refreshFileList(); refreshCropPool(); }
@@ -1465,11 +1569,14 @@ function refreshFileList() {
   const list = document.getElementById('file-list');
   const trainSel = document.getElementById('train-file-select');
   const detSel = document.getElementById('det-file-select');
+  const crescentSel = document.getElementById('crescent-file-select');
   const prevTrain = trainFileId || trainSel.value;
   const prevDet = [...detSel.selectedOptions].map(o => o.value);
+  const prevCrescent = crescentSel ? crescentSel.value : '';
   selectedSessionFileIds = new Set([...selectedSessionFileIds].filter(fid => uploadedFiles[fid]));
   trainSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
   detSel.innerHTML = '';
+  if (crescentSel) crescentSel.innerHTML = '<option value="">&#8212; Select file &#8212;</option>';
   const keys = Object.keys(uploadedFiles);
   Object.keys(detFiles).forEach(id => {
     if (!keys.includes(id)) keys.push(id);
@@ -1498,6 +1605,7 @@ function refreshFileList() {
     list.appendChild(item);
     trainSel.appendChild(new Option(f.filename, fid));
     detSel.appendChild(new Option(f.filename, fid));
+    if (crescentSel) crescentSel.appendChild(new Option(f.filename, fid));
   });
   Object.keys(detFiles).forEach(fid => {
     if (uploadedFiles[fid]) return;
@@ -1510,6 +1618,9 @@ function refreshFileList() {
   });
   if (prevTrain && uploadedFiles[prevTrain]) {
     trainSel.value = prevTrain;
+  }
+  if (crescentSel && prevCrescent && uploadedFiles[prevCrescent]) {
+    crescentSel.value = prevCrescent;
   }
   list.querySelectorAll('.session-file-check').forEach((cb, index) => {
     cb.onclick = e => {
@@ -3216,6 +3327,460 @@ function showAbpResults(d) {
   }
   document.getElementById('abp-results-wrap').classList.remove('hidden');
   setStatus('abp-status-wrap', 'ABP fit complete', 'ok');
+}
+
+function optionalFloat(id) {
+  const raw = document.getElementById(id).value.trim();
+  return raw === '' ? null : parseFloat(raw);
+}
+
+const crescentCanvas = document.getElementById('crescent-canvas');
+const crescentCtx = crescentCanvas.getContext('2d');
+let crescentImage = null;
+let crescentStage = 'crop';
+let crescentCrop = null;
+let crescentCircle = null;
+let crescentView = null;
+let crescentPointer = null;
+
+function clampCrescent(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clearCrescentCircle() {
+  crescentCircle = null;
+  ['crescent-center-x', 'crescent-center-y', 'crescent-radius'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('crescent-stage-review').disabled = true;
+  document.getElementById('crescent-run-btn').disabled = true;
+}
+
+function setCrescentCrop(x, y, size) {
+  if (!crescentImage) return;
+  const maxSize = Math.min(crescentImage.naturalWidth, crescentImage.naturalHeight);
+  const side = clampCrescent(size, Math.min(20, maxSize), maxSize);
+  crescentCrop = {
+    x: clampCrescent(x, 0, crescentImage.naturalWidth - side),
+    y: clampCrescent(y, 0, crescentImage.naturalHeight - side),
+    w: side,
+    h: side,
+  };
+  document.getElementById('crescent-crop-size').value = String(Math.round(side));
+  clearCrescentCircle();
+  document.getElementById('crescent-stage-circle').disabled = false;
+  document.getElementById('crescent-use-crop-btn').disabled = false;
+  drawCrescentCanvas();
+}
+
+function setCrescentCircle(centerX, centerY, radius) {
+  if (!crescentCrop) return;
+  const cx = clampCrescent(centerX, crescentCrop.x + 1, crescentCrop.x + crescentCrop.w - 1);
+  const cy = clampCrescent(centerY, crescentCrop.y + 1, crescentCrop.y + crescentCrop.h - 1);
+  const maxRadius = Math.max(1, Math.min(
+    cx - crescentCrop.x,
+    cy - crescentCrop.y,
+    crescentCrop.x + crescentCrop.w - cx,
+    crescentCrop.y + crescentCrop.h - cy
+  ));
+  crescentCircle = { x: cx, y: cy, r: clampCrescent(radius, 1, maxRadius) };
+  document.getElementById('crescent-center-x').value = cx.toFixed(1);
+  document.getElementById('crescent-center-y').value = cy.toFixed(1);
+  document.getElementById('crescent-radius').value = crescentCircle.r.toFixed(1);
+  const rim = document.getElementById('crescent-rim');
+  rim.max = String(Math.max(0, Math.min(15, Math.floor((crescentCircle.r - 0.5) * 2) / 2)));
+  if (parseFloat(rim.value) > parseFloat(rim.max)) rim.value = rim.max;
+  updateCrescentRangeLabels();
+  document.getElementById('crescent-stage-review').disabled = false;
+  drawCrescentCanvas();
+}
+
+function drawCrescentCanvas() {
+  if (!crescentImage || !crescentCrop) return;
+  const wrap = document.getElementById('crescent-canvas-wrap');
+  const source = crescentStage === 'crop'
+    ? { x: 0, y: 0, w: crescentImage.naturalWidth, h: crescentImage.naturalHeight }
+    : crescentCrop;
+  const maxWidth = Math.max(320, (wrap.clientWidth || 640) - 8);
+  const maxHeight = 560;
+  const maxScale = crescentStage === 'crop' ? 1 : 3;
+  const scale = Math.max(0.05, Math.min(maxScale, maxWidth / source.w, maxHeight / source.h));
+  crescentCanvas.width = Math.max(1, Math.round(source.w * scale));
+  crescentCanvas.height = Math.max(1, Math.round(source.h * scale));
+  crescentView = {
+    x: source.x,
+    y: source.y,
+    w: source.w,
+    h: source.h,
+    sx: crescentCanvas.width / source.w,
+    sy: crescentCanvas.height / source.h,
+  };
+  crescentCtx.clearRect(0, 0, crescentCanvas.width, crescentCanvas.height);
+  crescentCtx.drawImage(
+    crescentImage,
+    source.x,
+    source.y,
+    source.w,
+    source.h,
+    0,
+    0,
+    crescentCanvas.width,
+    crescentCanvas.height
+  );
+
+  if (crescentStage === 'crop') {
+    const x = (crescentCrop.x - source.x) * crescentView.sx;
+    const y = (crescentCrop.y - source.y) * crescentView.sy;
+    const w = crescentCrop.w * crescentView.sx;
+    const h = crescentCrop.h * crescentView.sy;
+    crescentCtx.fillStyle = 'rgba(217,70,239,0.14)';
+    crescentCtx.fillRect(x, y, w, h);
+    crescentCtx.strokeStyle = '#d946ef';
+    crescentCtx.lineWidth = 2;
+    crescentCtx.strokeRect(x, y, w, h);
+    crescentCtx.fillStyle = '#d946ef';
+    [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([hx, hy]) => {
+      crescentCtx.fillRect(hx - 5, hy - 5, 10, 10);
+    });
+  }
+
+  if (crescentCircle && crescentStage !== 'crop') {
+    const x = (crescentCircle.x - source.x) * crescentView.sx;
+    const y = (crescentCircle.y - source.y) * crescentView.sy;
+    const radius = crescentCircle.r * crescentView.sx;
+    const innerRadius = Math.max(0, crescentCircle.r - parseFloat(document.getElementById('crescent-rim').value)) * crescentView.sx;
+    crescentCtx.strokeStyle = '#4ade80';
+    crescentCtx.lineWidth = 2;
+    crescentCtx.beginPath();
+    crescentCtx.arc(x, y, radius, 0, 2 * Math.PI);
+    crescentCtx.stroke();
+    crescentCtx.save();
+    crescentCtx.setLineDash([6, 4]);
+    crescentCtx.strokeStyle = '#fde047';
+    crescentCtx.lineWidth = 1.5;
+    crescentCtx.beginPath();
+    crescentCtx.arc(x, y, innerRadius, 0, 2 * Math.PI);
+    crescentCtx.stroke();
+    crescentCtx.restore();
+  }
+
+  if (crescentCircle && crescentStage !== 'crop') {
+    document.getElementById('crescent-selection-info').textContent =
+      `Circle: x=${crescentCircle.x.toFixed(1)} y=${crescentCircle.y.toFixed(1)} r=${crescentCircle.r.toFixed(1)} px`;
+  } else {
+    document.getElementById('crescent-selection-info').textContent =
+      `Crop: x=${Math.round(crescentCrop.x)} y=${Math.round(crescentCrop.y)} size=${Math.round(crescentCrop.w)} px`;
+  }
+}
+
+function setCrescentStage(stage, renderPreview = true) {
+  if (!crescentImage) return;
+  if (stage === 'circle' && !crescentCrop) return;
+  if (stage === 'review' && !crescentCircle) return;
+  crescentStage = stage;
+  document.querySelectorAll('.crescent-stage-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.stage === stage);
+  });
+  document.getElementById('crescent-use-crop-btn').classList.toggle('hidden', stage !== 'crop');
+  document.getElementById('crescent-back-crop-btn').classList.toggle('hidden', stage === 'crop');
+  document.getElementById('crescent-auto-circle-btn').classList.toggle('hidden', stage !== 'circle');
+  document.getElementById('crescent-preview-btn').classList.toggle('hidden', stage !== 'circle');
+  document.getElementById('crescent-run-btn').disabled = stage !== 'review';
+  crescentCanvas.title = stage === 'crop'
+    ? 'Drag outside the crop to draw; drag inside to move; drag a corner or use the mouse wheel to resize.'
+    : stage === 'circle'
+      ? 'Left-drag from center to edge; right-click moves the center; use the mouse wheel to change radius.'
+      : 'Review the selected crop, particle circle, and rim-excluded interior.';
+  drawCrescentCanvas();
+  if (stage === 'review' && renderPreview) previewCrescentMeasurement();
+}
+
+function crescentSourcePoint(event) {
+  const rect = crescentCanvas.getBoundingClientRect();
+  const canvasX = (event.clientX - rect.left) * crescentCanvas.width / Math.max(rect.width, 1);
+  const canvasY = (event.clientY - rect.top) * crescentCanvas.height / Math.max(rect.height, 1);
+  return {
+    x: crescentView.x + canvasX / crescentView.sx,
+    y: crescentView.y + canvasY / crescentView.sy,
+  };
+}
+
+function crescentPointInCrop(point) {
+  return point.x >= crescentCrop.x && point.x <= crescentCrop.x + crescentCrop.w &&
+    point.y >= crescentCrop.y && point.y <= crescentCrop.y + crescentCrop.h;
+}
+
+function crescentCropCorner(point) {
+  const tolerance = 12 / Math.max(crescentView.sx, 0.01);
+  const corners = {
+    nw: [crescentCrop.x, crescentCrop.y],
+    ne: [crescentCrop.x + crescentCrop.w, crescentCrop.y],
+    sw: [crescentCrop.x, crescentCrop.y + crescentCrop.h],
+    se: [crescentCrop.x + crescentCrop.w, crescentCrop.y + crescentCrop.h],
+  };
+  for (const [name, [x, y]] of Object.entries(corners)) {
+    if (Math.hypot(point.x - x, point.y - y) <= tolerance) return name;
+  }
+  return null;
+}
+
+function squareFromCrescentPoints(start, end) {
+  const side = Math.max(20, Math.abs(end.x - start.x), Math.abs(end.y - start.y));
+  return {
+    x: end.x >= start.x ? start.x : start.x - side,
+    y: end.y >= start.y ? start.y : start.y - side,
+    size: side,
+  };
+}
+
+crescentCanvas.onpointerdown = event => {
+  if (!crescentImage || !crescentView) return;
+  event.preventDefault();
+  const point = crescentSourcePoint(event);
+  if (crescentStage === 'crop' && event.button === 0) {
+    const corner = crescentCropCorner(point);
+    if (corner) {
+      const anchor = {
+        x: corner.includes('w') ? crescentCrop.x + crescentCrop.w : crescentCrop.x,
+        y: corner.includes('n') ? crescentCrop.y + crescentCrop.h : crescentCrop.y,
+      };
+      crescentPointer = { mode: 'resize-crop', start: anchor };
+    } else if (crescentPointInCrop(point)) {
+      crescentPointer = {
+        mode: 'move-crop',
+        offsetX: point.x - crescentCrop.x,
+        offsetY: point.y - crescentCrop.y,
+      };
+    } else {
+      crescentPointer = { mode: 'draw-crop', start: point };
+    }
+  } else if (crescentStage === 'circle') {
+    if (event.button === 2 && crescentCircle) {
+      setCrescentCircle(point.x, point.y, crescentCircle.r);
+    } else if (event.button === 0) {
+      crescentPointer = { mode: 'draw-circle', start: point };
+      setCrescentCircle(point.x, point.y, 1);
+    }
+  }
+  crescentCanvas.setPointerCapture(event.pointerId);
+};
+
+crescentCanvas.onpointermove = event => {
+  if (!crescentPointer || !crescentView) return;
+  const point = crescentSourcePoint(event);
+  if (crescentPointer.mode === 'move-crop') {
+    setCrescentCrop(point.x - crescentPointer.offsetX, point.y - crescentPointer.offsetY, crescentCrop.w);
+  } else if (crescentPointer.mode === 'draw-crop' || crescentPointer.mode === 'resize-crop') {
+    const square = squareFromCrescentPoints(crescentPointer.start, point);
+    setCrescentCrop(square.x, square.y, square.size);
+  } else if (crescentPointer.mode === 'draw-circle') {
+    setCrescentCircle(
+      crescentPointer.start.x,
+      crescentPointer.start.y,
+      Math.hypot(point.x - crescentPointer.start.x, point.y - crescentPointer.start.y)
+    );
+  }
+};
+
+crescentCanvas.onpointerup = event => {
+  crescentPointer = null;
+  if (crescentCanvas.hasPointerCapture(event.pointerId)) crescentCanvas.releasePointerCapture(event.pointerId);
+};
+crescentCanvas.onpointercancel = () => { crescentPointer = null; };
+crescentCanvas.oncontextmenu = event => { event.preventDefault(); };
+crescentCanvas.onwheel = event => {
+  if (!crescentImage || !crescentView) return;
+  const point = crescentSourcePoint(event);
+  if (crescentStage === 'crop' && crescentPointInCrop(point)) {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.1 : 0.9;
+    const centerX = crescentCrop.x + crescentCrop.w / 2;
+    const centerY = crescentCrop.y + crescentCrop.h / 2;
+    const size = crescentCrop.w * factor;
+    setCrescentCrop(centerX - size / 2, centerY - size / 2, size);
+  } else if (crescentStage === 'circle' && crescentCircle) {
+    event.preventDefault();
+    setCrescentCircle(crescentCircle.x, crescentCircle.y, crescentCircle.r * (event.deltaY < 0 ? 1.08 : 0.92));
+  }
+};
+
+async function loadCrescentFrame() {
+  const fileId = document.getElementById('crescent-file-select').value;
+  if (!fileId) return;
+  const frameInput = document.getElementById('crescent-frame');
+  const frameIndex = Math.max(0, parseInt(frameInput.value) || 0);
+  const fileInfo = uploadedFiles[fileId];
+  const path = fileInfo && fileInfo.type === 'tdms'
+    ? `/tdms/frame/${username}/${fileId}/${frameIndex}`
+    : `/frame/${username}/${fileId}/${frameIndex}`;
+  document.getElementById('crescent-canvas-empty').textContent = 'Loading';
+  document.getElementById('crescent-canvas-empty').style.display = '';
+  crescentCanvas.style.display = 'none';
+  const data = await api(path);
+  if (data.error) {
+    document.getElementById('crescent-canvas-empty').textContent = data.error;
+    setStatus('crescent-status-wrap', esc(data.error), 'err');
+    return;
+  }
+  if (data.frame_count) {
+    frameInput.max = String(data.frame_count - 1);
+    if (uploadedFiles[fileId]) uploadedFiles[fileId].frame_count = data.frame_count;
+  }
+  const image = new Image();
+  image.onload = () => {
+    crescentImage = image;
+    const requestedSize = parseInt(document.getElementById('crescent-crop-size').value) || 180;
+    const size = Math.min(requestedSize, image.naturalWidth, image.naturalHeight);
+    crescentCrop = null;
+    clearCrescentCircle();
+    document.getElementById('crescent-rim').max = '15';
+    document.getElementById('crescent-canvas-empty').style.display = 'none';
+    crescentCanvas.style.display = 'block';
+    setCrescentCrop((image.naturalWidth - size) / 2, (image.naturalHeight - size) / 2, size);
+    setCrescentStage('crop', false);
+    setStatus('crescent-status-wrap', `Frame ${frameIndex} loaded`, 'ok');
+  };
+  image.onerror = () => {
+    document.getElementById('crescent-canvas-empty').textContent = 'Could not decode frame preview';
+  };
+  image.src = data.image;
+}
+
+function updateCrescentRangeLabels() {
+  document.getElementById('crescent-rim-value').textContent = `${parseFloat(document.getElementById('crescent-rim').value).toFixed(1)} px`;
+  document.getElementById('crescent-threshold-value').textContent = `${parseFloat(document.getElementById('crescent-threshold').value).toFixed(1)}%`;
+}
+
+function syncCrescentCircleFromInputs() {
+  const centerX = optionalFloat('crescent-center-x');
+  const centerY = optionalFloat('crescent-center-y');
+  const radius = optionalFloat('crescent-radius');
+  if ([centerX, centerY, radius].every(value => value != null && Number.isFinite(value))) {
+    setCrescentCircle(centerX, centerY, radius);
+  }
+}
+
+function crescentRequest(previewOnly, includeCircle) {
+  const request = {
+    username,
+    file_id: document.getElementById('crescent-file-select').value,
+    frame_index: parseInt(document.getElementById('crescent-frame').value) || 0,
+    polarity: document.getElementById('crescent-polarity').value,
+    crop_size: parseInt(document.getElementById('crescent-crop-size').value),
+    min_radius: parseInt(document.getElementById('crescent-min-radius').value),
+    max_radius: parseInt(document.getElementById('crescent-max-radius').value),
+    rim_exclusion_px: parseFloat(document.getElementById('crescent-rim').value),
+    threshold_percentile: document.getElementById('crescent-threshold-auto').checked
+      ? null
+      : parseFloat(document.getElementById('crescent-threshold').value),
+    output_name: document.getElementById('crescent-output-name').value.trim() || null,
+    preview_only: previewOnly,
+  };
+  if (crescentCrop) {
+    request.crop_x0 = Math.round(crescentCrop.x);
+    request.crop_y0 = Math.round(crescentCrop.y);
+    request.crop_x1 = Math.round(crescentCrop.x + crescentCrop.w);
+    request.crop_y1 = Math.round(crescentCrop.y + crescentCrop.h);
+  }
+  if (includeCircle && crescentCircle) {
+    request.center_x = crescentCircle.x;
+    request.center_y = crescentCircle.y;
+    request.radius_px = crescentCircle.r;
+  }
+  return request;
+}
+
+async function autoDetectCrescentCircle() {
+  setStatus('crescent-status-wrap', '<span class="spinner"></span> Detecting particle circle', 'info');
+  const data = await api('/analyze/janus-crescent-ratio', crescentRequest(true, false));
+  if (data.error) { setStatus('crescent-status-wrap', esc(data.error), 'err'); return; }
+  setCrescentCircle(data.center_x, data.center_y, data.radius_px);
+  showCrescentResults(data, false);
+  setStatus('crescent-status-wrap', 'Automatic circle selected', 'ok');
+}
+
+async function previewCrescentMeasurement() {
+  if (!crescentCircle) { setStatus('crescent-status-wrap', 'Select the particle circle first', 'warn'); return; }
+  setStatus('crescent-status-wrap', '<span class="spinner"></span> Updating mask preview', 'info');
+  const data = await api('/analyze/janus-crescent-ratio', crescentRequest(true, true));
+  if (data.error) { setStatus('crescent-status-wrap', esc(data.error), 'err'); return; }
+  showCrescentResults(data, false);
+}
+
+document.getElementById('crescent-file-select').onchange = async () => {
+  document.getElementById('crescent-frame').value = '0';
+  await loadCrescentFrame();
+};
+document.getElementById('crescent-frame').onchange = loadCrescentFrame;
+document.getElementById('crescent-crop-size').onchange = () => {
+  if (!crescentImage || !crescentCrop) return;
+  const size = parseInt(document.getElementById('crescent-crop-size').value) || 180;
+  const centerX = crescentCrop.x + crescentCrop.w / 2;
+  const centerY = crescentCrop.y + crescentCrop.h / 2;
+  setCrescentCrop(centerX - size / 2, centerY - size / 2, size);
+};
+document.querySelectorAll('.crescent-stage-btn').forEach(button => {
+  button.onclick = () => setCrescentStage(button.dataset.stage);
+});
+document.getElementById('crescent-use-crop-btn').onclick = () => setCrescentStage('circle', false);
+document.getElementById('crescent-back-crop-btn').onclick = () => setCrescentStage('crop', false);
+document.getElementById('crescent-auto-circle-btn').onclick = autoDetectCrescentCircle;
+document.getElementById('crescent-preview-btn').onclick = () => setCrescentStage('review');
+['crescent-center-x', 'crescent-center-y', 'crescent-radius'].forEach(id => {
+  document.getElementById(id).onchange = syncCrescentCircleFromInputs;
+});
+document.getElementById('crescent-rim').oninput = () => {
+  updateCrescentRangeLabels();
+  drawCrescentCanvas();
+};
+document.getElementById('crescent-rim').onchange = () => {
+  if (crescentStage === 'review') previewCrescentMeasurement();
+};
+document.getElementById('crescent-threshold').oninput = updateCrescentRangeLabels;
+document.getElementById('crescent-threshold').onchange = () => {
+  if (crescentStage === 'review') previewCrescentMeasurement();
+};
+document.getElementById('crescent-threshold-auto').onchange = event => {
+  document.getElementById('crescent-threshold').disabled = event.target.checked;
+  if (crescentStage === 'review') previewCrescentMeasurement();
+};
+updateCrescentRangeLabels();
+
+document.getElementById('crescent-run-btn').onclick = async () => {
+  if (!crescentCircle) { setStatus('crescent-status-wrap', 'Select the particle circle first', 'warn'); return; }
+  setStatus('crescent-status-wrap', '<span class="spinner"></span> Saving Janus crescent measurement', 'info');
+  const data = await api('/analyze/janus-crescent-ratio', crescentRequest(false, true));
+  if (data.error) { setStatus('crescent-status-wrap', esc(data.error), 'err'); return; }
+  showCrescentResults(data, true);
+  await refreshResultFiles();
+};
+
+function showCrescentResults(d, saved) {
+  const formatCrescentNumber = (value, digits) => value == null || !Number.isFinite(Number(value)) ? '' : Number(value).toFixed(digits);
+  const ratio = formatCrescentNumber(d.crescent_area_ratio, 5);
+  const rows = [
+    ['Crescent area ratio', ratio, 'crescent px / rim-excluded disk px'],
+    ['Theta', formatCrescentNumber(d.theta_deg, 2), 'deg'],
+    ['Out of plane angle', formatCrescentNumber(d.out_of_plane_angle_deg, 2), 'deg'],
+    ['Crescent area', d.crescent_area_px, 'px'],
+    ['Disk area', d.disk_area_px, 'px'],
+    ['Interior area', d.interior_area_px, 'px'],
+    ['Center', `${formatCrescentNumber(d.center_x, 1)}, ${formatCrescentNumber(d.center_y, 1)}`, 'px'],
+    ['Radius', formatCrescentNumber(d.radius_px, 2), 'px'],
+    ['Threshold', formatCrescentNumber(d.threshold_value, 3), 'intensity'],
+    ['Quality', d.qc_status || '', d.qc_reason || ''],
+  ];
+  if (saved) {
+    rows.push(['CSV', d.csv_name || '', '']);
+    rows.push(['Overlay', d.overlay_name || '', '']);
+  }
+  document.getElementById('crescent-table').innerHTML = rows.map(([k, v, u]) =>
+    `<tr><td style="color:var(--text2)">${esc(String(k))}</td><td class="mono">${esc(String(v))}</td><td style="color:var(--text2)">${esc(String(u))}</td></tr>`
+  ).join('');
+  if (d.overlay_b64) document.getElementById('crescent-overlay-img').src = d.overlay_b64;
+  document.getElementById('crescent-results-wrap').classList.remove('hidden');
+  const status = d.qc_status === 'ok' ? 'ok' : 'warn';
+  setStatus('crescent-status-wrap', saved ? `Measurement saved: ${ratio}` : `Preview updated: ${ratio}`, status);
 }
 
 // ====================================================================

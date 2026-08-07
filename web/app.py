@@ -9,6 +9,7 @@ import threading
 import hashlib
 from pathlib import Path
 from datetime import datetime
+from dataclasses import asdict
 from typing import Dict, Optional, List, Any, Literal, Tuple
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -35,6 +36,8 @@ sys.path.insert(0, str(_CFG_SRC))
 sys.path.insert(0, str(_CFG_SRC / "tracking"))
 sys.path.insert(0, str(_CFG_SRC / "analysis"))
 sys.path.insert(0, str(_CFG_SRC / "detection"))
+JANUS_CRESCENT_SRC = WEB_APP_DIR.parent / "tools" / "janus_crescent_ratio" / "src"
+sys.path.insert(0, str(JANUS_CRESCENT_SRC))
 
 from services.tdms_cache import get_images
 import utils
@@ -54,6 +57,18 @@ try:
 except ImportError as _e:
     print(f"[warn] analysis module unavailable: {_e}")
     _analysis_available = False
+
+try:
+    from crescent_ratio import (
+        CropRegion,
+        ParticleDetection,
+        measure_frame,
+        save_overlay as save_crescent_overlay,
+    )
+    _crescent_ratio_available = True
+except ImportError as _e:
+    print(f"[warn] janus crescent ratio module unavailable: {_e}")
+    _crescent_ratio_available = False
 
 # ---------------------------------------------------------------------------
 # Shared modules
@@ -251,6 +266,30 @@ class AbpRequest(BaseModel):
     include_interpolated: bool = False
 
 
+class CrescentRatioRequest(BaseModel):
+    username: str
+    file_id: str
+    frame_index: int = 0
+    polarity: Literal["bright", "dark"] = "bright"
+    crop_size: int = 180
+    crop_center_x: Optional[float] = None
+    crop_center_y: Optional[float] = None
+    crop_x0: Optional[int] = None
+    crop_y0: Optional[int] = None
+    crop_x1: Optional[int] = None
+    crop_y1: Optional[int] = None
+    center_x: Optional[float] = None
+    center_y: Optional[float] = None
+    radius_px: Optional[float] = None
+    min_radius: int = 18
+    max_radius: int = 35
+    rim_exclusion_px: float = 5.0
+    hough_param2: float = 22.0
+    threshold_percentile: Optional[float] = None
+    output_name: Optional[str] = None
+    preview_only: bool = False
+
+
 class CircularMaskRequest(BaseModel):
     username: str
     file_id: str
@@ -357,6 +396,7 @@ async def health():
         "gpu_count": torch.cuda.device_count(),
         "tracking_available": _tracking_available,
         "analysis_available": _analysis_available,
+        "crescent_ratio_available": _crescent_ratio_available,
         "mode": "jupyter" if JUPYTER_MODE else "standalone",
         "data_dir": str(DATA_DIR),
         "feedback_file": str(FEEDBACK_FILE),
@@ -1804,6 +1844,153 @@ async def analyze_abp(request: AbpRequest):
         result["plot_error"] = str(e)
 
     return result
+
+
+def _validate_crescent_request(request: CrescentRatioRequest) -> None:
+    if request.frame_index < 0:
+        raise HTTPException(status_code=400, detail="Frame index must be non-negative")
+    if request.crop_size <= 0:
+        raise HTTPException(status_code=400, detail="Crop size must be positive")
+    if request.min_radius <= 0 or request.max_radius <= 0:
+        raise HTTPException(status_code=400, detail="Radius bounds must be positive")
+    if request.min_radius > request.max_radius:
+        raise HTTPException(status_code=400, detail="Minimum radius cannot exceed maximum radius")
+    if request.rim_exclusion_px < 0:
+        raise HTTPException(status_code=400, detail="Rim exclusion must be non-negative")
+    if request.hough_param2 <= 0:
+        raise HTTPException(status_code=400, detail="Hough sensitivity must be positive")
+    if request.threshold_percentile is not None and not 0 <= request.threshold_percentile <= 100:
+        raise HTTPException(status_code=400, detail="Threshold percentile must be between 0 and 100")
+    crop_values = [request.crop_x0, request.crop_y0, request.crop_x1, request.crop_y1]
+    if any(v is not None for v in crop_values) and any(v is None for v in crop_values):
+        raise HTTPException(status_code=400, detail="Crop coordinates require x0, y0, x1, and y1")
+    if all(v is not None for v in crop_values):
+        if request.crop_x0 >= request.crop_x1 or request.crop_y0 >= request.crop_y1:
+            raise HTTPException(status_code=400, detail="Crop x1/y1 must be greater than x0/y0")
+    seed_values = [request.center_x, request.center_y, request.radius_px]
+    if any(v is not None for v in seed_values) and any(v is None for v in seed_values):
+        raise HTTPException(status_code=400, detail="Manual circle requires center_x, center_y, and radius_px")
+    if request.radius_px is not None and request.radius_px <= 0:
+        raise HTTPException(status_code=400, detail="Manual radius must be positive")
+    effective_radius = request.radius_px if request.radius_px is not None else request.min_radius
+    if request.rim_exclusion_px >= effective_radius:
+        raise HTTPException(status_code=400, detail="Rim exclusion must be smaller than the particle radius")
+
+
+def _sanitize_crescent_response(data: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized: Dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, (float, np.floating)):
+            sanitized[key] = float(value) if np.isfinite(value) else None
+        elif isinstance(value, np.integer):
+            sanitized[key] = int(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
+def _crescent_output_base(request: CrescentRatioRequest, file_info: Dict[str, Any]) -> str:
+    raw = (request.output_name or f"{Path(file_info.get('filename', 'frame')).stem}_frame{request.frame_index}_crescent_ratio").strip()
+    base = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in raw)
+    return base[:120] or f"crescent_ratio_{uuid.uuid4().hex[:8]}"
+
+
+@app.post("/analyze/janus-crescent-ratio")
+async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
+    if not _crescent_ratio_available:
+        raise HTTPException(status_code=503, detail="Janus crescent ratio module unavailable")
+    username = require_user(request.username)
+    _validate_crescent_request(request)
+    if username not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    file_info = (
+        sessions[username].get("files", {}).get(request.file_id)
+        or sessions[username].get("detect_files", {}).get(request.file_id)
+    )
+    if not file_info:
+        raise HTTPException(status_code=404, detail="File not found in this session")
+
+    stack = _load_file_stack(file_info)
+    if request.frame_index >= stack.shape[0]:
+        raise HTTPException(status_code=400, detail=f"Frame index {request.frame_index} is outside 0-{stack.shape[0] - 1}")
+    frame = np.asarray(stack[request.frame_index])
+
+    selected_crop = None
+    if request.crop_x0 is not None:
+        selected_crop = CropRegion(request.crop_x0, request.crop_y0, request.crop_x1, request.crop_y1)
+
+    seed = None
+    if request.center_x is not None:
+        seed = ParticleDetection(
+            center_x=float(request.center_x),
+            center_y=float(request.center_y),
+            radius_px=float(request.radius_px),
+            method="web_manual_circle",
+            score=1.0,
+        )
+
+    try:
+        measurement, debug = measure_frame(
+            frame,
+            Path(file_info.get("filename", request.file_id)),
+            polarity=request.polarity,
+            seed=seed,
+            crop_size=request.crop_size,
+            crop_center_x=request.crop_center_x,
+            crop_center_y=request.crop_center_y,
+            min_radius=request.min_radius,
+            max_radius=request.max_radius,
+            rim_exclusion_px=request.rim_exclusion_px,
+            hough_param2=request.hough_param2,
+            threshold_percentile=request.threshold_percentile,
+            selected_crop=selected_crop,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Crescent ratio measurement failed: {exc}") from exc
+
+    data = asdict(measurement)
+    data["frame"] = request.frame_index
+    data["source_file"] = file_info.get("filename", "")
+    overlay_title = f"{file_info.get('filename', request.file_id)} frame {request.frame_index} ratio={data['crescent_area_ratio']:.3f}"
+    if request.preview_only:
+        overlay_buffer = BytesIO()
+        save_crescent_overlay(
+            overlay_buffer,
+            debug["gray"],
+            debug["disk"],
+            debug["interior"],
+            debug["background"],
+            debug["crescent"],
+            debug["detection"],
+            debug["crop_region"],
+            title=overlay_title,
+        )
+        data["overlay_b64"] = f"data:image/png;base64,{base64.b64encode(overlay_buffer.getvalue()).decode()}"
+        return _sanitize_crescent_response(data=data)
+
+    base = "janus_crescent_ratio_" + _crescent_output_base(request, file_info)
+    out_dir = get_user_dir(username) / "results"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"{base}_measurement.csv"
+    overlay_path = out_dir / f"{base}_overlay.png"
+    pd.DataFrame([data]).to_csv(csv_path, index=False)
+    save_crescent_overlay(
+        overlay_path,
+        debug["gray"],
+        debug["disk"],
+        debug["interior"],
+        debug["background"],
+        debug["crescent"],
+        debug["detection"],
+        debug["crop_region"],
+        title=overlay_title,
+    )
+    data["csv_name"] = csv_path.name
+    data["overlay_name"] = overlay_path.name
+    data["overlay_b64"] = f"data:image/png;base64,{base64.b64encode(overlay_path.read_bytes()).decode()}"
+    return _sanitize_crescent_response(data=data)
 
 
 # ---------------------------------------------------------------------------
