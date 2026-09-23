@@ -159,7 +159,7 @@ Three-stage pipeline: within-frame NMS → Hungarian cross-frame linking → gap
 
 Output CSV columns: `track_id, frame, x, y, phi, ncc, is_interpolated`. Tracking config block lives under `tracking:` in `src/config.yaml`.
 
-### LSTM Track Predictor (`src/lstm_track_predictor.py`)
+### LSTM Track Predictor (`src/tracking/lstm_track_predictor.py`)
 
 This is the first learned baseline toward trajectory denoising and gap filling. It does not replace `track_particles.py` yet. It reads an existing tracked-particle CSV and trains a sequence model to predict the next particle state from the previous `seq_len` rows of the same track.
 
@@ -199,7 +199,7 @@ What the code does:
 Residual baseline command used in this checkout:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/lstm_track_predictor.py train \
+/opt/mona_jupyterhub_env/bin/python src/tracking/lstm_track_predictor.py train \
   --tracks detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv \
   --model-out lstm_outputs/lstm_track_predictor_jp_fe_wf_2_40_slm075_motion.pt \
   --epochs 30 --batch-size 512 --seq-len 10 --min-track-length 30 \
@@ -213,7 +213,7 @@ Use `--wandb-mode offline` when the JupyterHub node cannot reach WandB during tr
 Prediction command:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/lstm_track_predictor.py predict \
+/opt/mona_jupyterhub_env/bin/python src/tracking/lstm_track_predictor.py predict \
   --tracks detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv \
   --model lstm_outputs/lstm_track_predictor_jp_fe_wf_2_40_slm075_motion.pt \
   --output lstm_outputs/JP_Fe_wf_2_40_slm075_lstm_motion_predictions.csv \
@@ -238,7 +238,7 @@ Residual run results:
 
 Baseline comparison on the same prediction rows: persistence mean error ≈3.04 px, mean-velocity-over-10 mean error ≈3.05 px, motion-feature residual LSTM mean error ≈2.70 px.
 
-Masked-gap benchmark lives in `src/benchmark_lstm_gap_filling.py`. It masks real consecutive detections and compares linear interpolation, persistence, constant velocity, and iterative LSTM rollout. Current JP Fe output files:
+Masked-gap benchmark lives in `src/tracking/benchmark_lstm_gap_filling.py`. It masks real consecutive detections and compares linear interpolation, persistence, constant velocity, and iterative LSTM rollout. Current JP Fe output files:
 
 ```text
 lstm_outputs/JP_Fe_wf_2_40_slm075_gap_benchmark.csv
@@ -247,10 +247,10 @@ lstm_outputs/JP_Fe_wf_2_40_slm075_gap_benchmark_summary.csv
 
 Masked-gap conclusion: causal LSTM rollout beats persistence and constant velocity, but linear interpolation wins for all tested gap lengths when the future endpoint is available. Example mean position errors: gap=1 linear ≈2.51 px vs LSTM ≈2.81 px; gap=10 linear ≈3.40 px vs LSTM ≈4.76 px. The next model should use both pre-gap and post-gap context rather than only causal one-step rollout.
 
-Bidirectional gap filler is implemented in `src/lstm_gap_filler.py`. It trains on artificial masked gaps with both pre-gap and post-gap context, then predicts a correction to linear interpolation:
+Bidirectional gap filler is implemented in `src/tracking/lstm_gap_filler.py`. It trains on artificial masked gaps with both pre-gap and post-gap context, then predicts a correction to linear interpolation:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/lstm_gap_filler.py train \
+/opt/mona_jupyterhub_env/bin/python src/tracking/lstm_gap_filler.py train \
   --tracks detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv \
   --model-out lstm_outputs/lstm_gap_filler_jp_fe_wf_2_40_slm075.pt \
   --context-len 10 --gap-lengths 1,2,3,5,10 --max-samples 120000 \
@@ -305,7 +305,7 @@ Implementation steps for this phase:
 4. **Model hierarchy decision**: compare Brownian diffusion, ABP, ABP + confinement, and interaction-filtered ABP. Use residuals and parameter stability rather than only fit curves.
 5. **BiLSTM decision gate**: keep BiLSTM only if it improves masked-gap error and produces stable/improved raw motion statistics without hiding physical effects such as collisions or confinement.
 
-The separate Kalman smoother baseline added to `src/lstm_gap_filler.py` produced shared-sample benchmark files:
+The separate Kalman smoother baseline added to `src/tracking/lstm_gap_filler.py` produced shared-sample benchmark files:
 
 ```text
 lstm_outputs/JP_Fe_wf_2_40_slm075_bilstm_gap_benchmark_with_kalman.csv
@@ -324,11 +324,11 @@ Interpretation: constant-velocity Kalman smoothing does not beat linear interpol
 
 Implemented physics-first analysis tools:
 
-- `src/analyze_motion_statistics.py`: raw motion statistics including translational MSD, angular MSD, displacement autocorrelation, orientation autocorrelation, displacement/speed/turning distributions, and metadata.
-- `src/analyze_track_interactions.py`: nearest-neighbor and close-approach analysis, with isolated vs near-neighbor step/speed/turning comparisons.
-- `src/analyze_confinement_drift.py`: radial occupancy, radial/tangential velocity, speed-vs-radius, spatial drift/quiver field, and radial drift residuals.
-- `src/build_track_variants.py`: creates comparable track CSV variants under `analysis_outputs/track_variants/` for `linear`, `real_only`, `bilstm_refined`, and `kalman_refined`.
-- `src/analyze_tracks.py` now supports `--include-interpolated` so ABP/MSD parameters can be computed on track variants that keep or refine filled rows. The default remains real-only.
+- `src/analysis/analyze_motion_statistics.py`: raw motion statistics including translational MSD, angular MSD, displacement autocorrelation, orientation autocorrelation, displacement/speed/turning distributions, and metadata.
+- `src/analysis/analyze_track_interactions.py`: nearest-neighbor and close-approach analysis, with isolated vs near-neighbor step/speed/turning comparisons.
+- `src/analysis/analyze_confinement_drift.py`: radial occupancy, radial/tangential velocity, speed-vs-radius, spatial drift/quiver field, and radial drift residuals.
+- `src/tracking/build_track_variants.py`: creates comparable track CSV variants under `analysis_outputs/track_variants/` for `linear`, `real_only`, `bilstm_refined`, and `kalman_refined`.
+- `src/analysis/analyze_tracks.py` now supports `--include-interpolated` so ABP/MSD parameters can be computed on track variants that keep or refine filled rows. The default remains real-only.
 
 Generated JP Fe wf 2 40 slm075 variant counts:
 
@@ -341,7 +341,7 @@ Generated JP Fe wf 2 40 slm075 variant counts:
 
 Only 1,241 of 12,279 interpolated rows have enough clean 10-frame pre/post context for the current BiLSTM/Kalman refinement. Therefore, even though BiLSTM improves masked-gap pixel error, the refined production-like track file is very close to the original linear-interpolated file.
 
-ABP/MSD variant comparison using `src/analyze_tracks.py`:
+ABP/MSD variant comparison using `src/analysis/analyze_tracks.py`:
 
 | Variant | Included rows | D_t [um^2/s] | v0 [um/s] | D_r MSD [rad^2/s] | D_r angular [rad^2/s] |
 |---------|---------------|--------------|-----------|-------------------|-----------------------|
@@ -387,8 +387,8 @@ Current approved implementation tasks:
 
 Implemented model-comparison scripts:
 
-- `src/compare_filtered_abp.py`: filters real detections by nearest-neighbor distance and fits ABP/MSD per subset. It writes summaries and plots under `analysis_outputs/model_comparison/filtered_abp/`.
-- `src/analyze_velocity_persistence.py`: fits velocity autocorrelation / persistent-random-walk style decay, with optional nearest-neighbor filtering. The 30 fps run is under `analysis_outputs/model_comparison/velocity_persistence_30fps/`.
+- `src/analysis/compare_filtered_abp.py`: filters real detections by nearest-neighbor distance and fits ABP/MSD per subset. It writes summaries and plots under `analysis_outputs/model_comparison/filtered_abp/`.
+- `src/analysis/analyze_velocity_persistence.py`: fits velocity autocorrelation / persistent-random-walk style decay, with optional nearest-neighbor filtering. The 30 fps run is under `analysis_outputs/model_comparison/velocity_persistence_30fps/`.
 
 Filtered ABP results on JP Fe wf 2 40 slm075:
 
@@ -420,15 +420,15 @@ Important framing: the supervised model should be described as a **reference-cal
 
 Implemented scripts:
 
-- `src/build_supervised_correction_dataset.py`: pairs LodeSTAR tracks with reference CSV detections frame-by-frame using Hungarian matching and writes:
+- `src/tracking/build_supervised_correction_dataset.py`: pairs LodeSTAR tracks with reference CSV detections frame-by-frame using Hungarian matching and writes:
   - matched pair CSV with residual targets `target_dx = ref_x - lode_x`, `target_dy = ref_y - lode_y`,
   - sequence-window NPZ for LSTM training.
-- `src/train_supervised_correction_lstm.py`: trains a track-held-out LSTM residual corrector. It splits by `track_id`, not random windows.
-- `src/apply_supervised_correction_lstm.py`: applies the trained corrector to tracks and exports raw plus refined coordinates.
+- `src/tracking/train_supervised_correction_lstm.py`: trains a track-held-out LSTM residual corrector. It splits by `track_id`, not random windows.
+- `src/tracking/apply_supervised_correction_lstm.py`: applies the trained corrector to tracks and exports raw plus refined coordinates.
 - `utils.merge_detection_csvs()` and `tools/merge_detection_csvs.py`: merge per-stack LodeSTAR detection CSVs into one run-level global-frame detection CSV. The merge infers stack IDs from `_<stack>_detections.csv`, sorts stacks numerically, offsets local frames by `stack_index * frames_per_stack`, and adds `stack` plus `frame_local` columns.
-- `src/test_single_particle.py --merge-detections --frames-per-stack 100`: future full-run detection can create the merged run-level detection CSV automatically after writing per-stack CSVs.
+- `src/detection/test_single_particle.py --merge-detections --frames-per-stack 100`: future full-run detection can create the merged run-level detection CSV automatically after writing per-stack CSVs.
 
-Current run status as of 2026-06-07:
+Historical run status as of 2026-06-07 (retained for provenance):
 
 - Run `01` is complete through detection, merge, tracking, raw visualization/analysis, supervised pairing, application of the `04`-trained corrector, refined visualization/analysis, and reference-error transfer validation.
 - Run `01` merged detection CSV:
@@ -437,8 +437,9 @@ Current run status as of 2026-06-07:
   `detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/01/tracks/JP_Fe_wf_2_40_slm075_tracks.csv`
 - Run `01` refined-from-`04` tracks:
   `supervised_correction_outputs/JP_Fe_wf_2_40_01/JP_Fe_wf_2_40_slm075_tracks_supervised_refined_from04.csv`
-- Run `02` and `03` full LodeSTAR detection are being launched by the user as a nohup job using `src/test_single_particle.py` with `dataset_types: ['02', '03']`, template mode, visualization enabled, and `--merge-detections`.
-- Current `src/config.yaml` is intentionally set to `dataset_types: ['02', '03']`, `gt_from_csv: True`, `visualize: True` for this run. Reset it before re-running `01` or `04`.
+- Run `02` and `03` full LodeSTAR detection are being launched by the user as a nohup job using `src/detection/test_single_particle.py` with `dataset_types: ['02', '03']`, template mode, visualization enabled, and `--merge-detections`.
+- That historical run used `dataset_types: ['02', '03']` and `gt_from_csv: True`. Working-tree check on 2026-09-23: `src/config.yaml` selects `dataset_types: ['04']`, `gt_from_csv: False`, `visualize: True`, and `fps: 30`. Inspect the configuration before launching a run.
+- Run `02` and `03` now have `supervised_correction_outputs/JP_Fe_wf_2_40_02/refined_from04_reference_error_summary.csv` and the corresponding `03` artifact. These are per-match tables; their presence supersedes the old pending-detection status, but is not a fresh validation of aggregate transfer metrics.
 
 Reference CSV format:
 
@@ -449,7 +450,7 @@ Reference CSV format:
 Current JP Fe wf 2 40 `04` supervised pairing command:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/build_supervised_correction_dataset.py \
+/opt/mona_jupyterhub_env/bin/python src/tracking/build_supervised_correction_dataset.py \
   --lodestar-tracks detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv \
   --reference-glob 'data/JP_FE/wf_2_40/04/csv/*_video.csv' \
   --output-dir supervised_correction_outputs/JP_Fe_wf_2_40_04 \
@@ -476,7 +477,7 @@ The sequence features are all deployable from LodeSTAR-side data: `lode_x`, `lod
 Training command:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/train_supervised_correction_lstm.py \
+/opt/mona_jupyterhub_env/bin/python src/tracking/train_supervised_correction_lstm.py \
   --dataset supervised_correction_outputs/JP_Fe_wf_2_40_04/JP_Fe_wf_2_40_slm075_tracks_correction_windows_seq10.npz \
   --model-out supervised_correction_outputs/JP_Fe_wf_2_40_04/supervised_lodestar_to_reference_lstm.pt \
   --epochs 40 --batch-size 512 --hidden-size 64 --layers 2 --device cpu
@@ -495,7 +496,7 @@ This is the strongest evidence so far for an LSTM-based trajectory correction st
 Application command:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/apply_supervised_correction_lstm.py \
+/opt/mona_jupyterhub_env/bin/python src/tracking/apply_supervised_correction_lstm.py \
   --tracks detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv \
   --model supervised_correction_outputs/JP_Fe_wf_2_40_04/supervised_lodestar_to_reference_lstm.pt \
   --output supervised_correction_outputs/JP_Fe_wf_2_40_04/JP_Fe_wf_2_40_slm075_tracks_supervised_refined.csv \
@@ -565,7 +566,7 @@ Validation gate for a new dataset:
 Cross-run validation experiment:
 
 1. Build supervised correction datasets for multiple runs/setups with the same pairing script:
-   - `src/build_supervised_correction_dataset.py`
+   - `src/tracking/build_supervised_correction_dataset.py`
 2. Train on some runs and test on a held-out run:
    - train: runs `01`, `02`, `03` if available,
    - validation: one held-out run,
@@ -580,12 +581,12 @@ Cross-run validation experiment:
 
 Initial stricter transfer check within `JP_FE/wf_2_40/04`:
 
-`src/train_supervised_correction_lstm.py` now supports `--split-mode frame`, with inclusive validation/test frame ranges. This allows stack-held-out evaluation instead of random track-held-out evaluation.
+`src/tracking/train_supervised_correction_lstm.py` now supports `--split-mode frame`, with inclusive validation/test frame ranges. This allows stack-held-out evaluation instead of random track-held-out evaluation.
 
 Command used:
 
 ```bash
-/opt/mona_jupyterhub_env/bin/python src/train_supervised_correction_lstm.py \
+/opt/mona_jupyterhub_env/bin/python src/tracking/train_supervised_correction_lstm.py \
   --dataset supervised_correction_outputs/JP_Fe_wf_2_40_04/JP_Fe_wf_2_40_slm075_tracks_correction_windows_seq10.npz \
   --model-out supervised_correction_outputs/JP_Fe_wf_2_40_04/supervised_lodestar_to_reference_lstm_stack_split.pt \
   --epochs 40 --batch-size 512 --hidden-size 64 --layers 2 --device cpu \
@@ -626,11 +627,11 @@ Run `01` transfer result using the `04`-trained corrector:
   and `..._video.mp4`.
 - User visually inspected run `01` refined output and judged it sane.
 
-Run `02`/`03` detection command currently intended/running via user terminal:
+Historical run `02`/`03` detection command (not a current running-job claim):
 
 ```bash
 cd /home/edgarharutyunyan/MONA_LodeSTAR
-nohup /opt/mona_jupyterhub_env/bin/python src/test_single_particle.py \
+nohup /opt/mona_jupyterhub_env/bin/python src/detection/test_single_particle.py \
   --particle JP_Fe_wf_2_40 \
   --model models/5m4rtzfx/JP_Fe_wf_2_40_weights.pth \
   --config src/config.yaml \
@@ -649,11 +650,11 @@ tail -f logs/run02_03_lodestar_detection.log
 pgrep -af "test_single_particle.py.*JP_Fe_wf_2_40"
 ```
 
-After `02`/`03` detection finishes, expected next steps:
+Historical follow-up checklist for `02`/`03` (check existing outputs before repeating):
 
 1. Verify each run has per-stack CSVs, merged `JP_Fe_wf_2_40_slm075_detections.csv`, detection PNGs, and weightmaps.
-2. Run `src/track_particles.py` once per run on the merged detection CSV to create `tracks/JP_Fe_wf_2_40_slm075_tracks.csv`.
-3. Build `/tmp` global-frame image views for each run and run `src/visualize_tracks.py` plus `src/analyze_tracks.py` for raw tracks.
+2. Run `src/tracking/track_particles.py` once per run on the merged detection CSV to create `tracks/JP_Fe_wf_2_40_slm075_tracks.csv`.
+3. Build `/tmp` global-frame image views for each run and run `src/tracking/visualize_tracks.py` plus `src/analysis/analyze_tracks.py` for raw tracks.
 4. Build supervised correction datasets with `--first-stack 463` for `02` and `--first-stack 515` for `03`.
 5. Apply the `04`-trained corrector to `02` and `03`, then compute raw-vs-refined reference errors as done for `01`.
 
@@ -679,7 +680,9 @@ Decision language:
 - Claim after cross-run validation: “The supervised LSTM corrector generalizes across similar JP runs/setups.”
 - Unsafe claim: “The LSTM recovers ground-truth trajectories.”
 
-### Physics Analysis (`src/analyze_tracks.py`)
+### Physics Analysis (`src/analysis/analyze_tracks.py`)
+
+Provenance note (2026-09-23): independent review identified elapsed-frame handling defects in tracking and main MSD/AMSD calculations. Historical tables above remain unchanged. Corrections in the working tree require deliberate result regeneration and provenance review before scientific interpretation or external report updates; they do not retroactively validate those tables.
 
 Fits tracks to the ABP (Active Brownian Particle) model. Requires tracks with ≥50 real (non-interpolated) frames.
 
@@ -719,7 +722,9 @@ Trained weights are saved to `models/<run_id>/<ParticleType>_weights.pth`; Light
 
 ### Web Interface (`web/`)
 
-FastAPI backend (`web/app.py`, ~1235 lines) with a single-page HTML frontend (`web/templates/index.html`, ~1688 lines). Supports user accounts (session-based), background training jobs persisted to `web/training_jobs.json`, and per-user data isolation under `web/data/<username>/`. The backend inserts repo `src/` into `sys.path` for `utils` and imports TDMS support from the installed `tdms_explorer` package.
+FastAPI backend (`web/app.py`) with extracted `web/routers/`, `web/services/`, `web/auth.py`, `web/config.py`, and `web/state.py`, plus a single-page HTML frontend (`web/templates/index.html`). The app includes training, detection, tracking, ABP analysis, and Janus crescent measurements. The supported deployment target is the per-user JupyterHub launcher; standalone username/login handling is not a complete authentication boundary. See `docs/WEB_INTEGRATION_AUDIT.md` and `docs/REVIEW_2026-09-23.md` for working-tree evidence and limitations.
+
+The installed Hub application is editable at `/home/mona/MONA_LodeSTAR`, distinct from this checkout. Local corrections are not deployed automatically; runtime packaging depends on adjacent `src/` and `tools/`. Shared utilities resolve from `src/`, and TDMS support comes from the installed `tdms_explorer` package.
 
 TDMS support is provided by the installed `tdms_explorer` package, not by a repo-local `tools/TDMSExplorer/` copy. In the MONA JupyterHub deployment, Python lives under `/opt/mona_jupyterhub_env/` and the user shell has a `mona_env` alias for activation. Verify with:
 
@@ -750,7 +755,7 @@ Known TDMSExplorer launcher behavior: the Panel page may initially show only the
 - Legacy `tools/tdms_to_png.py`, `tools/tdms_to_png_README.md`, and `tools/build_tdms_to_png.sh` are deleted in the current working tree.
 - The repo is on `dev` and has a dirty working tree with documentation, web, tool, and TDMS cleanup changes. Do not revert unrelated user changes.
 - `CLAUDE.md` may be untracked in this checkout but is intended as local AI-agent operating context.
-- Root-level orientation experiments (`orientation_cnn.py`, `test_lodestar_orientation.py`, `src/lodestar_orientation.py`, output/checkpoint artifacts) are present but ownership is still research/experimental unless explicitly integrated.
+- Root-level orientation experiments (`orientation_cnn.py`, `test_lodestar_orientation.py`, `src/detection/lodestar_orientation.py`, output/checkpoint artifacts) are present but ownership is still research/experimental unless explicitly integrated.
 
 ### Git Conventions
 

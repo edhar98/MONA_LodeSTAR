@@ -62,17 +62,17 @@ For each test image:
 First, train individual models for each particle type:
 
 ```bash
-python src/train_single_particle.py --particle Janus
-python src/train_single_particle.py --particle Ring
-python src/train_single_particle.py --particle Spot
-python src/train_single_particle.py --particle Ellipse
-python src/train_single_particle.py --particle Rod
+python src/detection/train_single_particle.py --particle Janus
+python src/detection/train_single_particle.py --particle Ring
+python src/detection/train_single_particle.py --particle Spot
+python src/detection/train_single_particle.py --particle Ellipse
+python src/detection/train_single_particle.py --particle Rod
 ```
 
 Or train all at once:
 
 ```bash
-python src/train_single_particle.py
+python src/detection/train_single_particle.py
 ```
 
 ### Testing with Composite Model
@@ -80,7 +80,7 @@ python src/train_single_particle.py
 Test all particle types simultaneously with classification:
 
 ```bash
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 ```
 
 Enable visualization of results:
@@ -92,6 +92,8 @@ visualize: true
 ### Programmatic Usage
 
 ```python
+import sys
+sys.path[:0] = ['src', 'src/detection']  # Run from repository root
 from composite_model import CompositeLodeSTAR
 import utils
 
@@ -136,13 +138,13 @@ For each dataset type:
 ## File Structure
 
 ```
-src/
+src/detection/
 ├── composite_model.py          # Composite model implementation
 ├── test_composite_model.py     # Testing script for composite model
 ├── train_single_particle.py    # Training script for individual models
 ├── test_single_particle.py     # Testing script for single models
 ├── custom_lodestar.py          # Custom LodeSTAR architecture
-└── config.yaml                 # Configuration file
+└── ...                         # Shared configuration: src/config.yaml
 
 detection_results/
 └── Testing_snr_10-10/
@@ -223,4 +225,3 @@ Results are saved to:
 - `test_composite_results_summary.yaml`: Overall metrics
 - `detection_results/Testing_*/composite/*/`: Visualizations (if enabled)
 - `logs/test_composite_model_*.log`: Detailed logs
-

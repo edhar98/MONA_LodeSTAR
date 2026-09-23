@@ -18,7 +18,7 @@ export ELAB_VERIFY_SSL="true"  # or "false" if needed
 Uploads training artifacts (logs, checkpoints, models) to elab:
 
 ```bash
-python src/elab_cli_simple.py upload-training
+python tools/elab/cli/elab_cli_simple.py upload-training
 ```
 
 **Options:**
@@ -31,7 +31,7 @@ python src/elab_cli_simple.py upload-training
 
 **Example:**
 ```bash
-python src/elab_cli_simple.py upload-training \
+python tools/elab/cli/elab_cli_simple.py upload-training \
   --label "janus_model_training" \
   --title-prefix "LodeSTAR Training" \
   --category 5 \
@@ -48,7 +48,7 @@ python src/elab_cli_simple.py upload-training \
 Uploads test results (logs, detection_results, test_results_summary.yaml) to elab:
 
 ```bash
-python src/elab_cli_simple.py upload-test
+python tools/elab/cli/elab_cli_simple.py upload-test
 ```
 
 **Options:**
@@ -61,7 +61,7 @@ python src/elab_cli_simple.py upload-test
 
 **Example:**
 ```bash
-python src/elab_cli_simple.py upload-test \
+python tools/elab/cli/elab_cli_simple.py upload-test \
   --label "janus_particle_detection" \
   --title-prefix "LodeSTAR Detection Test" \
   --category 5 \
@@ -78,7 +78,7 @@ python src/elab_cli_simple.py upload-test \
 Link existing experiments or items to an experiment:
 
 ```bash
-python src/elab_cli_simple.py link-resources \
+python tools/elab/cli/elab_cli_simple.py link-resources \
   --experiment-id <EXPERIMENT_ID> \
   --experiments <EXP_ID1> <EXP_ID2> \
   --items <ITEM_ID1> <ITEM_ID2>
@@ -86,7 +86,7 @@ python src/elab_cli_simple.py link-resources \
 
 **Example:**
 ```bash
-python src/elab_cli_simple.py link-resources \
+python tools/elab/cli/elab_cli_simple.py link-resources \
   --experiment-id 179 \
   --experiments 155 176 \
   --items 1270
@@ -97,7 +97,7 @@ python src/elab_cli_simple.py link-resources \
 ### After Training a Model:
 ```bash
 # Upload training results
-python src/elab_cli_simple.py upload-training \
+python tools/elab/cli/elab_cli_simple.py upload-training \
   --label "janus_model_v1" \
   --title-prefix "LodeSTAR Janus Training"
 ```
@@ -105,7 +105,7 @@ python src/elab_cli_simple.py upload-training \
 ### After Testing the Model:
 ```bash
 # Upload test results
-python src/elab_cli_simple.py upload-test \
+python tools/elab/cli/elab_cli_simple.py upload-test \
   --label "janus_model_v1_test" \
   --title-prefix "LodeSTAR Janus Test"
 ```
@@ -113,7 +113,7 @@ python src/elab_cli_simple.py upload-test \
 ### Link Related Experiments:
 ```bash
 # Link training and test experiments
-python src/elab_cli_simple.py link-resources \
+python tools/elab/cli/elab_cli_simple.py link-resources \
   --experiment-id <TEST_EXPERIMENT_ID> \
   --experiments <TRAINING_EXPERIMENT_ID>
 ```

@@ -29,7 +29,7 @@ The new `upload-test-run` command in `elab_cli.py` allows you to upload these re
 
 ### Basic Usage
 ```bash
-python src/elab_cli.py upload-test-run
+python tools/elab_cli.py full upload-test-run
 ```
 This will:
 - Use current timestamp as the run label
@@ -40,17 +40,17 @@ This will:
 
 ### Custom Label
 ```bash
-python src/elab_cli.py upload-test-run --label "janus_particle_test_2024"
+python tools/elab_cli.py full upload-test-run --label "janus_particle_test_2024"
 ```
 
 ### Custom Title Prefix
 ```bash
-python src/elab_cli.py upload-test-run --title-prefix "LodeSTAR Detection Test"
+python tools/elab_cli.py full upload-test-run --title-prefix "LodeSTAR Detection Test"
 ```
 
 ### With Metadata (Matching elab Template)
 ```bash
-python src/elab_cli.py upload-test-run \
+python tools/elab_cli.py full upload-test-run \
   --label "janus_particle_test_2024" \
   --title-prefix "LodeSTAR Detection Test" \
   --category 5 \
@@ -59,7 +59,7 @@ python src/elab_cli.py upload-test-run \
 
 ### Minimal Metadata (just category and team)
 ```bash
-python src/elab_cli.py upload-test-run \
+python tools/elab_cli.py full upload-test-run \
   --category 5 \
   --team 1
 ```
@@ -140,12 +140,12 @@ The command returns JSON output with:
 
 1. Run your tests:
    ```bash
-   python src/test_single_particle.py
+   python src/detection/test_single_particle.py
    ```
 
 2. Upload results to elab with metadata:
    ```bash
-   python src/elab_cli.py upload-test-run \
+   python tools/elab_cli.py full upload-test-run \
      --label "janus_test_run" \
      --category 5 \
      --team 1

@@ -26,10 +26,10 @@ Scripts for experimenting with new architectures, parameters, and approaches bef
 
 ## Usage
 
-Run from **repo root**. Scripts that import from `src/` need `PYTHONPATH=src`:
+Run from **repo root**. Scripts importing shared utilities need `PYTHONPATH=src`; detection-model imports also need `src/detection`:
 
 ```bash
-PYTHONPATH=src python debug/diagnostics/diagnose_skip_connections.py
+PYTHONPATH=src:src/detection python debug/diagnostics/diagnose_skip_connections.py
 
 PYTHONPATH=src python debug/inspection/investigate_augmentations.py [--particle Rod] [--config src/config_debug.yaml]
 

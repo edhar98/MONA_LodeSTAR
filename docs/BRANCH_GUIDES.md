@@ -3,7 +3,7 @@
 **Last Updated:** 2026-01-27  
 **Branch:** Documentation & Reporting
 
-This document provides detailed guides for each of the 6 branches in MONA_LodeSTAR.
+This document provides guides for six ownership workstreams, historically called branches. Git branches remain `dev` and `main`. See [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) for coordinator, independent review, correction, and verification roles.
 
 ## Table of Contents
 
@@ -18,122 +18,72 @@ This document provides detailed guides for each of the 6 branches in MONA_LodeST
 
 ## Web Development
 
+Historical status snapshot: `docs/archive/2026-01-verification/WEB_VERIFICATION.md`. Use `AGENTS.md` and current web files for live structure.
+
 ### Scope
-- `web/app.py` - FastAPI backend (1235 lines)
-- `web/templates/index.html` - Single-page web UI (1688 lines)
-- `web/data/<username>/` - User data management (runtime, gitignored)
-- `setup.py` - Web package setup
+- `web/app.py` — FastAPI application assembly
+- `web/routers/` — route modules
+- `web/services/` — TDMS, frame, and cache services
+- `web/auth.py`, `web/config.py`, `web/state.py` — auth/session helpers, paths/settings, and runtime state
+- `web/templates/index.html` — Sidebar SPA; see the current web integration inventory for controls and limitations
+- `web/data/<username>/` — User data (runtime, gitignored)
+- `web/users.json`, `web/training_jobs.json`, `web/background_jobs.json`
 
 ### Key Files
-- **Backend:** `web/app.py` - FastAPI application with REST API
-- **Frontend:** `web/templates/index.html` - Vanilla JavaScript single-page app
-- **Data:** User-specific directories under `web/data/<username>/`
+- **Backend:** `web/app.py`, `web/routers/`, `web/services/`, `web/auth.py`, `web/config.py`, `web/state.py`
+- **Frontend:** `web/templates/index.html` (login overlay + app shell)
+- **Data:** `web/data/<username>/{uploads,samples,models,results,masks}`
 
-### API Endpoints
+### API Endpoints (summary)
 
-#### Authentication
-- `POST /auth/register` - Register new user
-- `POST /auth/login` - User login
-- `GET /auth/check/{username}` - Check if user exists
-
-#### File Management
-- `POST /upload` - Upload file (TDMS or image)
-- `POST /upload/start` - Start chunked upload
-- `POST /upload/chunk/{upload_id}` - Upload chunk
-- `POST /upload/complete` - Complete chunked upload
-- `GET /files/{username}` - List user files
-- `DELETE /files/{username}/{file_id}` - Delete file
-- `GET /frame/{username}/{file_id}/{index}` - Get frame from TDMS file
-
-#### Sample Management
-- `POST /sample` - Create sample from uploaded file
-- `GET /samples/{username}` - List user samples
-- `DELETE /sample/{username}/{particle_name}` - Delete sample
-
-#### Masking
-- `POST /mask` - Create mask from image
-- `POST /mask/circular` - Create circular ROI mask
-
-#### Training
-- `POST /train` - Start training job
-- `GET /train/active/{username}` - Get active training jobs
-- `GET /train/{job_id}` - Get training job status
-
-#### Model Management
-- `GET /models/{username}` - List user models
-- `DELETE /models/{username}/{model_id}` - Delete model
-- `PUT /models/{username}/{model_id}/rename` - Rename model
-
-#### Detection
-- `POST /detect` - Run detection on uploaded image
-- `POST /detect/upload` - Run detection on uploaded file
-- `GET /detect/frame/{username}/{file_id}/{index}` - Detect on specific frame
-
-#### TDMS Processing
-- `GET /tdms/structure/{username}/{file_id}` - Get TDMS file structure
-- `POST /tdms/export` - Export TDMS frames
-
-#### Utilities
-- `GET /config/defaults` - Get default configuration
-- `POST /video/merge` - Merge MP4 videos
-- `GET /results/{username}` - Get user results
+| Area | Endpoints |
+|------|-----------|
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/check/{username}` |
+| Health | `GET /health` |
+| Files | chunked upload, `POST /files/load-path`, `POST /upload/csv`, list/delete/frame |
+| Samples / masks | crop pool + circular mask |
+| Training | `POST /train`, cancel, status, `WS /ws/train/{job_id}` |
+| Models | list / delete / rename |
+| Detection | `POST /detect/upload`, `GET /detect/frame/...`, `POST /detect` (legacy), `POST /detect/batch` |
+| Tracking | `POST /track`, track visualize overview/video |
+| Analysis | `POST /analyze/abp` |
+| Jobs / results / TDMS / video / config | implemented across `web/app.py`, `web/routers/`, `web/services/`, `web/config.py`, and `web/state.py` |
 
 ### Data Flow
 
-1. **User Registration/Login**
-   - User data stored in `web/users.json`
-   - Sessions stored in `web/data/<username>/session.json`
-   - User directories created: `uploads/`, `samples/`, `models/`, `results/`, `masks/`
-
-2. **File Upload**
-   - TDMS files: handled through the installed `tdms_explorer.TDMSFileExplorer`
-   - Images: Direct storage
-   - Settings: Image dimensions, channel index, normalization
-
-3. **Training**
-   - Background thread execution
-   - Job tracking in `web/training_jobs.json`
-   - Sample from `get_user_dir(username)/samples/<particle_name>/<particle_name>.jpg`
-   - Does **not** call `src/train_single_particle.py`. Implements training inline: DeepTrack pipeline (LoadImage, Affine/Multiply/Add, etc.), `dl.LodeSTAR`, `dl.Trainer`
-   - Models saved to `get_user_dir(username)/models/<particle_name>_weights.pth`
-
-4. **Detection**
-   - Loads `.pth` from user models dir via `load_model()`; uses `dl.LodeSTAR` and `lodestar.detect(alpha, beta, mode="constant", cutoff)`
-   - Single-model detection only; no `src/composite_model` or `trained_models_summary.yaml`
+1. **Auth** — `web/users.json`; session `web/data/<username>/session.json`; login overlay hidden after success.
+2. **Files** — Upload or server path; TDMS via installed `tdms_explorer.TDMSFileExplorer.extract_images()`.
+3. **Training** — Multi-crop `samples/<name>/crop_*.jpg` (legacy `<name>.jpg`); inline DeepTrack + `dl.LodeSTAR` + `dl.Trainer`; **does not** call `src/detection/train_single_particle.py`; weights → `models/<name>_weights.pth`; progress via WebSocket.
+4. **Detection** — UI: upload → `GET /detect/frame/...` with model_id/alpha/beta/cutoff. Single-model detection includes standard, area, watershed, and template modes. The model catalogue also discovers CLI summary entries; composite orchestration remains CLI-only. See [web inventory](WEB_INTEGRATION_AUDIT.md) for provenance and compatibility limits.
+5. **Tracking / Analysis** — Calls Core `src/tracking/track_particles` and `src/analysis/analyze_tracks` when importable (`_tracking_available` / `_analysis_available`).
 
 ### Dependencies
-- **Imports:** `src/utils` (e.g. `load_yaml` for config defaults), `tdms_explorer.TDMSFileExplorer` from the MONA Python environment. Committed code only; no branch-local paths.
-- **External:** FastAPI, uvicorn, PIL, numpy, torch, cv2, matplotlib
-- **No modifications to Core code**
-
-### Coordination Rules
-- Only integrates committed Core code
-- Does not modify `src/` files directly
-- Calls existing functions via imports
-- User data is gitignored (runtime only)
+- **sys.path:** `src`, `src/tracking`, `src/analysis` (not `tools/`).
+- **Imports:** `utils`, `tdms_explorer.TDMSFileExplorer`, optional Core tracking/analysis.
+- **External:** FastAPI, uvicorn, torch, deeptrack/deeplay, PIL, numpy, cv2, matplotlib, pandas.
+- Integrates committed Core only; does not modify `src/` for Web features.
 
 ### Run assumptions
-- Paths use `Path(__file__).parent.parent` (repo root); resolution is CWD-independent when the app module is loaded from repo layout.
-- Recommended: run from repo root, e.g. `uvicorn web.app:app --reload` or `python -m uvicorn web.app:app`. If run via Jupyter proxy or other CWD, ensure the process's `__file__` resolves to `web/app.py` under the repo so `parent.parent` is the repo root.
+- Paths use `Path(__file__).parent.parent` (repo root).
+- Recommended: from repo root, `uvicorn web.app:app --reload`.
+- Jupyter proxy: frontend sets `API_BASE` from pathname `/proxy/<port>`.
 
 ### Example Usage
 
-```python
-# Start web server
+```bash
 cd /path/to/MONA_LodeSTAR
-uvicorn web.app:app --reload
-
-# Access at http://localhost:8000
+uvicorn web.app:app --reload --host 0.0.0.0 --port 8000
+# http://localhost:8000
 ```
 
 ---
 
 ## Core Model Development
 
-Baseline and compatibility notes: **BASELINE_REPORT.md** (path conventions, trained_models_summary format, deferred items).
+Historical baseline snapshot: `docs/archive/2026-01-verification/BASELINE_REPORT.md`. Current path conventions are in `AGENTS.md` and `docs/QUICK_REFERENCE.md`.
 
 ### Scope
-- `src/*.py` (all Python files except notebooks)
+- `src/detection/`, `src/tracking/`, `src/analysis/`, and shared `src/utils.py`
 - `src/config.yaml`, `src/samples.yaml`
 - `src/requirements.txt`
 - Model-related documentation
@@ -141,64 +91,80 @@ Baseline and compatibility notes: **BASELINE_REPORT.md** (path conventions, trai
 ### Key Files
 
 #### Training
-- **`train_single_particle.py`** - Main training script
+- **`src/detection/train_single_particle.py`** - Main training script
   - Trains separate models for each particle type
   - Supports checkpointing and resuming
   - Integrates with WandB logging
   - Saves models to `models/<run_id>/`
 
-- **`train_enhanced.py`** - Enhanced training with multi-particle support
+- **`src/detection/train_enhanced.py`** - Enhanced training with multi-particle support
   - Supports single-particle and multi-particle modes
   - Alternative training approach
 
 #### Testing
-- **`test_single_particle.py`** - Single particle model testing
+- **`src/detection/test_single_particle.py`** - Single particle model testing
   - Tests individual particle models
   - Generates test datasets (same/different shape/size)
   - Calculates precision, recall, F1-score
 
-- **`test_composite_model.py`** - Composite model testing
+- **`src/detection/test_composite_model.py`** - Composite model testing
   - Tests multi-class detection
   - Uses model-specific detection parameters
 
 #### Detection
-- **`detect_particles.py`** - Main particle detection script
+- **`src/detection/detect_particles.py`** - Main particle detection script
   - Command-line detection interface
   - Supports batch processing
 
-- **`benchmark_trackpy.py`** - Trackpy linking baseline from existing detection CSVs
+- **`src/detection/benchmark_trackpy.py`** - Trackpy linking baseline from existing detection CSVs
 
-- **`benchmark_trackpy_locate.py`** - `trackpy.locate` detector baseline against LodeSTAR detection CSVs
+- **`src/detection/benchmark_trackpy_locate.py`** - `trackpy.locate` detector baseline against LodeSTAR detection CSVs
 
 #### Models
-- **`custom_lodestar.py`** - Paper-accurate LodeSTAR implementation
+- **`src/detection/custom_lodestar.py`** - Paper-accurate LodeSTAR implementation
   - Follows exact architecture from research paper
   - 3×Conv2D(3×3, 32) + ReLU → MaxPool2D(2×2) → 8×Conv2D(3×3, 32) + ReLU → Conv2D(1×1, 3)
 
-- **`composite_model.py`** - Composite model for multi-class detection
+- **`src/detection/composite_model.py`** - Composite model for multi-class detection
   - Combines multiple single-particle models
   - Weight-based classification
   - Detection merging with spatial clustering
 
 #### Data Generation
-- **`image_generator.py`** - Image generation utilities
+- **`src/detection/image_generator.py`** - Image generation utilities
   - Synthetic microscopy image generation
   - Multiple dataset types
   - Trajectory generation
 
-- **`generate_samples.py`** - Sample image generation
+- **`src/detection/generate_samples.py`** - Sample image generation
   - Generates sample images for each particle type
 
 #### Pipelines
-- **`run_single_particle_pipeline.py`** - Complete single-particle pipeline
+- **`src/detection/run_single_particle_pipeline.py`** - Complete single-particle pipeline
   - Trains all particle types
   - Tests all trained models
 
-- **`run_composite_pipeline.py`** - Composite model pipeline
+- **`src/detection/run_composite_pipeline.py`** - Composite model pipeline
   - Tests composite model with all particle types
 
+#### Tracking, Gap Filling, and Correction
+- **`src/tracking/track_particles.py`** - NMS, Hungarian linking, and linear gap interpolation
+- **`src/tracking/visualize_tracks.py`** - Track overview and video rendering
+- **`src/tracking/lstm_track_predictor.py`** - Causal LSTM next-state baseline
+- **`src/tracking/benchmark_lstm_gap_filling.py`** - Masked-gap benchmark for linear, persistence, velocity, and LSTM methods
+- **`src/tracking/lstm_gap_filler.py`** - Two-sided LSTM/BiLSTM-style gap filler and Kalman probe
+- **`src/tracking/build_supervised_correction_dataset.py`**, **`src/tracking/train_supervised_correction_lstm.py`**, **`src/tracking/apply_supervised_correction_lstm.py`** - Reference-calibrated LodeSTAR trajectory correction
+
+#### Physics Analysis
+- **`src/analysis/analyze_tracks.py`** - MSD and ABP model fitting
+- **`src/analysis/analyze_motion_statistics.py`** - Raw motion statistics
+- **`src/analysis/analyze_track_interactions.py`** - Nearest-neighbor and close-approach diagnostics
+- **`src/analysis/analyze_confinement_drift.py`** - Radial occupancy and drift-field diagnostics
+- **`src/analysis/compare_filtered_abp.py`** - ABP comparison under nearest-neighbor filters
+- **`src/analysis/analyze_velocity_persistence.py`** - Velocity-persistence / AOUP-style diagnostic
+
 #### Utilities
-- **`utils.py`** - Core utilities
+- **`src/utils.py`** - Core utilities
   - YAML loading/saving
   - XML parsing (Pascal VOC)
   - Logging setup
@@ -283,32 +249,32 @@ Particle sample definitions:
 
 ```bash
 # Train single particle type
-python src/train_single_particle.py --particle Janus --config src/config.yaml
+python src/detection/train_single_particle.py --particle Janus --config src/config.yaml
 
 # Train all particle types
-python src/train_single_particle.py --config src/config.yaml
+python src/detection/train_single_particle.py --config src/config.yaml
 
 # Test single model
-python src/test_single_particle.py --particle Janus --model models/<run_id>/Janus_weights.pth
+python src/detection/test_single_particle.py --particle Janus --model models/<run_id>/Janus_weights.pth
 
 # Test composite model
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 
 # Run complete pipeline
-python src/run_single_particle_pipeline.py
+python src/detection/run_single_particle_pipeline.py
 ```
 
 ---
 
 ## Research & Experimentation
 
-Verification summary and CWD/output conventions: see **`RESEARCH_VERIFICATION.md`** at repo root.
+Historical verification snapshot: `docs/archive/2026-01-verification/RESEARCH_VERIFICATION.md`.
 
 ### Scope
 - `debug/` directory (all files)
 - `src/*.ipynb` (all notebooks)
 - Debug scripts: `src/debug_*.py`
-- Experimental models: `src/lodestar_*.py`
+- Experimental models: `src/detection/lodestar_*.py`
 
 ### Key Files
 
@@ -335,15 +301,15 @@ Verification summary and CWD/output conventions: see **`RESEARCH_VERIFICATION.md
 - **`detect_rings.ipynb`** - Ring detection experiments
 - **`LodeStar.ipynb`** - Main LodeSTAR notebook
 
-#### Experimental Models (`src/`)
-- **`lodestar_with_skip_connections.py`** - Skip connections variant
-  - Used by: `train_single_particle.py` (conditional import)
+#### Experimental Models (`src/detection/`)
+- **`src/detection/lodestar_with_skip_connections.py`** - Skip connections variant
+  - Used by: `src/detection/train_single_particle.py` (conditional import)
   - Used by: `debug/diagnostics/diagnose_skip_connections.py`
 
-- **`lodestar_fixed_distributed.py`** - Fixed distributed training wrapper
-  - Used by: `lodestar_with_skip_connections.py` (inheritance)
+- **`src/detection/lodestar_fixed_distributed.py`** - Fixed distributed training wrapper
+  - Used by: `src/detection/lodestar_with_skip_connections.py` (inheritance)
 
-- **`lodestar_simple_skip.py`** - Simplified skip connections variant
+- **`src/detection/lodestar_simple_skip.py`** - Simplified skip connections variant
   - Not directly imported (experimental)
 
 #### Debug Scripts (`src/`)
@@ -376,7 +342,7 @@ Verification summary and CWD/output conventions: see **`RESEARCH_VERIFICATION.md
 ### Example Usage (from repo root)
 
 ```bash
-PYTHONPATH=src python debug/diagnostics/diagnose_skip_connections.py
+PYTHONPATH=src:src/detection python debug/diagnostics/diagnose_skip_connections.py
 
 PYTHONPATH=src python debug/inspection/investigate_augmentations.py [--particle Rod] [--config src/config_debug.yaml]
 
@@ -544,9 +510,7 @@ python tools/merge_mp4.py video_dir/ -o merged.mp4
 
 #### Main Documentation
 - **`README.md`** - Project overview and quick start
-- **`INVENTORY.md`** - Complete codebase inventory
-- **`CLEANUP_REPORT.md`** - Cleanup actions executed
-- **`DUPLICATES_DOCUMENTATION.md`** - Clarification on duplicate files
+- **`docs/archive/2026-01-verification/`** - Historical January 2026 verification reports superseded by `AGENTS.md`
 
 #### Feature Documentation
 - **`COMPOSITE_MODEL_README.md`** - Composite model documentation
@@ -554,8 +518,8 @@ python tools/merge_mp4.py video_dir/ -o merged.mp4
 - **`QUICK_START_COMPOSITE.md`** - Quick start for composite model
 
 #### Implementation Documentation
-- **`IMPLEMENTATION_SUMMARY.md`** - Implementation summary
-- **`DEEPLAY_DISTRIBUTED_TRAINING_FIX.md`** - Distributed training fix
+- [Historical implementation summary](archive/2026-09-23-feature-notes/IMPLEMENTATION_SUMMARY.md)
+- [Historical environment-specific distributed-training note](archive/2026-09-23-feature-notes/DEEPLAY_DISTRIBUTED_TRAINING_FIX.md)
 
 #### Tools Documentation
 - **`ELAB_CLI_SIMPLE_USAGE.md`** - ELAB CLI usage guide
@@ -623,7 +587,7 @@ python tools/merge_mp4.py video_dir/ -o merged.mp4
 - Documents only committed features
 - Updates documentation when branches change
 - Maintains documentation standards
-- References INVENTORY.md and CLEANUP_REPORT.md
+- References `AGENTS.md`, current docs, and the January 2026 archive only for historical context
 
 ### Example Usage
 
@@ -758,5 +722,4 @@ git ls-files
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Architecture overview
 - [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Quick reference guide
-- [INVENTORY.md](../INVENTORY.md) - Complete file catalog
-- [CLEANUP_REPORT.md](../CLEANUP_REPORT.md) - Cleanup actions executed
+- [January 2026 verification archive](archive/2026-01-verification/README.md) - Superseded pre-restructure reports

@@ -17,7 +17,7 @@ The linked resources functionality allows you to:
 Links experiments and/or items to an existing experiment.
 
 ```bash
-python src/elab_cli.py link-resources \
+python tools/elab_cli.py full link-resources \
   --experiment-id <EXPERIMENT_ID> \
   --experiments <EXP_ID1> <EXP_ID2> ... \
   --items <ITEM_ID1> <ITEM_ID2> ...
@@ -30,7 +30,7 @@ python src/elab_cli.py link-resources \
 
 **Example:**
 ```bash
-python src/elab_cli.py link-resources \
+python tools/elab_cli.py full link-resources \
   --experiment-id 179 \
   --experiments 155 176 \
   --items 1270
@@ -41,7 +41,7 @@ python src/elab_cli.py link-resources \
 Creates a new experiment and immediately links resources to it.
 
 ```bash
-python src/elab_cli.py create-with-links \
+python tools/elab_cli.py full create-with-links \
   --title "Experiment Title" \
   --body "Experiment description" \
   --template <TEMPLATE_ID> \
@@ -61,7 +61,7 @@ python src/elab_cli.py create-with-links \
 
 **Example:**
 ```bash
-python src/elab_cli.py create-with-links \
+python tools/elab_cli.py full create-with-links \
   --title "LodeSTAR Analysis with References" \
   --body "Analysis experiment linking to previous runs and data files" \
   --template 24 \
@@ -76,7 +76,7 @@ python src/elab_cli.py create-with-links \
 The existing `upload-test-run` command now supports linking resources during upload.
 
 ```bash
-python src/elab_cli.py upload-test-run \
+python tools/elab_cli.py full upload-test-run \
   --label "my_test_run" \
   --title-prefix "Test Run" \
   --experiments <EXP_ID1> <EXP_ID2> ... \
@@ -89,7 +89,7 @@ python src/elab_cli.py upload-test-run \
 
 **Example:**
 ```bash
-python src/elab_cli.py upload-test-run \
+python tools/elab_cli.py full upload-test-run \
   --label "linked_resources_test" \
   --title-prefix "Linked Resources Test" \
   --experiments 155 176 177 \
@@ -239,14 +239,14 @@ Link experiments to:
 ### Complete Workflow Example
 ```bash
 # 1. Upload test run with linked resources
-python src/elab_cli.py upload-test-run \
+python tools/elab_cli.py full upload-test-run \
   --label "janus_particle_analysis" \
   --title-prefix "Janus Particle Analysis" \
   --experiments 155 176 \
   --items 1270
 
 # 2. Create analysis experiment linking to the test run
-python src/elab_cli.py create-with-links \
+python tools/elab_cli.py full create-with-links \
   --title "Janus Particle Detection Analysis" \
   --body "Analysis of Janus particle detection results" \
   --template 24 \
@@ -254,7 +254,7 @@ python src/elab_cli.py create-with-links \
   --items 1270
 
 # 3. Add additional links to existing experiment
-python src/elab_cli.py link-resources \
+python tools/elab_cli.py full link-resources \
   --experiment-id 180 \
   --experiments 155 \
   --items 61
@@ -263,7 +263,7 @@ python src/elab_cli.py link-resources \
 ### Batch Linking Example
 ```bash
 # Link multiple experiments to a central analysis experiment
-python src/elab_cli.py link-resources \
+python tools/elab_cli.py full link-resources \
   --experiment-id 180 \
   --experiments 155 176 177 178 179
 ```
@@ -294,14 +294,14 @@ python src/elab_cli.py link-resources \
 
 1. **Use the `resource-check` command** to verify resource existence:
    ```bash
-   python src/elab_cli.py resource-check --id 155
+   python tools/elab_cli.py full resource-check --id 155
    ```
 
 2. **Check resource permissions** in the elab web interface
 
 3. **Verify resource IDs** from the elab web interface or API responses
 
-4. **Use debug mode** by setting `ELAB_VERIFY_SSL=false` if needed
+4. **Inspect CLI errors and server logs**; `ELAB_VERIFY_SSL` controls certificate verification, not debug logging.
 
 5. **Verify link creation** by checking the web interface after running link commands
 

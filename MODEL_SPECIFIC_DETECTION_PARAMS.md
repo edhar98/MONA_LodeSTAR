@@ -222,6 +222,8 @@ Spot detection params: alpha=0.2, beta=0.8, cutoff=0.2, mode=constant
 
 ### Standard Usage (Model-Specific Params)
 ```python
+import sys
+sys.path[:0] = ['src', 'src/detection']  # Run from repository root
 from composite_model import CompositeLodeSTAR
 import utils
 
@@ -258,10 +260,10 @@ Run the composite model to see model-specific parameters in action:
 
 ```bash
 # Test with model-specific parameters
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 
 # Quick example
-python src/run_composite_pipeline.py
+python src/detection/run_composite_pipeline.py
 ```
 
 Check the output logs to verify each model uses its own parameters.
@@ -288,4 +290,3 @@ This enhancement sets the foundation for future improvements using the Î”x and Î
 ## Summary
 
 Model-specific detection parameters ensure each particle type uses optimal settings for detection, improving overall accuracy and leveraging the specialized training of each model. The implementation is clean, transparent, and maintains full backward compatibility.
-

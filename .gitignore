@@ -24,9 +24,6 @@ snr_test_results.txt
 test_results_summary.yaml
 test_composite_results_summary.yaml
 
-# Compiled binaries
-tools/tdms_to_png
-
 # Runtime data
 web/sessions.json
 web/training_jobs.json
@@ -40,3 +37,28 @@ web/feedback/
 # Output directories
 detection_output/
 debug_outputs/
+analysis_outputs/
+lstm_outputs/
+supervised_correction_outputs/
+lodestar_orientation_test_out/
+
+# Caches and editor state
+.matplotlib_cache/
+.cursorindexingignore
+.vscode/
+
+# Root scratch artifacts
+/test_image.png
+/test_image_phi*.png
+/scratch_512_overview.png
+
+# Local conversation history and environment-specific links (retain on disk)
+/.specstory/
+/lodestar_link
+/DEEPTRACK_Link
+/YOLOTrack
+
+# Legacy local TDMS executable and generated crescent measurements
+/tools/tdms_to_png
+/tools/janus_crescent_ratio/outputs/
+/tools/janus_crescent_ratio/src/janus_crescent_ratio/outputs/

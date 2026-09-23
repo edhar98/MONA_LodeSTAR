@@ -14,26 +14,27 @@ This repository implements the LodeSTAR algorithm as described in the research p
 - **Deep Learning Training**: PyTorch-based training pipeline with Lightning framework
 - **Comprehensive Testing**: Multiple dataset types for robust model evaluation
 - **Experiment Tracking**: Weights & Biases integration for training monitoring
-- **Production Ready**: CLI tools and pipeline automation
+- **CLI Workflows**: Training, detection, tracking, and analysis scripts; deployment readiness is assessed separately.
 
 ## Repository Structure
 
 ```
 MONA_LodeSTAR/
 ├── src/                           # Core source code
-│   ├── image_generator.py         # Synthetic image generation
-│   ├── train_single_particle.py   # Training pipeline
-│   ├── test_single_particle.py    # Testing and evaluation
-│   ├── benchmark_trackpy.py       # Trackpy linking baseline
-│   ├── benchmark_trackpy_locate.py # Trackpy locate vs LodeSTAR comparison
-│   ├── composite_model.py         # Composite model for multi-class detection
-│   ├── custom_lodestar.py         # Paper-accurate LodeSTAR implementation
+│   ├── detection/                 # Training, inference, orientation, benchmarks
+│   ├── tracking/                  # Tracking, gap filling, supervised correction
+│   ├── analysis/                  # MSD, ABP, interactions, confinement
 │   ├── config.yaml                # Configuration file
 │   ├── samples.yaml               # Particle sample definitions
 │   ├── utils.py                   # Utility functions
 │   └── requirements.txt           # Dependencies
 ├── web/                           # Web interface
-│   ├── app.py                     # FastAPI backend
+│   ├── app.py                     # FastAPI application assembly
+│   ├── routers/                   # Files and TDMS routes
+│   ├── services/                  # TDMS, frames, and cache operations
+│   ├── auth.py                    # Session/user helpers
+│   ├── config.py                  # Web paths/settings
+│   ├── state.py                   # Runtime state persistence
 │   ├── templates/index.html        # Web UI
 │   └── data/                      # User data (runtime)
 ├── tools/                         # Data processing utilities
@@ -60,11 +61,15 @@ MONA_LodeSTAR/
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the 6-branch workflow structure and [docs/BRANCH_GUIDES.md](docs/BRANCH_GUIDES.md) for branch-specific documentation.
 
+## Deployment status
+
+The existing JupyterHub installation is editable at `/home/mona/MONA_LodeSTAR`; it is distinct from this working checkout. Changes here are not automatically deployed there. Packaging currently depends on the adjacent source checkout (`src/` and `tools/`); a standalone wheel has not been validated. See the [working-tree web inventory](docs/WEB_INTEGRATION_AUDIT.md) and [agent workflow](docs/AGENT_WORKFLOW.md). The `--reload` examples below are development commands.
+
 ## Installation
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10 is used by the current MONA environment; other versions have not been validated.
 - CUDA-compatible GPU (recommended)
 - PyTorch with CUDA support
 
@@ -83,35 +88,35 @@ pip install -r src/requirements.txt
 ### 1. Generate Sample Data
 
 ```bash
-python src/generate_samples.py
+python src/detection/generate_samples.py
 ```
 
 ### 2. Train Models
 ```bash
-python src/train_single_particle.py
+python src/detection/train_single_particle.py
 ```
 
 ### 3. Generate datasets
 
 ```bash
-python src/image_generator.py
+python src/detection/image_generator.py
 ```
 
 ### 4. Test Models
 
 Test individual models:
 ```bash
-python src/test_single_particle.py
+python src/detection/test_single_particle.py
 ```
 
 Test composite model (multi-class detection):
 ```bash
-python src/test_composite_model.py
+python src/detection/test_composite_model.py
 ```
 
 Compare single vs composite model performance:
 ```bash
-python src/compare_models.py
+python src/detection/compare_models.py
 ```
 
 ## Configuration
@@ -141,11 +146,11 @@ The system generates several output files and directories during execution:
 - **`test_results_summary.yaml`**: Test results organized by particle type and dataset category (same/different shape/size), containing precision, recall, F1-scores, and total true/false positive/negative counts for each test scenario
 - **`trained_models_summary.yaml`**: Model tracking information organized by particle type, containing checkpoint paths, model weight paths, and model directories for each training run, including multiple model versions per particle type
 
-**Note:** Research papers are located in `docs/papers/`. See [INVENTORY.md](INVENTORY.md) for complete file organization.
+**Note:** Research papers are located in `docs/papers/`. The old inventory is archived under `docs/archive/2026-01-verification/`; use `AGENTS.md` and current docs for live file organization.
 
 ## Data Generation
 
-The `image_generator.py` module creates synthetic microscopy images with:
+The `src/detection/image_generator.py` module creates synthetic microscopy images with:
 
 - **Realistic Particle Properties**: Configurable intensity, size, and shape parameters
 - **Multiple Dataset Types**:
@@ -168,7 +173,7 @@ The `image_generator.py` module creates synthetic microscopy images with:
 
 ### Single Particle Training
 
-The training pipeline (`train_single_particle.py`) provides:
+The training pipeline (`src/detection/train_single_particle.py`) provides:
 
 - **Model Architecture**: Paper-accurate LodeSTAR implementation
 - **Data Augmentation**: Intensity and multiplicative noise
@@ -217,6 +222,19 @@ Benchmark on one 1024x1024 JP frame (`JP_Fe_wf_2_40_slm075_574_001.png`, detecto
 
 Use LodeSTAR when GPU inference or learned morphology is required. Use `trackpy.locate` as a strong CPU baseline for clean blob-like particles.
 
+## Tracking and Physics Analysis
+
+`src/tracking/track_particles.py` turns detection CSVs into trajectories using within-frame NMS, Hungarian cross-frame linking, and linear gap interpolation. Output tracks use `track_id, frame, x, y, phi, ncc, is_interpolated`.
+
+The current learned trajectory tools are benchmark/probe stages, not automatic replacements for the linear production baseline:
+
+- `src/tracking/lstm_track_predictor.py` trains a causal next-state LSTM baseline.
+- `src/tracking/benchmark_lstm_gap_filling.py` benchmarks masked gaps against linear interpolation and simple motion baselines.
+- `src/tracking/lstm_gap_filler.py` trains the two-sided LSTM/BiLSTM-style gap filler and includes a Kalman smoother probe.
+- `src/tracking/build_supervised_correction_dataset.py`, `src/tracking/train_supervised_correction_lstm.py`, and `src/tracking/apply_supervised_correction_lstm.py` implement the reference-calibrated LodeSTAR trajectory corrector.
+
+Physics analysis lives in `src/analysis/`. `src/analysis/analyze_tracks.py` fits MSD/ABP parameters. The physics-first diagnostics include motion statistics, nearest-neighbor interaction analysis, confinement drift, filtered ABP comparisons, and velocity-persistence/AOUP-style analysis.
+
 ## Composite Model Approach
 
 The composite model enables **multi-class particle detection and classification** by combining multiple specialized single-particle models.
@@ -239,6 +257,8 @@ The composite model enables **multi-class particle detection and classification*
 ### Usage Example
 
 ```python
+import sys
+sys.path[:0] = ['src', 'src/detection']  # Run from repository root
 from composite_model import CompositeLodeSTAR
 import utils
 
@@ -258,9 +278,7 @@ See `COMPOSITE_MODEL_README.md` for detailed documentation.
 - **[Quick Reference](docs/QUICK_REFERENCE.md)** - Common commands and patterns
 - **[Composite Model](COMPOSITE_MODEL_README.md)** - Multi-class detection documentation
 - **[Model Detection Parameters](MODEL_SPECIFIC_DETECTION_PARAMS.md)** - Detection parameter guide
-- **[Duplicate Files](DUPLICATES_DOCUMENTATION.md)** - Clarification on duplicate files
-- **[Inventory](INVENTORY.md)** - Complete codebase inventory
-- **[Cleanup Report](CLEANUP_REPORT.md)** - Cleanup actions executed
+- **[January 2026 verification archive](docs/archive/2026-01-verification/README.md)** - Superseded pre-restructure reports
 
 ## Model Architecture
 
@@ -291,23 +309,23 @@ Input → Conv2D(3×3, 32) → Conv2D(3×3, 32) → Conv2D(3×3, 64) → Pool �
 
 ```bash
 # Run complete training and testing pipeline
-python src/run_single_particle_pipeline.py
+python src/detection/run_single_particle_pipeline.py
 
-# Check prerequisites only
-python src/run_single_particle_pipeline.py --check-only
+# Skip training and run testing only
+python src/detection/run_single_particle_pipeline.py --test-only
 ```
 
 ### Individual Components
 
 ```bash
 # Generate synthetic datasets
-python src/generate_samples.py
+python src/detection/generate_samples.py
 
 # Train specific particle type
-python src/train_single_particle.py --particle Janus
+python src/detection/train_single_particle.py --particle Janus
 
 # Test specific model
-python src/test_single_particle.py --particle Janus --model models/janus.pth
+python src/detection/test_single_particle.py --particle Janus --model models/janus.pth
 ```
 
 ## Experiment Tracking
@@ -330,7 +348,7 @@ The system integrates with Weights & Biases for:
 
 ### Common Issues
 
-1. **Missing Sample Images**: Run `python generate_samples.py`
+1. **Missing Sample Images**: Run `python src/detection/generate_samples.py`
 2. **CUDA Out of Memory**: Reduce batch size in config
 3. **Training Divergence**: Check learning rate and data augmentation
 4. **Poor Detection**: Verify alpha/beta/cutoff parameters

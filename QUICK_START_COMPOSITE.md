@@ -8,7 +8,7 @@ Detect AND classify multiple particle types in the same image using an ensemble 
 Ensure you have trained individual models for each particle type:
 
 ```bash
-python src/train_single_particle.py
+python src/detection/train_single_particle.py
 ```
 
 This creates `trained_models_summary.yaml` with paths to all trained models.
@@ -18,7 +18,7 @@ This creates `trained_models_summary.yaml` with paths to all trained models.
 ### 1. Test Composite Model on All Datasets
 
 ```bash
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 ```
 
 This will:
@@ -36,7 +36,7 @@ visualize: true
 
 Then run:
 ```bash
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 ```
 
 Results saved to: `detection_results/Testing_snr_10-10/composite/`
@@ -45,7 +45,7 @@ Results saved to: `detection_results/Testing_snr_10-10/composite/`
 
 Run a single-image example:
 ```bash
-python src/run_composite_pipeline.py
+python src/detection/run_composite_pipeline.py
 ```
 
 This demonstrates:
@@ -61,9 +61,9 @@ Output saved to: `detection_results/composite_example/`
 After running both single and composite model tests:
 
 ```bash
-python src/test_single_particle.py  # If not already run
-python src/test_composite_model.py
-python src/compare_models.py
+python src/detection/test_single_particle.py  # If not already run
+python src/detection/test_composite_model.py
+python src/detection/compare_models.py
 ```
 
 This generates:
@@ -73,6 +73,8 @@ This generates:
 ## Programmatic Usage
 
 ```python
+import sys
+sys.path[:0] = ['src', 'src/detection']  # Run from repository root
 from composite_model import CompositeLodeSTAR
 import numpy as np
 import utils
@@ -175,7 +177,7 @@ samples: [Janus, Ring, Spot, Ellipse, Rod]
 ### Issue: "No valid models found"
 **Solution**: Ensure `trained_models_summary.yaml` exists and contains valid model paths.
 ```bash
-python src/train_single_particle.py
+python src/detection/train_single_particle.py
 ```
 
 ### Issue: Model paths not found
@@ -213,6 +215,5 @@ The composite model should:
 ## Documentation
 
 - **Detailed Guide**: `COMPOSITE_MODEL_README.md`
-- **Implementation Details**: `COMPOSITE_MODEL_IMPLEMENTATION.md`
+- **Implementation History**: [archived summary](docs/archive/2026-09-23-feature-notes/IMPLEMENTATION_SUMMARY.md)
 - **Main README**: `README.md`
-

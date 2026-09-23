@@ -16,7 +16,7 @@
 
 ### 1. Core Components
 
-#### `src/composite_model.py` (New)
+#### `src/detection/composite_model.py` (New)
 Main composite model class with:
 - `CompositeLodeSTAR`: Main class that loads and orchestrates all models
 - `detect_and_classify()`: Detection and classification pipeline
@@ -37,7 +37,7 @@ Main composite model class with:
 7. Return: detections, labels, weight_maps, outputs
 ```
 
-#### `src/test_composite_model.py` (New)
+#### `src/detection/test_composite_model.py` (New)
 Testing script with:
 - `evaluate_composite_model_on_dataset()`: Multi-class evaluation
 - `visualize_composite_results()`: Visualization with weight maps
@@ -50,14 +50,14 @@ Testing script with:
 - Supports visualization of weight maps
 - Saves results to YAML
 
-#### `src/run_composite_pipeline.py` (New)
+#### `src/detection/run_composite_pipeline.py` (New)
 Example script demonstrating:
 - How to instantiate composite model
 - How to process a single image
 - How to visualize results with color-coded labels
 - How to interpret weight maps
 
-#### `src/compare_models.py` (New)
+#### `src/detection/compare_models.py` (New)
 Performance comparison tool:
 - Loads single-model and composite-model results
 - Calculates overall metrics across all datasets
@@ -144,17 +144,17 @@ detections, labels, weight_maps, outputs = composite.detect_and_classify(image)
 
 ### Test Composite Model
 ```bash
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 ```
 
 ### Run Example
 ```bash
-python src/run_composite_pipeline.py
+python src/detection/run_composite_pipeline.py
 ```
 
 ### Compare Performance
 ```bash
-python src/compare_models.py
+python src/detection/compare_models.py
 ```
 
 ### Programmatic Usage
@@ -279,12 +279,12 @@ Type-aware matching: Detection only counts as TP if both position AND label are 
 
 1. **Train Models** (if not done):
    ```bash
-   python src/train_single_particle.py
+   python src/detection/train_single_particle.py
    ```
 
 2. **Test Composite Model**:
    ```bash
-   python src/test_composite_model.py --config src/config.yaml
+   python src/detection/test_composite_model.py --config src/config.yaml
    ```
 
 3. **Visualize Results** (optional):
@@ -293,9 +293,9 @@ Type-aware matching: Detection only counts as TP if both position AND label are 
 
 4. **Compare Performance**:
    ```bash
-   python src/test_single_particle.py  # Single models
-   python src/test_composite_model.py  # Composite model
-   python src/compare_models.py        # Comparison
+   python src/detection/test_single_particle.py  # Single models
+   python src/detection/test_composite_model.py  # Composite model
+   python src/detection/compare_models.py        # Comparison
    ```
 
 5. **Analyze Results**:

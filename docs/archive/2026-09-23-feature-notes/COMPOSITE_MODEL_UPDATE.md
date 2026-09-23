@@ -51,7 +51,7 @@ samples: [Janus, Ring, Spot, Ellipse, Rod]
 ```
 
 ```bash
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 ```
 
 Output:
@@ -72,7 +72,7 @@ samples: [Janus, Spot]
 ```
 
 ```bash
-python src/test_composite_model.py --config src/config_subset_example.yaml
+python src/detection/test_composite_model.py --config src/config_subset_example.yaml
 ```
 
 Output:
@@ -184,7 +184,7 @@ samples: [Janus, Ring, Spot, Ellipse, Rod]
 ## Documentation Updates
 
 Updated documentation files:
-- `src/composite_model.py`: Added config check and logging
+- `src/detection/composite_model.py`: Added config check and logging
 - `COMPOSITE_MODEL_README.md`: Added note about selective loading
 - `QUICK_START_COMPOSITE.md`: Added configuration tips and troubleshooting
 - `src/config_subset_example.yaml`: Example config with subset
@@ -195,13 +195,13 @@ Test the change with different configurations:
 
 ```bash
 # All models
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 
 # Subset of models
-python src/test_composite_model.py --config src/config_subset_example.yaml
+python src/detection/test_composite_model.py --config src/config_subset_example.yaml
 
 # Single model
-python src/run_composite_pipeline.py  # Edit config.yaml: samples: [Janus]
+python src/detection/run_composite_pipeline.py  # Edit config.yaml: samples: [Janus]
 ```
 
 ## Summary

@@ -56,13 +56,13 @@ Ground truth particles now display:
 
 ## Updated Files
 
-1. **`src/test_composite_model.py`**
+1. **`src/detection/test_composite_model.py`**
    - Function: `visualize_composite_results()`
    - Added text labels for both detections and ground truth
    - Lines 210-211: Ground truth labels
    - Lines 219-220: Detection labels
 
-2. **`src/run_composite_pipeline.py`**
+2. **`src/detection/run_composite_pipeline.py`**
    - Updated example visualization to match
    - Lines 54-55: Detection labels with colored borders
 
@@ -139,10 +139,10 @@ No code changes needed - the update is automatic:
 visualize: true
 
 # Run composite model testing
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 
 # Or run example
-python src/run_composite_pipeline.py
+python src/detection/run_composite_pipeline.py
 ```
 
 Results will show colored labels automatically in:
@@ -163,10 +163,10 @@ Verify the update works correctly:
 
 ```bash
 # Test with full dataset
-python src/test_composite_model.py --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
 
 # Quick example
-python src/run_composite_pipeline.py
+python src/detection/run_composite_pipeline.py
 ```
 
 Check output images for:

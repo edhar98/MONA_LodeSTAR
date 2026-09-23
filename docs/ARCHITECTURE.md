@@ -3,9 +3,9 @@
 **Last Updated:** 2026-05-16  
 **Branch:** Documentation & Reporting
 
-## 6-Branch Workflow Structure
+## Six ownership workstreams
 
-MONA_LodeSTAR uses a 6-branch workflow to organize development across different domains:
+MONA_LodeSTAR groups ownership into six workstreams. These are responsibility domains, not six Git branches; Git uses `dev` and `main`. The [agent workflow](AGENT_WORKFLOW.md) describes coordination and independent review.
 
 1. **Web Development** - User-facing web interface
 2. **Core Model Development** - Training, testing, and detection pipelines
@@ -34,7 +34,7 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 
 ### Core Model Development Branch
 **Owns:**
-- `src/*.py` (all Python files except notebooks)
+- `src/detection/`, `src/tracking/`, `src/analysis/`, and shared `src/utils.py`
 - `src/config.yaml`, `src/samples.yaml`
 - `src/requirements.txt`
 - Model-related documentation
@@ -53,7 +53,7 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 - `debug/` directory (all files)
 - `src/*.ipynb` (all notebooks)
 - Debug scripts: `src/debug_*.py`
-- Experimental models: `src/lodestar_*.py`
+- Experimental models: `src/detection/lodestar_*.py`
 
 **Dependencies:**
 - Uses: Core model files for experimentation
@@ -115,18 +115,23 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 ## File Organization
 
 ### Core Source (`src/`)
-- **Training:** `train_single_particle.py`, `train_enhanced.py`
-- **Testing:** `test_single_particle.py`, `test_composite_model.py`
-- **Detection:** `detect_particles.py`
-- **Detection Benchmarks:** `benchmark_trackpy.py`, `benchmark_trackpy_locate.py`
-- **Models:** `custom_lodestar.py`, `composite_model.py`
-- **Data Generation:** `image_generator.py`, `generate_samples.py`
+- **Detection:** `src/detection/train_single_particle.py`, `src/detection/test_single_particle.py`, `src/detection/detect_particles.py`
+- **Detection Benchmarks:** `src/detection/benchmark_trackpy.py`, `src/detection/benchmark_trackpy_locate.py`
+- **Detection Models:** `src/detection/custom_lodestar.py`, `src/detection/composite_model.py`
+- **Data Generation:** `src/detection/image_generator.py`, `src/detection/generate_samples.py`
+- **Tracking:** `src/tracking/track_particles.py`, `src/tracking/visualize_tracks.py`
+- **Gap Filling:** `src/tracking/lstm_track_predictor.py`, `src/tracking/benchmark_lstm_gap_filling.py`, `src/tracking/lstm_gap_filler.py`
+- **Supervised Correction:** `src/tracking/build_supervised_correction_dataset.py`, `src/tracking/train_supervised_correction_lstm.py`, `src/tracking/apply_supervised_correction_lstm.py`
+- **Physics Analysis:** `src/analysis/analyze_tracks.py`, `src/analysis/analyze_motion_statistics.py`, `src/analysis/analyze_track_interactions.py`, `src/analysis/analyze_confinement_drift.py`, `src/analysis/compare_filtered_abp.py`, `src/analysis/analyze_velocity_persistence.py`
 - **Utilities:** `utils.py`
 - **Config:** `config.yaml`, `samples.yaml`
 
 ### Web Interface (`web/`)
-- **Backend:** `app.py` (FastAPI, 1235 lines)
-- **Frontend:** `templates/index.html` (single-page app, 1688 lines)
+- **App Assembly:** `app.py`
+- **Routers:** `routers/`
+- **Services:** `services/`
+- **Auth/Config/State:** `auth.py`, `config.py`, `state.py`
+- **Frontend:** `templates/index.html` (single-page app)
 - **Data:** `data/<username>/` (runtime, gitignored)
 
 ### Tools (`tools/`)
@@ -149,26 +154,28 @@ MONA_LodeSTAR uses a 6-branch workflow to organize development across different 
 ### Core Dependencies
 ```
 src/utils.py
-  ├─ Used by: detect_particles.py, train_single_particle.py, test_single_particle.py
-  ├─ Used by: composite_model.py, run_composite_pipeline.py
-  ├─ Used by: image_generator.py, generate_samples.py
+  ├─ Used by: src/detection/detect_particles.py, src/detection/train_single_particle.py, src/detection/test_single_particle.py
+  ├─ Used by: src/detection/composite_model.py, src/detection/run_composite_pipeline.py
+  ├─ Used by: src/detection/image_generator.py, src/detection/generate_samples.py
   └─ Used by: web/app.py
 
-src/custom_lodestar.py
-  ├─ Used by: detect_particles.py, train_single_particle.py
+src/detection/custom_lodestar.py
+  ├─ Used by: src/detection/detect_particles.py, src/detection/train_single_particle.py
   ├─ Used by: debug_disk_detection.py, debug_area_detection.py
   └─ Used by: test/unit/test_lodestar_models.py
 
-src/composite_model.py
-  ├─ Used by: run_composite_pipeline.py
-  └─ Used by: test_composite_model.py
+src/detection/composite_model.py
+  ├─ Used by: src/detection/run_composite_pipeline.py
+  └─ Used by: src/detection/test_composite_model.py
 ```
 
 ### Web Dependencies
 ```
 web/app.py
   ├─ Imports: tdms_explorer.TDMSFileExplorer
-  └─ Imports: src/utils
+  ├─ Imports: src/utils
+  ├─ Includes: web/routers/
+  └─ Delegates runtime work to: web/services/, web/auth.py, web/config.py, web/state.py
 ```
 
 ### Tools Dependencies
@@ -179,13 +186,13 @@ tools/elab/cli/elab_cli_simple.py
   └─ Used by: tools/elab_cli.py
 
 tools/wandb_logging.py
-  └─ Used by: src/train_single_particle.py
+  └─ Used by: src/detection/train_single_particle.py
 ```
 
 ## Coordination Rules
 
 ### Detection Engine Direction
-- Current production detector is LodeSTAR via `src/detect_particles.py`
+- Current production detector is LodeSTAR via `src/detection/detect_particles.py`
 - `trackpy.locate` is a strong classical baseline for position-only detection and should be exposed through a future `--detection-engine lodestar|trackpy` flag
 - Single-frame benchmark on `JP_Fe_wf_2_40_slm075_574_001.png`: LodeSTAR `model.detect` took 180.1 ms on CUDA and 758.2 ms on CPU; `trackpy.locate(diameter=41)` took 265.1 ms on CPU
 - Downstream orientation, tracking, gap interpolation, and ABP analysis should consume a shared detection CSV schema regardless of engine
@@ -212,21 +219,21 @@ tools/wandb_logging.py
 
 ### Training Configuration
 - **`src/config.yaml`** - Main training configuration
-  - Used by: `train_single_particle.py`, `run_training.py`, `train_enhanced.py`
+  - Used by: `src/detection/train_single_particle.py`, `src/detection/run_training.py`, `src/detection/train_enhanced.py`
   - Contains: WandB settings, training parameters, augmentation settings, particle samples
 
 ### Sample Configuration
 - **`src/samples.yaml`** - Particle sample definitions
-  - Used by: `generate_samples.py`, `image_generator.py`
+  - Used by: `src/detection/generate_samples.py`, `src/detection/image_generator.py`
   - Contains: Particle types (Janus, Ring, Spot, Ellipse, Rod) with parameters
 
 ### ELAB Configuration
 - **`elab_config.yaml` (root)** - Reference/documentation for ELAB configuration
-- **`tools/elab/config/elab_config.yaml`** - Active ELAB configuration with defaults
-  - Used by: ELAB CLI tools
+- **`tools/elab/config/elab_config.yaml`** - Reference configuration; current ELAB scripts do not load it
+  - Actual defaults: CLI arguments, environment variables, and script constants
   - Contains: Default experiment settings, tags, directory mappings, file patterns
 
-See [DUPLICATES_DOCUMENTATION.md](../DUPLICATES_DOCUMENTATION.md) for clarification on duplicate config files.
+The January 2026 duplicate-file notes are archived under `docs/archive/2026-01-verification/`; use `AGENTS.md` for current source-of-truth guidance.
 
 ## Output Structure
 
@@ -234,6 +241,10 @@ See [DUPLICATES_DOCUMENTATION.md](../DUPLICATES_DOCUMENTATION.md) for clarificat
 - **`data/`** - Generated datasets and sample images
 - **`models/`** - Trained model weights and checkpoints
 - **`detection_results/`** - Detection outputs and evaluation results
+- **`analysis_outputs/`** - Motion statistics, ABP/model comparison, confinement, and interaction outputs
+- **`lstm_outputs/`** - LSTM/BiLSTM/Kalman benchmark outputs
+- **`supervised_correction_outputs/`** - Reference-calibrated correction datasets, models, and refined tracks
+- **`lodestar_orientation_test_out/`** - Orientation experiment outputs
 
 ### Logs
 - **`logs/`** - Training and execution logs
@@ -248,5 +259,4 @@ See [DUPLICATES_DOCUMENTATION.md](../DUPLICATES_DOCUMENTATION.md) for clarificat
 
 - [BRANCH_GUIDES.md](BRANCH_GUIDES.md) - Detailed branch-specific guides
 - [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Common commands and patterns
-- [INVENTORY.md](../INVENTORY.md) - Complete file catalog
-- [CLEANUP_REPORT.md](../CLEANUP_REPORT.md) - Cleanup actions executed
+- [January 2026 verification archive](archive/2026-01-verification/README.md) - Superseded pre-restructure reports
