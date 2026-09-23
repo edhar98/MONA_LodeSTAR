@@ -3,10 +3,13 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
+import imageio
 import numpy as np
 from fastapi import APIRouter, HTTPException
+from PIL import Image
 from pydantic import BaseModel
-from services.tdms_cache import get_explorer, get_images
+from services.frames import normalize_tdms_frame
+from services.tdms_cache import get_images
 
 import state
 from services import tdms_ops
@@ -147,27 +150,41 @@ async def compare_frames(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _export_frame(raw: np.ndarray, normalize: bool, dtype: np.dtype) -> np.ndarray:
+    if dtype == np.uint16:
+        f = raw.astype(np.float32)
+        if normalize:
+            lo, hi = float(f.min()), float(f.max())
+            if hi > lo:
+                return ((f - lo) / (hi - lo) * 65535.0).astype(np.uint16)
+            return np.zeros_like(raw, dtype=np.uint16)
+        return np.clip(f, 0, 65535).astype(np.uint16)
+    return normalize_tdms_frame(raw, normalize)
+
+
 @router.post("/export")
 async def export_tdms(request: TdmsExportRequest):
     info = _tdms_file(request.username, request.file_id)
-    explorer = get_explorer(str(info["path"]))
     images = get_images(str(info["path"]))
     if images is None:
         raise HTTPException(status_code=400, detail="Could not extract images from TDMS file")
 
     start = request.start_frame
-    end = request.end_frame
-    dtype_map = {"uint8": np.uint8, "uint16": np.uint16}
-    dtype = dtype_map.get(request.dtype, np.uint8)
+    end = request.end_frame if request.end_frame is not None else int(images.shape[0])
+    if start < 0 or end > images.shape[0] or start >= end:
+        raise HTTPException(status_code=400, detail=f"Invalid frame range {start}:{end}")
+    dtype = {"uint8": np.uint8, "uint16": np.uint16}.get(request.dtype, np.uint8)
     user_dir = state.get_user_dir(request.username)
-    base_name = request.output_name or Path(info["filename"]).stem
-    frame_count = (end if end is not None else images.shape[0]) - start
+    base_name = state.safe_name(request.output_name or Path(info["filename"]).stem)
+    frame_count = end - start
 
     if request.output_format == "mp4":
-        output_path = user_dir / "results" / f"{base_name}.mp4"
-        explorer.write_video(
-            str(output_path), start_frame=start, end_frame=end,
-            fps=request.fps, dtype=dtype, force=True, normed=request.normalize,
+        output_path = state.contained_path(user_dir / "results", f"{base_name}.mp4")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        frames = [normalize_tdms_frame(images[i], request.normalize) for i in range(start, end)]
+        imageio.mimwrite(
+            str(output_path), frames, fps=request.fps,
+            codec="libx264", quality=8, macro_block_size=1,
         )
         if request.save_to_server:
             return {"status": "saved", "path": str(output_path), "frames": frame_count}
@@ -178,14 +195,15 @@ async def export_tdms(request: TdmsExportRequest):
             "frames": frame_count,
         }
 
-    export_dir = user_dir / "results" / base_name
-    explorer.write_images(
-        str(export_dir), base_name=base_name, start_frame=start,
-        end_frame=end, dtype=dtype, force=True, normed=request.normalize,
-    )
+    export_dir = state.contained_path(user_dir / "results", base_name)
+    export_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(start, end):
+        frame = _export_frame(images[i], request.normalize, dtype)
+        mode = "I;16" if frame.dtype == np.uint16 else "L"
+        Image.fromarray(frame, mode=mode).save(state.contained_path(export_dir, f"{base_name}_{i + 1:03d}.png"))
     if request.save_to_server:
         return {"status": "saved", "path": str(export_dir), "frames": frame_count}
-    zip_path = user_dir / "results" / f"{base_name}.zip"
+    zip_path = state.contained_path(user_dir / "results", f"{base_name}.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for img_file in export_dir.glob("*.png"):
             zf.write(img_file, img_file.name)

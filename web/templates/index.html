@@ -982,9 +982,12 @@ let API_BASE = '';
   }
   const userIdx = parts.indexOf('user');
   if (userIdx !== -1 && parts[userIdx + 2]) {
-    const svc = parts[userIdx + 2];
-    if (svc === 'mona-track' || svc.startsWith('mona-track-')) {
-      API_BASE = '/' + parts.slice(0, userIdx + 3).join('/');
+    let serviceIdx = -1;
+    parts.forEach((svc, idx) => {
+      if (idx >= userIdx + 2 && (svc === 'mona-track' || svc.startsWith('mona-track-'))) serviceIdx = idx;
+    });
+    if (serviceIdx !== -1) {
+      API_BASE = '/' + parts.slice(0, serviceIdx + 1).join('/');
     }
   }
 })();
@@ -2777,7 +2780,7 @@ function pollTrainJob(jobId) {
   const timer = setInterval(async () => {
     const d = await api('/train/' + jobId);
     updateTrainProgress(d);
-    if (['completed', 'failed', 'cancelled'].includes(d.status)) clearInterval(timer);
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(d.status)) clearInterval(timer);
   }, 2000);
 }
 
@@ -2803,11 +2806,15 @@ function updateTrainProgress(msg) {
   } else if (msg.status === 'cancelled') {
     setStatus('train-status', 'Training cancelled', 'warn');
     resetTrainUI();
+  } else if (msg.status === 'interrupted') {
+    setStatus('train-status', 'Training interrupted by server restart. Start a new training job.', 'warn');
+    resetTrainUI();
   }
 }
 
 function resetTrainUI() {
   document.getElementById('train-start-btn').disabled = false;
+  document.getElementById('train-start-btn').classList.remove('hidden');
   document.getElementById('train-cancel-btn').classList.add('hidden');
   trainJobId = null;
 }
@@ -3291,6 +3298,7 @@ document.getElementById('abp-run-btn').onclick = async () => {
   if (!csvName) { setStatus('abp-status-wrap', 'Select a tracks CSV', 'warn'); return; }
   setStatus('abp-status-wrap', '<span class="spinner"></span> Computing MSD and fitting ABP…', 'info');
   document.getElementById('abp-results-wrap').classList.add('hidden');
+  clearAbpPlot();
   const d = await api('/analyze/abp', {
     username, csv_name: csvName,
     dt: parseFloat(document.getElementById('abp-dt').value),
@@ -3303,7 +3311,18 @@ document.getElementById('abp-run-btn').onclick = async () => {
   showAbpResults(d);
 };
 
+function clearAbpPlot() {
+  lastAbpPlotB64 = null;
+  const img = document.getElementById('abp-plot');
+  img.removeAttribute('src');
+  img.classList.add('hidden');
+  const button = document.getElementById('abp-plot-download');
+  button.classList.add('hidden');
+  button.onclick = null;
+}
+
 function showAbpResults(d) {
+  clearAbpPlot();
   const rows = [
     ['Tracks analysed', d.n_tracks, ''],
     ['Real detection rows', d.n_real_rows, ''],
@@ -3331,7 +3350,11 @@ function showAbpResults(d) {
     };
   }
   document.getElementById('abp-results-wrap').classList.remove('hidden');
-  setStatus('abp-status-wrap', 'ABP fit complete', 'ok');
+  const fitted = d.D_t != null && d.v0 != null && d.D_r_msd != null;
+  const status = fitted ? 'ABP fit complete' : 'MSD computed; insufficient data or unsuccessful ABP fit.';
+  setStatus('abp-status-wrap', status + (d.orientation_note ? ' ' + esc(d.orientation_note) : '') +
+    (d.plot_error ? ' Plot failed: ' + esc(d.plot_error) : ''),
+    d.plot_error ? 'err' : fitted ? 'ok' : 'warn');
 }
 
 function optionalFloat(id) {

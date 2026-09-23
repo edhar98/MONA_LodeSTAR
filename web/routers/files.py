@@ -57,7 +57,7 @@ async def upload_start(data: ChunkUploadStart):
     ext = Path(data.filename).suffix.lower()
     if ext not in ALLOWED_UPLOAD_EXT:
         return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
-    file_path = state.get_user_dir(data.username) / "uploads" / f"{file_id}{ext}"
+    file_path = state.contained_path(state.get_user_dir(data.username) / "uploads", f"{file_id}{ext}")
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.touch()
     return {"upload_id": file_id, "file_path": str(file_path), "settings": {"normalize": data.normalize}}
@@ -65,18 +65,14 @@ async def upload_start(data: ChunkUploadStart):
 
 @router.post("/upload/chunk/{upload_id}")
 async def upload_chunk(upload_id: str, request: Request, offset: int = 0):
+    state.safe_name(upload_id)
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Offset must be nonnegative")
     body = await request.body()
-    for session in state.sessions.values():
-        for finfo in session.get("files", {}).values():
-            if finfo.get("id") == upload_id:
-                with open(finfo["path"], "r+b") as f:
-                    f.seek(offset)
-                    f.write(body)
-                return {"received": len(body), "offset": offset}
     for username in state.users:
         user_dir = state.get_user_dir(username)
         for ext in ALLOWED_UPLOAD_EXT:
-            fp = user_dir / "uploads" / f"{upload_id}{ext}"
+            fp = state.contained_path(user_dir / "uploads", f"{upload_id}{ext}")
             if fp.exists():
                 with open(fp, "r+b") as f:
                     f.seek(offset)
@@ -92,7 +88,10 @@ async def upload_complete(data: ChunkUploadComplete):
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"error": str(e.detail)})
     ext = Path(data.filename).suffix.lower()
-    file_path = state.get_user_dir(data.username) / "uploads" / f"{data.upload_id}{ext}"
+    if ext not in ALLOWED_UPLOAD_EXT:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    state.safe_name(data.upload_id)
+    file_path = state.contained_path(state.get_user_dir(data.username) / "uploads", f"{data.upload_id}{ext}")
     if not file_path.exists():
         return JSONResponse(status_code=404, content={"error": "Upload file not found"})
     file_info = {
@@ -138,7 +137,7 @@ async def upload_file(request: Request):
     if ext not in ALLOWED_UPLOAD_EXT:
         return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
 
-    file_path = state.get_user_dir(username) / "uploads" / f"{file_id}{ext}"
+    file_path = state.contained_path(state.get_user_dir(username) / "uploads", f"{file_id}{ext}")
     file_path.write_bytes(await file.read())
 
     file_info = {
@@ -218,8 +217,8 @@ async def upload_csv(
     if not file.filename or not file.filename.endswith(".csv"):
         return JSONResponse(status_code=400, content={"error": "Only CSV files are accepted"})
 
+    save_path = state.contained_path(state.get_user_dir(username) / "results", file.filename)
     content = await file.read()
-    save_path = state.get_user_dir(username) / "results" / file.filename
     save_path.write_bytes(content)
     return {
         "status": "uploaded",

@@ -468,10 +468,10 @@ async def save_sample(request: SampleRequest):
     if existing:
         ref = existing[0]
         cropped = cropped.resize((ref["width"], ref["height"]), Image.LANCZOS)
-    sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
+    sample_dir = state.contained_path(get_user_dir(request.username) / "samples", request.particle_name)
     sample_dir.mkdir(parents=True, exist_ok=True)
     crop_id = uuid.uuid4().hex[:8]
-    sample_path = sample_dir / f"crop_{crop_id}.jpg"
+    sample_path = state.contained_path(sample_dir, f"crop_{crop_id}.jpg")
     cropped.save(sample_path, format="JPEG")
     sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped.width, "height": cropped.height}
     if request.template_phi_deg is not None:
@@ -494,9 +494,9 @@ async def save_mask(request: MaskRequest):
     if request.username not in sessions:
         load_user_session(request.username)
 
-    mask_dir = get_user_dir(request.username) / "masks" / request.particle_name
+    mask_dir = state.contained_path(get_user_dir(request.username) / "masks", request.particle_name)
     mask_dir.mkdir(parents=True, exist_ok=True)
-    mask_path = mask_dir / f"{request.particle_name}_mask.png"
+    mask_path = state.contained_path(mask_dir, f"{request.particle_name}_mask.png")
 
     raw = request.mask_data.split(",")[1] if "," in request.mask_data else request.mask_data
     mask_bytes = base64.b64decode(raw)
@@ -532,10 +532,10 @@ async def save_mask(request: MaskRequest):
             if existing_mask:
                 ref = existing_mask[0]
                 cropped_img = cropped_img.resize((ref["width"], ref["height"]), Image.LANCZOS)
-            sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
+            sample_dir = state.contained_path(get_user_dir(request.username) / "samples", request.particle_name)
             sample_dir.mkdir(parents=True, exist_ok=True)
             crop_id = uuid.uuid4().hex[:8]
-            sample_path = sample_dir / f"crop_{crop_id}.jpg"
+            sample_path = state.contained_path(sample_dir, f"crop_{crop_id}.jpg")
             cropped_img.save(sample_path, format="JPEG")
 
             sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped_img.width, "height": cropped_img.height,
@@ -578,10 +578,10 @@ async def apply_circular_mask(request: CircularMaskRequest):
     if existing_circ:
         ref = existing_circ[0]
         cropped = cropped.resize((ref["width"], ref["height"]), Image.LANCZOS)
-    sample_dir = get_user_dir(request.username) / "samples" / request.particle_name
+    sample_dir = state.contained_path(get_user_dir(request.username) / "samples", request.particle_name)
     sample_dir.mkdir(parents=True, exist_ok=True)
     crop_id = uuid.uuid4().hex[:8]
-    sample_path = sample_dir / f"crop_{crop_id}.jpg"
+    sample_path = state.contained_path(sample_dir, f"crop_{crop_id}.jpg")
     cropped.save(sample_path, format="JPEG")
     sample_info = {"id": crop_id, "path": str(sample_path), "width": cropped.width, "height": cropped.height, "mask_type": "circular"}
     sessions[request.username]["samples"].setdefault(request.particle_name, []).append(sample_info)
@@ -607,7 +607,7 @@ async def delete_sample(username: str, particle_name: str):
     if username not in sessions:
         load_user_session(username)
     if particle_name in sessions[username]["samples"]:
-        sample_dir = get_user_dir(username) / "samples" / particle_name
+        sample_dir = state.contained_path(get_user_dir(username) / "samples", particle_name)
         if sample_dir.exists():
             shutil.rmtree(sample_dir)
         del sessions[username]["samples"][particle_name]
@@ -661,7 +661,7 @@ def run_training(job_id: str, username: str, particle_name: str, config: dict):
             training_jobs[job_id]["start_time"] = start_time
             training_jobs[job_id]["losses"] = []
 
-        sample_dir = get_user_dir(username) / "samples" / particle_name
+        sample_dir = state.contained_path(get_user_dir(username) / "samples", particle_name)
         crop_paths = sorted(sample_dir.glob("crop_*.jpg")) if sample_dir.exists() else []
         if not crop_paths:
             legacy = sample_dir / f"{particle_name}.jpg"
@@ -783,7 +783,7 @@ def run_training(job_id: str, username: str, particle_name: str, config: dict):
 
         runtime = time.time() - start_time
         model_dir = get_user_dir(username) / "models"
-        model_path = model_dir / f"{particle_name}_weights.pth"
+        model_path = state.contained_path(model_dir, f"{state.safe_name(particle_name)}_{job_id}_weights.pth")
         torch.save(lodestar.state_dict(), model_path)
 
         losses = training_jobs[job_id].get("losses", [])
@@ -879,11 +879,11 @@ async def ws_training(websocket: WebSocket, job_id: str):
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=30.0)
                 await websocket.send_json(msg)
-                if msg.get("status") in ("completed", "failed", "cancelled"):
+                if msg.get("status") in ("completed", "failed", "cancelled", "interrupted"):
                     break
             except asyncio.TimeoutError:
                 job = training_jobs.get(job_id, {})
-                if job.get("status") in ("completed", "failed", "cancelled"):
+                if job.get("status") in ("completed", "failed", "cancelled", "interrupted"):
                     await websocket.send_json({"status": job["status"], "job_id": job_id})
                     break
                 safe = {k: v for k, v in job.items() if isinstance(v, (str, int, float, bool, type(None)))}
@@ -928,7 +928,10 @@ def _cli_model_entry(particle_name: str, info: Dict[str, Any], suffix: str = "")
         model_path = WEB_DIR.parent / model_path
     run_id = _model_run_id(model_path)
     model_id = f"cli:{particle_name}:{run_id}{suffix}"
+    saved_config = model_path.parent / "config.yaml"
     config = _src_config()
+    if saved_config.is_file():
+        config = utils.load_yaml(str(saved_config)) or {}
     config.setdefault("lodestar_version", "default")
     return {
         "id": model_id,
@@ -940,6 +943,8 @@ def _cli_model_entry(particle_name: str, info: Dict[str, Any], suffix: str = "")
         "source": "cli",
         "read_only": True,
         "run_id": run_id,
+        "config_source": "saved_run" if saved_config.is_file() else "global_fallback",
+        "config_warning": None if saved_config.is_file() else "Saved run configuration missing; verify architecture before use.",
     }
 
 
@@ -979,6 +984,8 @@ def _get_model_info(username: str, model_id: str) -> Dict[str, Any]:
 
 def load_model(username: str, model_id: str) -> Any:
     model_info = _get_model_info(username, model_id)
+    if model_info.get("config_source") == "global_fallback":
+        raise HTTPException(status_code=400, detail="Saved model run config.yaml is missing; restore it before loading this CLI model")
     model_path = Path(model_info["path"])
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="Model file not found")
@@ -989,9 +996,11 @@ def load_model(username: str, model_id: str) -> Any:
     lodestar_version = config.get("lodestar_version", "default")
     if lodestar_version == "default":
         lodestar = dl.LodeSTAR(n_transforms=config.get("n_transforms", 4), optimizer=dl.Adam(lr=config.get("lr", 0.0001))).build()
-    else:
+    elif lodestar_version == "custom":
         from custom_lodestar import customLodeSTAR
         lodestar = customLodeSTAR(n_transforms=config.get("n_transforms", 4), optimizer=dl.Adam(lr=config.get("lr", 0.0001))).build()
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported LodeSTAR architecture: {lodestar_version}")
     lodestar.load_state_dict(torch.load(model_path, map_location=device))
     lodestar.eval()
     lodestar = lodestar.to(device)
@@ -1026,7 +1035,8 @@ async def delete_model(username: str, model_id: str):
     if model_info.get("source") == "cli" or model_info.get("read_only"):
         raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
     mp = Path(model_info["path"])
-    if mp.exists():
+    shared = any(m["id"] != model_id and Path(m["path"]).resolve() == mp.resolve() for m in models)
+    if mp.exists() and not shared:
         mp.unlink()
     sessions[username]["models"] = [m for m in models if m["id"] != model_id]
     save_user_session(username)
@@ -1046,7 +1056,9 @@ async def rename_model(username: str, model_id: str, request: RenameModelRequest
     if model_info.get("source") == "cli" or model_info.get("read_only"):
         raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
     old = Path(model_info["path"])
-    new = old.parent / f"{request.new_name}_weights.pth"
+    if any(m["id"] != model_id and Path(m["path"]).resolve() == old.resolve() for m in models):
+        raise HTTPException(status_code=409, detail="Legacy model weights are shared; retrain before renaming")
+    new = state.contained_path(old.parent, f"{state.safe_name(request.new_name)}_{model_id}_weights.pth")
     if old.exists():
         old.rename(new)
     model_info["particle_name"] = request.new_name
@@ -1295,7 +1307,7 @@ async def upload_detect_file(
     if ext not in _ALLOWED_UPLOAD_EXT:
         return JSONResponse(status_code=400, content={"error": "Unsupported file type"})
 
-    file_path = get_user_dir(username) / "uploads" / f"detect_{file_id}{ext}"
+    file_path = state.contained_path(get_user_dir(username) / "uploads", f"detect_{file_id}{ext}")
     file_path.write_bytes(await file.read())
 
     file_info = {
@@ -1527,10 +1539,10 @@ async def detect_batch(request: BatchDetectRequest):
             raise HTTPException(status_code=404, detail=f"File not found in session: {fid}")
         file_infos.append(dict(file_info))
 
-    base_name = request.output_name or Path(file_infos[0]["filename"]).stem
+    base_name = state.safe_name(request.output_name or Path(file_infos[0]["filename"]).stem)
     if len(file_infos) > 1 and not request.output_name:
         base_name = f"{base_name}_plus{len(file_infos) - 1}"
-    output_csv = get_user_dir(request.username) / "results" / f"{base_name}_detections.csv"
+    output_csv = state.contained_path(get_user_dir(request.username) / "results", f"{base_name}_detections.csv")
 
     job_id = str(uuid.uuid4())[:8]
     background_jobs[job_id] = {
@@ -1614,13 +1626,13 @@ async def run_tracking(request: TrackRequest):
     if not _tracking_available:
         raise HTTPException(status_code=503, detail="Tracking module unavailable")
     user_dir = get_user_dir(request.username)
-    csv_path = user_dir / "results" / request.csv_name
+    csv_path = state.contained_path(user_dir / "results", request.csv_name)
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail=f"Detection CSV not found: {request.csv_name}")
 
     stem = Path(request.csv_name).stem.replace("_detections", "")
     output_name = request.output_name or stem
-    output_csv = user_dir / "results" / f"{output_name}_tracks.csv"
+    output_csv = state.contained_path(user_dir / "results", f"{state.safe_name(output_name)}_tracks.csv")
 
     job_id = str(uuid.uuid4())[:8]
     background_jobs[job_id] = {
@@ -1694,7 +1706,7 @@ def visualize_tracks_overview(request: TrackVisualizeRequest):
     if not _viz_available:
         raise HTTPException(status_code=503, detail="visualize_tracks module unavailable")
     results_dir = get_user_dir(request.username) / "results"
-    tracks_path = results_dir / request.tracks_csv
+    tracks_path = state.contained_path(results_dir, request.tracks_csv)
     if not tracks_path.exists():
         raise HTTPException(status_code=404, detail=f"Tracks CSV not found: {request.tracks_csv}")
 
@@ -1706,7 +1718,7 @@ def visualize_tracks_overview(request: TrackVisualizeRequest):
     mid_frame = int(df["frame"].median())
     images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed={mid_frame})
     base = tracks_path.stem
-    output_path = results_dir / f"{base}_overview.png"
+    output_path = state.contained_path(results_dir, f"{base}_overview.png")
     try:
         make_overview(df, images_dir or "", str(output_path), get_frame=get_frame)
     finally:
@@ -1725,7 +1737,7 @@ def visualize_tracks_overview(request: TrackVisualizeRequest):
 def _run_visualize_video(job_id: str, request: TrackVisualizeRequest, results_dir: Path):
     try:
         background_jobs[job_id]["status"] = "running"
-        tracks_path = results_dir / request.tracks_csv
+        tracks_path = state.contained_path(results_dir, request.tracks_csv)
         df = pd.read_csv(tracks_path)
         if "is_interpolated" not in df.columns:
             df["is_interpolated"] = False
@@ -1734,7 +1746,7 @@ def _run_visualize_video(job_id: str, request: TrackVisualizeRequest, results_di
         needed = set(int(f) for f in df["frame"].unique())
         images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed=needed)
         base = tracks_path.stem
-        output_path = results_dir / f"{base}_video.mp4"
+        output_path = state.contained_path(results_dir, f"{base}_video.mp4")
         try:
             _viz_make_video(
                 df, images_dir or "", str(output_path),
@@ -1759,7 +1771,8 @@ async def start_visualize_video(request: TrackVisualizeRequest):
     if not _viz_available:
         raise HTTPException(status_code=503, detail="visualize_tracks module unavailable")
     results_dir = get_user_dir(request.username) / "results"
-    tracks_path = results_dir / request.tracks_csv
+    tracks_path = state.contained_path(results_dir, request.tracks_csv)
+    state.contained_path(results_dir, f"{tracks_path.stem}_video.mp4")
     if not tracks_path.exists():
         raise HTTPException(status_code=404, detail=f"Tracks CSV not found: {request.tracks_csv}")
 
@@ -1781,10 +1794,12 @@ async def start_visualize_video(request: TrackVisualizeRequest):
 
 @app.post("/analyze/abp")
 async def analyze_abp(request: AbpRequest):
+    if not np.isfinite(request.dt) or request.dt <= 0 or request.max_lag < 1 or request.min_track < 1:
+        raise HTTPException(status_code=400, detail="dt, max_lag and min_track must be positive")
     if not _analysis_available:
         raise HTTPException(status_code=503, detail="Analysis module unavailable")
     user_dir = get_user_dir(request.username)
-    csv_path = user_dir / "results" / request.csv_name
+    csv_path = state.contained_path(user_dir / "results", request.csv_name)
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail=f"Tracks CSV not found: {request.csv_name}")
 
@@ -1814,6 +1829,7 @@ async def analyze_abp(request: AbpRequest):
 
     stem = Path(request.csv_name).stem
     plot_base = stem + "_abp"
+    state.contained_path(user_dir / "results", f"{plot_base}_msd.png")
     output_dir = str(user_dir / "results")
 
     fit_params_phys = None
@@ -1839,7 +1855,7 @@ async def analyze_abp(request: AbpRequest):
 
     try:
         plot_msd(msd_df, amsd_df, request.dt, fit_params_phys, D_r_angular, output_dir, plot_base, px_um=px)
-        plot_path = user_dir / "results" / f"{plot_base}_msd.png"
+        plot_path = state.contained_path(user_dir / "results", f"{plot_base}_msd.png")
         if plot_path.exists():
             result["plot_b64"] = f"data:image/png;base64,{base64.b64encode(plot_path.read_bytes()).decode()}"
     except Exception as e:
@@ -2027,8 +2043,8 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
     base = "janus_crescent_ratio_" + _crescent_output_base(request, file_info)
     out_dir = get_user_dir(username) / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / f"{base}_measurement.csv"
-    overlay_path = out_dir / f"{base}_overlay.png"
+    csv_path = state.contained_path(out_dir, f"{base}_measurement.csv")
+    overlay_path = state.contained_path(out_dir, f"{base}_overlay.png")
     pd.DataFrame([data]).to_csv(csv_path, index=False)
     save_crescent_overlay(
         overlay_path,
@@ -2122,7 +2138,7 @@ async def list_results(username: str):
 @app.get("/results/{username}/download/{filename}")
 async def download_result(username: str, filename: str, inline: bool = False):
     results_dir = get_user_dir(username) / "results"
-    fp = results_dir / filename
+    fp = state.contained_path(results_dir, filename)
     if not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     media = None
@@ -2156,7 +2172,7 @@ async def list_merged_videos(username: str):
 async def get_merged_video(username: str, filename: str):
     username = require_user(username)
     name = _safe_merged_name(filename)
-    fp = _merged_dir(username) / name
+    fp = state.contained_path(_merged_dir(username), name)
     if not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Merged video not found")
     return FileResponse(
@@ -2168,7 +2184,7 @@ async def get_merged_video(username: str, filename: str):
 async def delete_merged_video(username: str, filename: str):
     username = require_user(username)
     name = _safe_merged_name(filename)
-    fp = _merged_dir(username) / name
+    fp = state.contained_path(_merged_dir(username), name)
     if not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Merged video not found")
     fp.unlink()
@@ -2185,11 +2201,12 @@ async def merge_videos(request: VideoMergeRequest):
     results_dir = get_user_dir(request.username) / "results"
     mp4_files = []
     for fid in request.file_ids:
-        mp4 = results_dir / f"{fid}.mp4"
+        mp4 = state.contained_path(results_dir, f"{state.safe_name(fid)}.mp4")
         if mp4.exists():
             mp4_files.append(mp4)
         else:
             for mp4 in results_dir.glob(f"*{fid}*.mp4"):
+                mp4 = state.contained_path(results_dir, mp4.name)
                 mp4_files.append(mp4)
                 break
     if not mp4_files:
@@ -2202,7 +2219,7 @@ async def merge_videos(request: VideoMergeRequest):
             for frame in reader:
                 all_frames.append(frame)
             reader.close()
-        output_path = results_dir / f"{request.output_name}.mp4"
+        output_path = state.contained_path(results_dir, f"{state.safe_name(request.output_name)}.mp4")
         imageio.mimwrite(str(output_path), all_frames, fps=request.fps, codec="libx264", quality=8, macro_block_size=1)
         return {"status": "merged", "path": str(output_path),
                 "total_frames": len(all_frames), "source_files": len(mp4_files)}
@@ -2217,7 +2234,7 @@ async def merge_from_files(request: MergeFromFilesRequest):
         raise HTTPException(status_code=400, detail="No files selected")
 
     out_name = _safe_merged_name(request.output_name or "merged")
-    output_path = _merged_dir(request.username) / out_name
+    output_path = state.contained_path(_merged_dir(request.username), out_name)
 
     job_id = str(uuid.uuid4())[:8]
     background_jobs[job_id] = {
