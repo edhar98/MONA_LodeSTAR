@@ -52,10 +52,16 @@ def compute_msd(
             g = group[~group["is_interpolated"]].sort_values("frame")
         x = g["x"].values
         y = g["y"].values
-        n = len(x)
-        for lag in range(1, min(max_lag + 1, n)):
-            dx = x[lag:] - x[:-lag]
-            dy = y[lag:] - y[:-lag]
+        frames = g["frame"].to_numpy()
+        for lag in range(1, max_lag + 1):
+            right = np.searchsorted(frames, frames + lag)
+            left = np.flatnonzero(right < len(frames))
+            left = left[frames[right[left]] == frames[left] + lag]
+            right = right[left]
+            dx = x[right] - x[left]
+            dy = y[right] - y[left]
+            finite = np.isfinite(dx) & np.isfinite(dy)
+            dx, dy = dx[finite], dy[finite]
             msd_accum[lag - 1] += (dx**2 + dy**2).sum()
             counts[lag - 1] += len(dx)
 
@@ -73,7 +79,8 @@ def compute_angular_msd(
 ) -> pd.DataFrame:
     """
     Ensemble-averaged angular MSD <(Δφ)²> vs lag time.
-    Uses circular difference to handle angle wrapping.
+    Unwraps finite angles within contiguous frame runs. Missing frames break
+    runs because their angular winding is unobserved.
     """
     def has_enough_rows(group):
         if include_interpolated:
@@ -90,12 +97,14 @@ def compute_angular_msd(
             g = group[group["phi"].notna()].sort_values("frame")
         else:
             g = group[~group["is_interpolated"] & group["phi"].notna()].sort_values("frame")
-        phi = np.unwrap(g["phi"].values)
-        n = len(phi)
-        for lag in range(1, min(max_lag + 1, n)):
-            dphi = phi[lag:] - phi[:-lag]
-            amsd_accum[lag - 1] += (dphi**2).sum()
-            counts[lag - 1] += len(dphi)
+        g = g[np.isfinite(g["phi"])]
+        breaks = np.flatnonzero(np.diff(g["frame"].to_numpy()) != 1) + 1
+        for values in np.split(g["phi"].to_numpy(), breaks):
+            phi = np.unwrap(values)
+            for lag in range(1, min(max_lag + 1, len(phi))):
+                dphi = phi[lag:] - phi[:-lag]
+                amsd_accum[lag - 1] += (dphi**2).sum()
+                counts[lag - 1] += len(dphi)
 
     valid = counts > 0
     amsd = np.where(valid, amsd_accum / np.maximum(counts, 1), np.nan)
@@ -117,10 +126,14 @@ def abp_msd_model(t, D_t, v0, D_r):
 
 def fit_msd(msd_df: pd.DataFrame, dt: float):
     """Fit ABP MSD model; returns (D_t, v0, D_r) in physical units."""
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError("dt must be finite and positive")
     t = msd_df["lag"].values * dt
     msd = msd_df["msd"].values
     valid = np.isfinite(msd) & (msd > 0)
     t, msd = t[valid], msd[valid]
+    if len(t) < 3:
+        return None
 
     # Initial guess: simple diffusion fit on short lags
     short = t < t.max() * 0.1
@@ -143,6 +156,8 @@ def fit_msd(msd_df: pd.DataFrame, dt: float):
 
 def fit_angular_msd(amsd_df: pd.DataFrame, dt: float):
     """Linear fit <Δφ²> = 2*D_r*t → returns D_r."""
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError("dt must be finite and positive")
     t = amsd_df["lag"].values * dt
     amsd = amsd_df["amsd"].values
     valid = np.isfinite(amsd) & (amsd > 0)

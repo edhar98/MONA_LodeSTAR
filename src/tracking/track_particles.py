@@ -100,6 +100,9 @@ def link_tracks(
     rows: list[dict] = []
 
     for frame in sorted(df["frame"].unique()):
+        # max_gap counts missing frames, including frames with no detections.
+        active = {tid: st for tid, st in active.items()
+                  if frame - st["frame"] - 1 <= max_gap}
         frame_df = df[df["frame"] == frame].reset_index(drop=True)
         det_xy = frame_df[["x", "y"]].values
 
@@ -138,7 +141,7 @@ def link_tracks(
         dead = []
         for tid in active_ids:
             if tid not in updated_ids:
-                active[tid]["gap"] += 1
+                active[tid]["gap"] = frame - active[tid]["frame"]
                 if active[tid]["gap"] > max_gap:
                     dead.append(tid)
         for tid in dead:
