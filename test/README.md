@@ -55,6 +55,13 @@ The 2026-09-23 run reported 3 frames, 367 detections, 121 tracks and 356 track r
 
 ## Writing Tests
 
+For the composite and learned-trajectory integration, run the opt-in
+`/opt/mona_jupyterhub_env/bin/python -B test/integration/smoke_learned_web.py`.
+It needs local detector/LSTM checkpoints and the dataset-04 image/track-233
+fixtures, writes temporary isolated state, and has a 180-second hard timeout.
+See [scope and verification](../docs/WEB_LEARNED_MODELS.md). The default suite
+also discovers synthetic composite and trajectory-adapter unit tests.
+
 ### Unit Test Example
 ```python
 import unittest

@@ -40,6 +40,7 @@ JANUS_CRESCENT_SRC = WEB_APP_DIR.parent / "tools" / "janus_crescent_ratio" / "sr
 sys.path.insert(0, str(JANUS_CRESCENT_SRC))
 
 from services.tdms_cache import get_images
+from services.composite_detection import CompositeDetector
 import utils
 
 try:
@@ -164,10 +165,12 @@ async def general_exception_handler(request, exc):
 from auth import router as auth_router
 from routers.files import router as files_router
 from routers.tdms_explorer import router as tdms_router
+from routers.trajectory_models import router as trajectory_models_router
 
 app.include_router(auth_router)
 app.include_router(files_router)
 app.include_router(tdms_router)
+app.include_router(trajectory_models_router)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +229,9 @@ class TdmsSettings(BaseModel):
 
 class BatchDetectRequest(BaseModel):
     username: str
-    model_id: str
+    model_id: Optional[str] = None
+    model_ids: Optional[List[str]] = None
+    composite_distance: float = 20.0
     file_id: Optional[str] = None
     file_ids: Optional[List[str]] = None
     alpha: float = 1.0
@@ -1007,6 +1012,47 @@ def load_model(username: str, model_id: str) -> Any:
     return lodestar
 
 
+def _validate_model_selection(username, model_id, model_ids, params):
+    username = require_user(username)
+    ids = model_ids.split(",") if isinstance(model_ids, str) and model_ids else model_ids
+    if ids:
+        if not 2 <= len(ids) <= 8 or len(set(ids)) != len(ids):
+            raise HTTPException(400, "Select 2–8 distinct composite models")
+        if params.get("detection_mode", "standard") != "standard":
+            raise HTTPException(400, "Composite detection supports standard mode only")
+        distance = float(params.get("composite_distance", 20))
+        if not np.isfinite(distance) or not 0 < distance <= 200:
+            raise HTTPException(400, "composite_distance must be finite and in (0, 200]")
+        params["composite_distance"] = distance
+    else:
+        if not model_id:
+            raise HTTPException(400, "Select a model")
+        ids = [model_id]
+    labels = []
+    for selected in ids:
+        info = _get_model_info(username, selected)
+        if info.get("config_source") == "global_fallback":
+            raise HTTPException(400, "Saved model run config.yaml is missing")
+        if not Path(info["path"]).is_file():
+            raise HTTPException(404, "Model file not found")
+        if info.get("config", {}).get("lodestar_version", "default") not in ("default", "custom"):
+            raise HTTPException(400, "Unsupported LodeSTAR architecture")
+        labels.append(info.get("particle_name"))
+    if len(ids) > 1 and (not all(labels) or len(set(labels)) != len(labels)):
+        raise HTTPException(400, "Composite models must have distinct particle names")
+    params["model_ids"] = ids
+    return params
+
+
+def _load_detector(username, model_id, params):
+    ids = params.get("model_ids") or [model_id]
+    if len(ids) == 1:
+        return load_model(username, ids[0])
+    return CompositeDetector([(selected, _get_model_info(username, selected)["particle_name"],
+                               load_model(username, selected)) for selected in ids],
+                             params["composite_distance"])
+
+
 @app.get("/models/{username}")
 async def get_models(username: str):
     if username not in sessions:
@@ -1112,6 +1158,8 @@ def _validate_detection_params(username: str, params: Dict[str, Any]) -> Dict[st
     out["alpha"] = float(out.get("alpha", 1.0))
     out["beta"] = float(out.get("beta", 0.0))
     out["cutoff"] = float(out.get("cutoff", 0.8))
+    if not all(np.isfinite(out[key]) for key in ("alpha", "beta", "cutoff")):
+        raise HTTPException(status_code=400, detail="Detection parameters must be finite")
     if not 0 <= out["cutoff"] <= 1:
         raise HTTPException(status_code=400, detail="cutoff must be between 0 and 1")
     if mode == "area":
@@ -1253,7 +1301,12 @@ def run_detection_on_image(lodestar: Any, img: Image.Image, params: Dict[str, An
     if img.mode != "L":
         img = img.convert("L")
     image = np.array(img).astype(np.float32)
-    detections, weights, orientations, orientation_ncc = _detect_arrays(lodestar, image, params, template_bank)
+    composite = isinstance(lodestar, CompositeDetector)
+    if composite:
+        detections, weights, labels, confidence, model_ids = lodestar.detect(image, params, _detect_arrays)
+        orientations = orientation_ncc = None
+    else:
+        detections, weights, orientations, orientation_ncc = _detect_arrays(lodestar, image, params, template_bank)
     detections_list: List[List[float]] = []
     for i, det in enumerate(detections):
         row = [float(det[0]), float(det[1])]
@@ -1273,6 +1326,9 @@ def run_detection_on_image(lodestar: Any, img: Image.Image, params: Dict[str, An
     }
     if orientations is not None:
         result["phi"] = [float(v) for v in orientations]
+    if composite:
+        result.update(labels=labels, confidence=confidence, model_ids=model_ids,
+                      confidence_note="Raw winning model weight; not a calibrated probability")
     if orientation_ncc is not None:
         result["orientation_ncc"] = [float(v) for v in orientation_ncc]
 
@@ -1331,7 +1387,9 @@ async def upload_detect_file(
 @app.get("/detect/frame/{username}/{file_id}/{index}")
 async def get_detect_frame(
     username: str, file_id: str, index: int,
-    model_id: str,
+    model_id: Optional[str] = None,
+    model_ids: Optional[str] = None,
+    composite_distance: float = 20.0,
     alpha: float = 1.0, beta: float = 0.0, cutoff: float = 0.8,
     detection_mode: DetectionMode = "standard",
     area_min_area: int = 200,
@@ -1347,6 +1405,7 @@ async def get_detect_frame(
     template_search_radius: int = 5,
     return_weightmap: bool = False,
 ):
+    require_user(username)
     if username not in sessions:
         load_user_session(username)
     detect_files = sessions[username].get("detect_files", {})
@@ -1357,8 +1416,8 @@ async def get_detect_frame(
     if file_info.get("frame_count", 1) != frame_count:
         file_info["frame_count"] = frame_count
         save_user_session(username)
-    lodestar = load_model(username, model_id)
     params = _validate_detection_params(username, {
+        "composite_distance": composite_distance,
         "alpha": alpha,
         "beta": beta,
         "cutoff": cutoff,
@@ -1375,6 +1434,8 @@ async def get_detect_frame(
         "template_refine_radius": template_refine_radius,
         "template_search_radius": template_search_radius,
     })
+    _validate_model_selection(username, model_id, model_ids, params)
+    lodestar = _load_detector(username, model_id, params)
     template_bank = _build_template_bank(params)
     result = run_detection_on_image(lodestar, img, params, return_weightmap, template_bank)
     result["frame_index"] = index
@@ -1385,7 +1446,9 @@ async def get_detect_frame(
 @app.post("/detect")
 async def run_detection(
     username: str = Form(...),
-    model_id: str = Form(...),
+    model_id: Optional[str] = Form(None),
+    model_ids: Optional[str] = Form(None),
+    composite_distance: float = Form(20.0),
     file: UploadFile = File(...),
     alpha: float = Form(1.0),
     beta: float = Form(0.0),
@@ -1404,10 +1467,11 @@ async def run_detection(
     template_search_radius: int = Form(5),
     return_weightmap: bool = Form(False),
 ):
-    lodestar = load_model(username, model_id)
+    require_user(username)
     content = await file.read()
     img = Image.open(BytesIO(content))
     params = _validate_detection_params(username, {
+        "composite_distance": composite_distance,
         "alpha": alpha,
         "beta": beta,
         "cutoff": cutoff,
@@ -1424,6 +1488,8 @@ async def run_detection(
         "template_refine_radius": template_refine_radius,
         "template_search_radius": template_search_radius,
     })
+    _validate_model_selection(username, model_id, model_ids, params)
+    lodestar = _load_detector(username, model_id, params)
     template_bank = _build_template_bank(params)
     result = run_detection_on_image(lodestar, img, params, return_weightmap, template_bank)
     result["params"] = params
@@ -1442,7 +1508,7 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
     try:
         background_jobs[job_id]["status"] = "running"
         save_background_jobs()
-        lodestar = load_model(username, model_id)
+        lodestar = _load_detector(username, model_id, params)
         template_bank = _build_template_bank(params)
 
         rows = []
@@ -1462,7 +1528,7 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
                 result = run_detection_on_image(
                     lodestar, img, params, False, template_bank
                 )
-                for det in result["detections"]:
+                for di, det in enumerate(result["detections"]):
                     row = {
                         "x": det[0], "y": det[1],
                         "phi": det[2] if len(det) > 2 else np.nan,
@@ -1473,6 +1539,10 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
                     }
                     if len(det) > 3:
                         row["orientation_ncc"] = det[3]
+                    if "labels" in result:
+                        row.update(particle_type=result["labels"][di],
+                                   confidence=result["confidence"][di],
+                                   model_id=result["model_ids"][di])
                     rows.append({
                         **row
                     })
@@ -1497,6 +1567,8 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
         background_jobs[job_id]["progress"] = 100
 
         cols = ["x", "y", "phi", "orientation_ncc", "frame", "frame_local", "stack", "source_file"]
+        if len(params.get("model_ids", [])) > 1:
+            cols += ["particle_type", "confidence", "model_id"]
         df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
         for col in cols:
             if col not in df.columns:
@@ -1519,6 +1591,9 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
 
 @app.post("/detect/batch")
 async def detect_batch(request: BatchDetectRequest):
+    require_user(request.username)
+    params = _validate_detection_params(request.username, request.model_dump(exclude={"username", "model_id", "model_ids", "file_id", "file_ids", "output_name"}))
+    _validate_model_selection(request.username, request.model_id, request.model_ids, params)
     if request.username not in sessions:
         load_user_session(request.username)
 
@@ -1558,7 +1633,6 @@ async def detect_batch(request: BatchDetectRequest):
     }
     save_background_jobs()
 
-    params = _validate_detection_params(request.username, request.model_dump(exclude={"username", "model_id", "file_id", "file_ids", "output_name"}))
     t = threading.Thread(
         target=run_batch_detection,
         args=(job_id, request.username, file_infos, request.model_id, params, output_csv),
@@ -1571,6 +1645,47 @@ async def detect_batch(request: BatchDetectRequest):
 # ---------------------------------------------------------------------------
 # Tracking pipeline
 # ---------------------------------------------------------------------------
+
+def _track_detection_groups(df, params):
+    """Never suppress or link detections across predicted particle classes."""
+    groups = df.groupby("particle_type", sort=False, dropna=False) if "particle_type" in df else [(None, df)]
+    outputs, offset, count = [], 0, 0
+    for label, group in groups:
+        if group.empty:
+            continue
+        group = group.copy()
+        group["_orientation_ncc"] = group["ncc"]
+        if label is not None and "confidence" in group:
+            group["ncc"] = group["confidence"]
+        filtered = apply_nms(group, params["min_dist"])
+        measured = filtered.copy()
+        measured["ncc"] = measured["_orientation_ncc"]
+        count += len(filtered)
+        tracks = link_tracks(filtered, params["max_link"], params["max_gap"])
+        lengths = tracks.groupby("track_id").size()
+        tracks = tracks[tracks["track_id"].isin(lengths[lengths >= params["min_track"]].index)].reset_index(drop=True)
+        if tracks.empty:
+            continue
+        tracks = interpolate_gaps(tracks, params["max_gap"])
+        tracks["track_id"] += offset
+        offset = int(tracks.track_id.max()) + 1
+        if label is not None:
+            tracks["particle_type"] = label
+            # The NMS score may be a model weight, not orientation NCC. Join
+            # measured metadata back exactly; never invent scores in gaps.
+            keys = ["frame", "x", "y"]
+            metadata = [column for column in ("ncc", "confidence", "model_id") if column in measured]
+            tracks = tracks.drop(columns=["ncc"]).merge(
+                measured[keys + metadata].drop_duplicates(keys), on=keys, how="left", validate="many_to_one")
+            tracks.loc[tracks.is_interpolated, [c for c in ("ncc", "confidence") if c in tracks]] = np.nan
+            if "model_id" in measured and measured.model_id.nunique() == 1:
+                tracks["model_id"] = measured.model_id.iloc[0]
+        outputs.append(tracks)
+    columns = ["track_id", "frame", "x", "y", "phi", "ncc", "is_interpolated"]
+    if "particle_type" in df:
+        columns += ["particle_type", "confidence", "model_id"]
+    return (pd.concat(outputs, ignore_index=True) if outputs else pd.DataFrame(columns=columns)), count
+
 
 def run_tracking_job(job_id: str, username: str, csv_path: Path, params: dict, output_csv: Path):
     try:
@@ -1590,20 +1705,8 @@ def run_tracking_job(job_id: str, username: str, csv_path: Path, params: dict, o
         background_jobs[job_id]["n_raw_detections"] = len(df)
         background_jobs[job_id]["n_frames"] = df["frame"].nunique()
 
-        # NMS
-        df = apply_nms(df, params["min_dist"])
-        background_jobs[job_id]["n_after_nms"] = len(df)
-
-        # Link
-        tracks = link_tracks(df, params["max_link"], params["max_gap"])
-
-        # Filter short tracks
-        lengths = tracks.groupby("track_id").size()
-        valid_ids = lengths[lengths >= params["min_track"]].index
-        tracks = tracks[tracks["track_id"].isin(valid_ids)].reset_index(drop=True)
-
-        # Interpolate gaps
-        tracks = interpolate_gaps(tracks, params["max_gap"])
+        tracks, count = _track_detection_groups(df, params)
+        background_jobs[job_id]["n_after_nms"] = count
 
         output_csv.parent.mkdir(parents=True, exist_ok=True)
         tracks.to_csv(output_csv, index=False)
@@ -1838,6 +1941,12 @@ async def analyze_abp(request: AbpRequest):
         "n_real_rows": n_real,
         "plot_name": f"{plot_base}_msd.png",
     }
+    if "particle_type" in tracks and tracks["particle_type"].nunique() > 1:
+        result["analysis_note"] = (
+            "This analysis pools multiple particle classes. Filter/export one class "
+            "before interpreting class-specific physics; a mixed-ensemble fit is not "
+            "a per-class physical estimate."
+        )
     if D_r_angular is not None:
         result["D_r_angular"] = float(D_r_angular)
     if not has_orientation:

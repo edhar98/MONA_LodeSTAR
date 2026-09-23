@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Opt-in real-checkpoint API smoke; temporary state, no training or deployment."""
+import asyncio
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import sys
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[2]
+USER = "learned-smoke"
+
+
+def main():
+    def timeout(*_):
+        print("FAIL: learned integration smoke exceeded 180 seconds", flush=True)
+        os._exit(124)
+
+    signal.signal(signal.SIGALRM, timeout)
+    signal.alarm(180)
+    with tempfile.TemporaryDirectory(prefix="mona-learned-smoke-") as directory:
+        storage = Path(directory)
+        os.environ.update(MONA_TRACK_JUPYTER="1", MONA_TRACK_USER=USER,
+                          MONA_TRACK_HOME=str(storage / "state"),
+                          MONA_TRACK_FEEDBACK_DIR=str(storage / "feedback"),
+                          MPLCONFIGDIR=str(storage / "matplotlib"), CUDA_VISIBLE_DEVICES="")
+        sys.path.insert(0, str(ROOT))
+        import torch
+        torch.set_num_threads(2)
+        torch.set_num_interop_threads(1)
+        import httpx
+        import numpy as np
+        import pandas as pd
+        from web import app as api
+
+        async def run():
+            checks = {}
+            async with api.lifespan(api.app):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app), base_url="http://smoke") as client:
+                    async def request(method, path, **kwargs):
+                        response = await client.request(method, path, **kwargs)
+                        assert response.status_code == 200, (path, response.status_code, response.text[:1000])
+                        return response.json()
+
+                    async def wait(job):
+                        deadline = time.monotonic() + 90
+                        while time.monotonic() < deadline:
+                            status = await request("GET", f"/jobs/{job['job_id']}")
+                            if status["status"] in ("completed", "failed", "interrupted"):
+                                assert status["status"] == "completed", status
+                                return status
+                            await asyncio.sleep(.1)
+                        raise AssertionError(f"job timed out: {job}")
+
+                    models = (await request("GET", f"/models/{USER}"))["models"]
+                    selected = []
+                    for name in ("Janus", "Rod"):
+                        selected.append(next(m for m in models if m["particle_name"] == name
+                                             and m.get("config", {}).get("lodestar_version", "default") == "default"))
+                    frame = ROOT / "data/JP_FE/wf_2_40/04/images/JP_Fe_wf_2_40_slm075_574_001.png"
+                    loaded = await request("POST", "/files/load-path", json={"username": USER, "path": str(frame)})
+                    file_id = loaded["files"][0]["id"]
+                    job = await request("POST", "/detect/batch", json={"username": USER,
+                        "model_ids": [m["id"] for m in selected], "file_ids": [file_id], "output_name": "composite_smoke"})
+                    detection = await wait(job)
+                    results = api.get_user_dir(USER) / "results"
+                    detected = pd.read_csv(results / detection["output_csv"])
+                    assert {"particle_type", "confidence", "model_id"} <= set(detected)
+                    assert len(detected) and np.isfinite(detected[["x", "y", "confidence"]]).all().all()
+                    tracked = await wait(await request("POST", "/track", json={"username": USER,
+                        "csv_name": detection["output_csv"], "min_track": 1, "output_name": "composite_smoke"}))
+                    track_df = pd.read_csv(results / tracked["output_csv"])
+                    assert "particle_type" in track_df and track_df.groupby("track_id").particle_type.nunique().max() == 1
+                    analysis = await request("POST", "/analyze/abp", json={"username": USER,
+                        "csv_name": tracked["output_csv"], "min_track": 1, "max_lag": 1})
+                    if track_df.particle_type.nunique() > 1:
+                        assert "pools multiple particle classes" in analysis["analysis_note"]
+                    checks["composite"] = {"models": [m["id"] for m in selected], "detections": len(detected),
+                                           "tracks": len(track_df), "classes": sorted(detected.particle_type.unique())}
+                    print("PASS: real composite detection and class-aware tracking", flush=True)
+
+                    source = ROOT / "detection_results/JP_FE/wf_2_40/JP_Fe_wf_2_40_5m4rtzfx/04/tracks/JP_Fe_wf_2_40_slm075_tracks.csv"
+                    raw = pd.read_csv(source)
+                    raw = raw[raw.track_id == 233].copy()
+                    assert len(raw) > 20 and raw.is_interpolated.any()
+                    upload = await request("POST", "/upload/csv", data={"username": USER, "file_type": "tracks"},
+                        files={"file": ("real_track233_tracks.csv", raw.to_csv(index=False).encode(), "text/csv")})
+                    input_path = results / upload["filename"]
+                    original_hash = hashlib.sha256(input_path.read_bytes()).hexdigest()
+                    catalog = await request("GET", f"/trajectory-models/{USER}")
+                    assert (await client.get("/trajectory-models/someone-else")).status_code == 403
+                    for method in ("causal_prediction", "bilstm_gap", "supervised_correction"):
+                        model = next(m for m in catalog["models"] if m["method"] == method)
+                        job = await request("POST", "/trajectory-models/run", json={"username": USER,
+                            "tracks_csv": input_path.name, "model_id": model["id"]})
+                        status = await wait(job)
+                        result = status["result"]
+                        output = pd.read_csv(results / result["output_csv"])
+                        assert len(output), (method, result)
+                        assert (results / result["manifest_file"]).is_file()
+                        assert result["counts"]["eligible_rows"] > 0, result
+                        assert result["source_sha256"] == original_hash
+                        if method != "causal_prediction":
+                            assert len(output) == len(raw)
+                            assert {"x_raw", "y_raw"} <= set(output)
+                            assert np.isfinite(output[["x", "y"]]).all().all()
+                            baseline = raw.sort_values(["track_id", "frame"])
+                            np.testing.assert_allclose(output[["x_raw", "y_raw"]], baseline[["x", "y"]])
+                        else:
+                            assert np.isfinite(output.loc[output.has_prediction, ["pred_x", "pred_y", "pred_phi"]]).all().all()
+                        assert hashlib.sha256(input_path.read_bytes()).hexdigest() == original_hash
+                        checks[method] = result
+                        print(f"PASS: real checkpoint {method}", flush=True)
+            return checks
+
+        checks = asyncio.run(run())
+        print(json.dumps({"source": str(Path(api.__file__).resolve()), "checks": checks,
+                          "limits": "API/schema smoke, not browser acceptance or scientific validation"}, indent=2))
+    signal.alarm(0)
+
+
+if __name__ == "__main__":
+    main()

@@ -663,6 +663,13 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
           <div class="card-title">Setup</div>
           <label>Model</label>
           <select id="det-model-select"><option value="">&#8212; Select model &#8212;</option></select>
+          <label><input type="checkbox" id="det-composite"> Composite classification</label>
+          <div id="det-composite-params" class="hidden">
+            <label>Models (2–8 distinct particle classes)</label>
+            <select id="det-composite-models" multiple size="5"></select>
+            <label>Clustering distance (px)</label><input id="det-composite-distance" type="number" min="0.1" max="200" step="0.1" value="20">
+            <p style="font-size:11px;color:var(--text2)">Standard detection only; no orientation. Class labels are retained in batch CSV and tracking.</p>
+          </div>
           <label>Files</label>
           <select id="det-file-select" multiple size="8" style="min-height:140px;width:100%"></select>
           <div style="margin-top:6px">
@@ -765,6 +772,24 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       </div>
 
       <div class="card">
+        <div class="card-title">Optional · Learned trajectory tools (experimental)</div>
+        <p style="font-size:12px;color:var(--text2)">Linear tracking remains the baseline. These tools apply existing trusted checkpoints; they do not train models. Finite orientation (phi) is required, so position-only composite tracks are not compatible. Reference-calibrated correction is not ground-truth recovery; validate transfer before interpreting physics.</p>
+        <label>Input tracks CSV</label><select id="trajectory-tracks"><option value="">Select tracks</option></select>
+        <label>Method</label><select id="trajectory-method">
+          <option value="bilstm_gap">Two-sided LSTM gap refinement</option>
+          <option value="supervised_correction">Reference-calibrated LSTM correction</option>
+          <option value="causal_prediction">Causal LSTM predictions (not replacement tracks)</option>
+        </select>
+        <label>Checkpoint</label><select id="trajectory-model"><option value="">Load checkpoints</option></select>
+        <div id="trajectory-model-note" style="font-size:12px;color:var(--text2);margin:8px 0"></div>
+        <button class="btn btn-outline btn-sm" id="trajectory-refresh">Refresh checkpoints / job</button>
+        <button class="btn btn-primary" id="trajectory-run">Apply checkpoint</button>
+        <div id="trajectory-status" style="margin-top:8px"></div>
+        <div id="trajectory-result" class="hidden" style="margin-top:8px"></div>
+        <button class="btn btn-outline btn-sm hidden" id="trajectory-use">Use refined tracks for preview / analysis</button>
+      </div>
+
+      <div class="card">
         <div class="card-title">4 · Preview</div>
         <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:wrap">
           <div class="col" style="min-width:240px;max-width:300px">
@@ -807,6 +832,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
         <div class="col card" style="max-width:320px">
           <div class="card-title">Input</div>
           <label>Tracks CSV (from results/)</label>
+          <p style="font-size:12px;color:var(--text2)">Analysis pools all tracks in the selected CSV, including different composite particle classes. Export and filter to one class before uploading for class-specific physics; there is no class selector here.</p>
           <select id="abp-csv-select"><option value="">&#8212; Select CSV &#8212;</option></select>
           <button class="btn btn-outline btn-sm" id="upload-trk-csv-btn" style="margin-top:6px">Upload CSV&#8230;</button>
           <input type="file" id="abp-csv-input" accept=".csv">
@@ -1510,6 +1536,9 @@ async function resumeActiveJobs() {
         if (msg.status === 'failed') return 'Failed: ' + esc(msg.error || 'unknown error');
         if (msg.status === 'interrupted') return 'Interrupted (server restarted). Re-run merge.';
       }, 1500);
+    } else if (j.type === 'trajectory_model') {
+      localStorage.setItem(trajectoryStorageKey(), j.id);
+      watchTrajectoryJob(j.id);
     } else if (j.type === 'tracking') {
       setStatus('trk-status-wrap', `<span class="spinner"></span> Resuming tracking ${esc(j.id)}…`, 'info');
       pollJob(j.id, 'trk-status-wrap', msg => {
@@ -1560,6 +1589,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('panel-' + name).classList.add('active');
     document.getElementById('panel-title').textContent = btn.textContent.trim();
     if (name === 'tracking' || name === 'analysis') { refreshResultFiles(); refreshVizFileList(); }
+    if (name === 'tracking') { refreshTrajectoryModels(); resumeTrajectoryJob(); }
     if (name === 'janus') { refreshFileList(); refreshResultFiles(); }
   if (name === 'detection') refreshModels();
   if (name === 'files') refreshMergedVideos();
@@ -2848,6 +2878,9 @@ async function refreshModels() {
   models = d.models || [];
   const list = document.getElementById('model-list');
   const detSel = document.getElementById('det-model-select');
+  const compositeSel = document.getElementById('det-composite-models');
+  const selectedComposite = [...compositeSel.selectedOptions].map(o => o.value);
+  compositeSel.innerHTML = '';
   detSel.innerHTML = '<option value="">&#8212; Select model &#8212;</option>';
   if (!models.length) { list.innerHTML = '<div style="color:var(--text2)">No models trained yet</div>'; return; }
   list.innerHTML = '';
@@ -2870,6 +2903,9 @@ async function refreshModels() {
       </div>`;
     list.appendChild(item);
     detSel.appendChild(new Option(m.particle_name + ' (' + sourceLabel + ' ' + m.id + ')', m.id));
+    const compositeOption = new Option(m.particle_name + ' (' + sourceLabel + ' ' + m.id + ')', m.id);
+    compositeOption.selected = selectedComposite.includes(m.id);
+    compositeSel.appendChild(compositeOption);
   });
   refreshDetectionTemplateCrops();
 }
@@ -2886,6 +2922,28 @@ async function deleteModel(id) {
 function selectedDetectionModel() {
   const modelId = document.getElementById('det-model-select').value;
   return models.find(m => m.id === modelId) || null;
+}
+
+function compositeSelection() {
+  if (!document.getElementById('det-composite').checked) return null;
+  const ids = [...document.getElementById('det-composite-models').selectedOptions].map(o => o.value);
+  if (ids.length < 2 || ids.length > 8) throw new Error('Select 2–8 composite models');
+  const names = ids.map(id => (models.find(m => m.id === id) || {}).particle_name);
+  if (names.some(n => !n) || new Set(names).size !== ids.length) throw new Error('Select one model per distinct particle class');
+  const distance = Number(document.getElementById('det-composite-distance').value);
+  if (!Number.isFinite(distance) || distance <= 0 || distance > 200) throw new Error('Clustering distance must be greater than 0 and at most 200 px');
+  if (document.getElementById('det-mode').value !== 'standard') throw new Error('Composite supports Standard mode only');
+  return {model_ids: ids, composite_distance: distance};
+}
+
+function updateCompositeUI() {
+  const enabled = document.getElementById('det-composite').checked;
+  document.getElementById('det-composite-params').classList.toggle('hidden', !enabled);
+  document.getElementById('det-model-select').disabled = enabled;
+  const mode = document.getElementById('det-mode');
+  if (enabled) mode.value = 'standard';
+  mode.disabled = enabled;
+  updateDetectionModeUI();
 }
 
 function updateDetectionModeUI() {
@@ -2935,6 +2993,8 @@ function detectionParamsForRequest() {
     template_refine_radius: parseInt(document.getElementById('det-template-refine').value),
     template_search_radius: parseInt(document.getElementById('det-template-search').value),
   };
+  const composite = compositeSelection();
+  if (composite) Object.assign(params, composite);
   if (mode === 'template') {
     const cropId = document.getElementById('det-template-crop').value;
     const opt = document.getElementById('det-template-crop').selectedOptions[0];
@@ -2959,6 +3019,7 @@ function detectionParamsQuery() {
 }
 
 document.getElementById('det-mode').onchange = updateDetectionModeUI;
+document.getElementById('det-composite').onchange = updateCompositeUI;
 document.getElementById('det-model-select').onchange = refreshDetectionTemplateCrops;
 document.getElementById('det-template-crop').onchange = applySelectedTemplateAngle;
 document.getElementById('det-upload-btn').onclick = () => document.getElementById('det-file-input').click();
@@ -2993,7 +3054,7 @@ document.getElementById('det-frame').onchange = e => { detFrame = Math.max(0, Ma
 
 document.getElementById('det-run-btn').onclick = async () => {
   const modelId = document.getElementById('det-model-select').value;
-  if (!modelId) { alert('Select a model'); return; }
+  if (!modelId && !document.getElementById('det-composite').checked) { alert('Select a model'); return; }
   if (!detFileId) { alert('Select or upload a file'); return; }
   const alpha = parseFloat(document.getElementById('det-alpha').value);
   const beta = parseFloat(document.getElementById('det-beta').value);
@@ -3008,6 +3069,7 @@ document.getElementById('det-run-btn').onclick = async () => {
   }
   document.getElementById('det-run-btn').disabled = true;
   const wrap = document.getElementById('detect-canvas-wrap');
+  document.getElementById('det-count-badge').textContent = '';
   wrap.innerHTML = '<span class="spinner" style="margin:40px auto;display:block"></span>';
   const d = await api(
     `/detect/frame/${username}/${detFileId}/${detFrame}?model_id=${encodeURIComponent(modelId)}&alpha=${alpha}&beta=${beta}&cutoff=${cutoff}&return_weightmap=${wmap}&${modeQuery}`
@@ -3027,10 +3089,14 @@ document.getElementById('det-run-btn').onclick = async () => {
     const ctx = document.getElementById('det-canvas').getContext('2d');
     ctx.drawImage(srcImg, 0, 0, cw, ch);
     ctx.fillStyle = 'rgba(255,68,68,0.85)';
-    d.detections.forEach(([x, y]) => {
+    d.detections.forEach(([x, y], i) => {
       ctx.beginPath();
       ctx.arc(x * scale, y * scale, 3, 0, 2 * Math.PI);
       ctx.fill();
+      if (d.labels && d.labels[i] != null) {
+        ctx.font = '11px sans-serif';
+        ctx.fillText(String(d.labels[i]), x * scale + 5, y * scale - 5);
+      }
     });
     d.detections.forEach(det => {
       const x = det[0], y = det[1], phi = det[2];
@@ -3061,7 +3127,7 @@ document.getElementById('det-run-btn').onclick = async () => {
 
 document.getElementById('batch-detect-btn').onclick = async () => {
   const modelId = document.getElementById('det-model-select').value;
-  if (!modelId) { setStatus('batch-status', 'Select a model', 'warn'); return; }
+  if (!modelId && !document.getElementById('det-composite').checked) { setStatus('batch-status', 'Select a model', 'warn'); return; }
   const fileIds = selectedDetFileIds();
   if (!fileIds.length) { setStatus('batch-status', 'Select one or more files', 'warn'); return; }
   lastDetFileIds = fileIds.slice();
@@ -3189,6 +3255,129 @@ document.getElementById('trk-tracks-select').onchange = () => {
 // ====================================================================
 // TRACK PREVIEW
 // ====================================================================
+let trajectoryModels = [];
+let trajectoryTimer = null;
+let trajectoryPolling = false;
+let trajectoryJobId = null;
+
+function trajectoryStorageKey() { return 'mona_trajectory_job:' + username; }
+function clearTrajectoryResult() {
+  const result = document.getElementById('trajectory-result');
+  result.innerHTML = '';
+  result.classList.add('hidden');
+  const use = document.getElementById('trajectory-use');
+  use.classList.add('hidden');
+  use.onclick = null;
+}
+async function refreshTrajectoryModels() {
+  const d = await api('/trajectory-models/' + encodeURIComponent(username));
+  trajectoryModels = d.models || [];
+  updateTrajectoryModelOptions();
+  if (d.error) setStatus('trajectory-status', esc(d.error), 'err');
+}
+function updateTrajectoryModelOptions() {
+  const sel = document.getElementById('trajectory-model');
+  const previous = sel.value;
+  const method = document.getElementById('trajectory-method').value;
+  sel.innerHTML = '<option value="">Select checkpoint</option>';
+  trajectoryModels.filter(m => m.method === method).forEach(m => sel.appendChild(new Option(m.label + ' · ' + m.checkpoint, m.id)));
+  if ([...sel.options].some(o => o.value === previous)) sel.value = previous;
+  document.getElementById('trajectory-model-note').textContent = {
+    bilstm_gap: 'Refines only interpolated gaps with clean two-sided context. Uncovered rows remain unchanged; inspect coverage.',
+    supervised_correction: 'Requires finite orientation and NCC. Learned reference bias may not transfer to this dataset; raw values are retained.',
+    causal_prediction: 'Exports next-state predictions only. It does not fill gaps or replace the tracks used for physics.',
+  }[method] + (sel.options.length === 1 ? ' No compatible checkpoints are installed. Ask the administrator to provision approved trained models; this interface does not train them.' : '');
+}
+function trajectoryDownloadLink(filename, label) {
+  return `<a href="${esc(apiUrl('/results/' + encodeURIComponent(username) + '/download/' + encodeURIComponent(filename)))}">${esc(label)}</a>`;
+}
+async function showTrajectoryResult(result) {
+  clearTrajectoryResult();
+  const counts = result.counts || {};
+  const warnings = result.warnings || [];
+  const rows = [['Method', result.method], ['Input rows', counts.input_rows], ['Eligible rows', counts.eligible_rows],
+    ['Refined rows', counts.refined_rows], ['Prediction rows', counts.prediction_rows],
+    ['Mean correction shift (px)', counts.mean_shift_px], ['Median correction shift (px)', counts.median_shift_px],
+    ['95th percentile correction shift (px)', counts.p95_shift_px]];
+  const links = [];
+  if (result.output_csv) links.push(trajectoryDownloadLink(result.output_csv, 'Download output CSV'));
+  if (result.manifest_file) links.push(trajectoryDownloadLink(result.manifest_file, 'Download provenance JSON'));
+  const panel = document.getElementById('trajectory-result');
+  panel.innerHTML = '<table class="results-table">' + rows.filter(([,v]) => v != null).map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('') + '</table>' + links.join(' · ') + warnings.map(w => `<p>${esc(w)}</p>`).join('');
+  panel.classList.remove('hidden');
+  const noOp = result.output_kind === 'tracks' ? !counts.refined_rows : !counts.prediction_rows;
+  setStatus('trajectory-status', noOp ? 'Completed with no eligible changes/predictions. Review coverage and warnings.' : 'Completed. Original tracks are unchanged; inspect the output before using it.', noOp || warnings.length ? 'warn' : 'ok');
+  if (result.output_kind === 'tracks' && result.output_tracks_csv) {
+    await refreshResultFiles();
+    const use = document.getElementById('trajectory-use');
+    use.classList.remove('hidden');
+    use.onclick = () => {
+      const name = result.output_tracks_csv;
+      lastTrackCsv = name;
+      ['trk-tracks-select', 'abp-csv-select'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (![...sel.options].some(o => o.value === name)) sel.appendChild(new Option(name, name));
+        sel.value = name;
+      });
+      setStatus('trajectory-status', 'Refined tracks selected for preview and analysis. Compare against the original baseline; interpolated rows remain excluded from ABP by default.', 'warn');
+    };
+  }
+}
+async function pollTrajectoryJob() {
+  if (trajectoryPolling || !trajectoryJobId) return;
+  trajectoryPolling = true;
+  const jobId = trajectoryJobId;
+  const d = await api('/trajectory-models/jobs/' + encodeURIComponent(username) + '/' + encodeURIComponent(jobId));
+  trajectoryPolling = false;
+  if (jobId !== trajectoryJobId) return;
+  if (d.error || ['completed', 'failed', 'interrupted', 'cancelled'].includes(d.status)) {
+    clearInterval(trajectoryTimer);
+    trajectoryTimer = null;
+    document.getElementById('trajectory-run').disabled = false;
+    if (d.error && !['failed', 'interrupted', 'cancelled'].includes(d.status)) {
+      setStatus('trajectory-status', 'Could not check job: ' + esc(d.error) + '. Use Refresh checkpoints / job to reconnect.', 'err');
+      return;
+    }
+    trajectoryJobId = null;
+    if (d.status === 'completed') { await showTrajectoryResult(d.result || {}); return; }
+    clearTrajectoryResult();
+    setStatus('trajectory-status', d.status === 'interrupted' ? 'Interrupted by server restart. Original tracks are unchanged; re-run explicitly.' : esc(d.status) + ': ' + esc(d.error || d.message || 'No output was selected.'), 'err');
+    return;
+  }
+  document.getElementById('trajectory-run').disabled = true;
+  setStatus('trajectory-status', '<span class="spinner"></span> ' + esc(d.status || 'queued') + (d.progress != null ? ' · ' + esc(d.progress) : ''), 'info');
+}
+function watchTrajectoryJob(id) {
+  clearInterval(trajectoryTimer);
+  trajectoryJobId = id;
+  document.getElementById('trajectory-run').disabled = true;
+  trajectoryTimer = setInterval(pollTrajectoryJob, 1500);
+  pollTrajectoryJob();
+}
+function resumeTrajectoryJob() {
+  if (trajectoryTimer) return;
+  const id = localStorage.getItem(trajectoryStorageKey());
+  if (id) watchTrajectoryJob(id);
+}
+async function runTrajectoryModel() {
+  const tracks = document.getElementById('trajectory-tracks').value;
+  const model = document.getElementById('trajectory-model').value;
+  if (!tracks || !model) { setStatus('trajectory-status', 'Select input tracks and a compatible checkpoint.', 'warn'); return; }
+  clearTrajectoryResult();
+  document.getElementById('trajectory-run').disabled = true;
+  const d = await api('/trajectory-models/run', {username, tracks_csv: tracks, model_id: model});
+  if (d.error || !d.job_id) {
+    document.getElementById('trajectory-run').disabled = false;
+    setStatus('trajectory-status', esc(d.error || 'Server returned no job ID'), 'err');
+    return;
+  }
+  localStorage.setItem(trajectoryStorageKey(), d.job_id);
+  watchTrajectoryJob(d.job_id);
+}
+document.getElementById('trajectory-method').onchange = updateTrajectoryModelOptions;
+document.getElementById('trajectory-refresh').onclick = () => { refreshTrajectoryModels(); resumeTrajectoryJob(); };
+document.getElementById('trajectory-run').onclick = runTrajectoryModel;
+
 function refreshVizFileList() {
   const sel = document.getElementById('viz-file-select');
   if (!sel) return;
@@ -3353,8 +3542,9 @@ function showAbpResults(d) {
   const fitted = d.D_t != null && d.v0 != null && d.D_r_msd != null;
   const status = fitted ? 'ABP fit complete' : 'MSD computed; insufficient data or unsuccessful ABP fit.';
   setStatus('abp-status-wrap', status + (d.orientation_note ? ' ' + esc(d.orientation_note) : '') +
+    (d.analysis_note ? ' ' + esc(d.analysis_note) : '') +
     (d.plot_error ? ' Plot failed: ' + esc(d.plot_error) : ''),
-    d.plot_error ? 'err' : fitted ? 'ok' : 'warn');
+    d.plot_error ? 'err' : fitted && !d.analysis_note ? 'ok' : 'warn');
 }
 
 function optionalFloat(id) {
@@ -3830,16 +4020,20 @@ function showCrescentResults(d, saved) {
 // ====================================================================
 async function refreshResultFiles() {
   const d = await api('/results/' + username);
-  const csvs = (d.results || []).filter(f => f.type === '.csv').map(f => f.name);
+  const csvs = (d.results || []).filter(f => f.type === '.csv' && !/_predictions(?:_|\.)/i.test(f.name)).map(f => f.name);
   const detSel = document.getElementById('track-csv-select');
   const tracksSel = document.getElementById('trk-tracks-select');
   const abpSel = document.getElementById('abp-csv-select');
   const prevDet = detSel.value;
   const prevTracks = tracksSel.value;
   const prevAbp = abpSel.value;
+  const trajectorySel = document.getElementById('trajectory-tracks');
+  const prevTrajectory = trajectorySel.value;
 
   const detCsvs = csvs.filter(n => /detect/i.test(n) || (!/track/i.test(n)));
   const trackCsvs = csvs.filter(n => /track/i.test(n));
+  trajectorySel.innerHTML = '<option value="">Select tracks</option>';
+  trackCsvs.forEach(name => trajectorySel.appendChild(new Option(name, name)));
 
   detSel.innerHTML = '<option value="">&#8212; Select CSV &#8212;</option>';
   detCsvs.forEach(name => detSel.appendChild(new Option(name, name)));
@@ -3862,6 +4056,7 @@ async function refreshResultFiles() {
   pick(detSel, prevDet, lastDetCsv);
   pick(tracksSel, prevTracks || lastTrackCsv, trackCsvs[0]);
   pick(abpSel, prevAbp, lastTrackCsv);
+  pick(trajectorySel, prevTrajectory, lastTrackCsv);
   if (tracksSel.value) lastTrackCsv = tracksSel.value;
   updateTrkInputMeta();
 }

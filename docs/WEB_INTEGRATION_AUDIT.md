@@ -2,6 +2,11 @@
 
 Date: 2026-09-23. Target: existing MONA JupyterHub deployment.
 
+Follow-up: composite detection and optional learned trajectory inference were
+subsequently integrated and tested in this checkout. See
+[learned-model integration](WEB_LEARNED_MODELS.md) for current scope and evidence.
+The phase-1 inventory below is retained as the pre-integration snapshot.
+
 This phase-1 inventory describes the current working tree on `dev`, not a clean release or a deployed instance. The tree already contains modified documentation, web code, deletions, and untracked research/local files. No existing changes were reverted. This report adds no features and changes no application code.
 
 The inventory agent inspected frontend controls and API calls, routes and their implementations, core entry points, and project guidance. It did not launch a service, run training/inference, invoke external integrations, inspect credentials, or validate the browser. The coordinating agent separately reports that `python test/run_tests.py --verbose` passed 10 tests in 0.470 seconds; that result is not end-to-end web validation.
