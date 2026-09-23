@@ -17,7 +17,7 @@ from elab.cli.elab_cli import main as full_cli_main
 from elab.cli.elab_cli_simple import main as simple_cli_main
 
 
-def main():
+def main(argv=None):
     """Main ELAB CLI entry point."""
     parser = argparse.ArgumentParser(
         description='ELAB CLI tools for MONA LodeSTAR project',
@@ -32,20 +32,21 @@ def main():
         help='Full ELAB CLI with all features',
         description='Use the full ELAB CLI with comprehensive features'
     )
-    full_parser.set_defaults(func=lambda args: full_cli_main(sys.argv[2:]))
+    full_parser.set_defaults(func=full_cli_main)
     
     simple_parser = subparsers.add_parser(
         'simple',
         help='Simplified ELAB CLI for common operations',
         description='Use the simplified ELAB CLI for common operations'
     )
-    simple_parser.set_defaults(func=lambda args: simple_cli_main(sys.argv[2:]))
+    simple_parser.set_defaults(func=simple_cli_main)
     
-    args = parser.parse_args()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(argv[:1])
     
     # Run the selected tool
     try:
-        return args.func(args)
+        return args.func(argv[1:])
     except Exception as e:
         print(f"Error running ELAB tool: {e}", file=sys.stderr)
         return 1
