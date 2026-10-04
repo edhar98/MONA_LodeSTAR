@@ -2,7 +2,8 @@
 
 These findings describe remaining work, not failures covered by the current
 passing tests. Security and output-integrity corrections are included in release
-`1fbc661`; the scientific and performance findings below remain open.
+`1fbc661`. The gap-model corrections and corrected within-dataset evaluation
+below are complete; independent-run and physics qualification remain open.
 
 ## Security and resource limits
 
@@ -32,28 +33,72 @@ remain desirable.
 
 ## Scientific validity
 
-### Gap benchmark leakage
+### Gap model qualification
 
-`src/tracking/lstm_gap_filler.py` computes motion features before masking the
-target gap. The first future observation's displacement can depend on the last
-hidden target. For a one-frame gap, that information can reconstruct the target.
-Production uses interpolated context, creating a training/application mismatch.
+The old gap preprocessing computed motion before masking the target gap. The
+first future displacement could expose the last hidden target. This is fixed
+in preprocessing version `observed_context_v2`: training and inference compute
+features independently within the two observed contexts. Tests verify that
+changing hidden targets leaves model inputs unchanged.
 
 The saved shared benchmark reports mean errors of 2.416 px for the two-sided
 LSTM, 2.987 px for linear interpolation, and 3.280 px for Kalman. Those are
 historical artifact values, not unbiased evidence of LSTM superiority. Do not
 silently reinterpret or replace existing results.
 
-Use a common context-only feature builder, version preprocessing, retrain, and
-evaluate on held-out tracks/runs. Changing hidden target values must leave
-model inputs unchanged. Linear interpolation remains the production default.
+Legacy checkpoints are rejected, not converted or overwritten. Retrain under
+a new filename, then evaluate the untouched test tracks. The benchmark requires
+the exact training CSV snapshot and uses the saved test split; external-run and
+causal-model comparisons remain unsupported until their holdout provenance can
+be verified. Linear interpolation remains the production default. See
+[training commands](QUICK_REFERENCE.md).
+
+### Corrected gap evaluation
+
+The 2026-10-05 dataset-04 retraining completed all 30 epochs with 64 hidden units,
+two layers, 10-frame contexts, and seed 0. Track splits were 705 training,
+234 validation, and 234 test tracks, with no overlap. Training and validation
+each used 120,000 sampled masked offsets. Epoch 9 had the best validation loss;
+later epochs overfit and were not selected.
+
+The fixed test protocol sampled 10,000 eligible gaps of lengths 1, 2, 3, 5,
+and 10, yielding 40,485 masked-frame predictions per method across 124 test
+tracks. Mean position errors were:
+
+| Method | Mean error in pixels |
+| --- | --- |
+| Two-sided LSTM | 2.9543 |
+| Linear interpolation | 3.1234 |
+| Kalman smoother | 3.4236 |
+| Persistence | 5.2111 |
+| Constant velocity | 13.5557 |
+
+The corrected LSTM reduced mean error by 0.1691 px (5.4%) relative to linear,
+with lower mean error at every tested gap length. A paired bootstrap clustered
+by track gave a 95% interval of 0.1470–0.1912 px for the pooled improvement.
+Overlapping gaps are correlated, and pooled metrics weight masked rows rather
+than tracks or gap lengths equally. This is evidence for a modest improvement
+on unseen tracks from the same experiment, not independent-run generalization
+or improved physical parameter estimates. No test-driven tuning was performed.
+
+Local artifacts are under `lstm_outputs/retrain_20261005/`: `gap_observed_v2.pt`,
+`protocol.json`, `run.log`, `summary.csv`, `overall.csv`,
+`benchmark.csv.metadata.json`, `paired_comparisons.csv`, and
+`evaluation_audit.json`. The checkpoint and source hashes were verified. These
+artifacts are ignored by Git and are not deployed or automatically transferred
+by a pull. The checkpoint remains experimental and was not promoted to the web
+catalog. Historical results remain untouched.
 
 ### Training and validation
 
-Gap and causal training split overlapping windows/offsets and include validation
-data in normalization. Some best-state snapshots use `detach().cpu()`, which can
-alias live CPU parameters. Split independent tracks/time blocks before window
-creation, normalize on training data only, and clone best-state tensors.
+Gap training now splits track IDs into train, validation, and test sets before
+creating windows, fits normalization on training samples only, and clones best
+CPU weights. Checkpoints record preprocessing, source hash, and split IDs.
+
+Causal predictor training still needs independent splits and training-only
+normalization. Best-state snapshots in the causal and supervised training paths
+still need review for CPU tensor aliasing. Gap-model fixes do not resolve those
+separate research workflows.
 
 ### Assignment and time handling
 
@@ -116,6 +161,11 @@ Interpolated rows can change fitted parameters more than the choice of smoother.
 New web outputs use unique names and per-file no-clobber publication. A crescent
 CSV and its overlay are not an all-or-nothing pair. TDMS exports publish a
 completed directory. These safeguards do not replace backups or disk quotas.
+
+Gap variants publish a completed unique run directory. Gap benchmark files are
+staged and published without replacing existing paths, with metadata last and
+rollback on ordinary publication errors. Publication across directories is not
+crash-atomic; interrupted runs may need inspection before reuse.
 
 External file changes are supported. Cached frame metadata is checked on reads;
 edits that preserve the complete metadata fingerprint cannot be guaranteed

@@ -70,13 +70,16 @@ The model has separate past/future context encoders. Current checkpoints require
 finite orientation values, so position-only composite tracks are not compatible.
 Insufficient clean context leaves the original linear-filled rows unchanged.
 
-Approved checkpoints must be provisioned in the deployment checkout's
+Compatible checkpoints must be provisioned in the deployment checkout's
 `lstm_outputs/`. The web does not train or upload gap checkpoints. CLI detector
 catalog removal does not remove this separate experimental checkpoint catalog.
 
-The historical gap benchmark leaks hidden target information into its inputs.
-Do not interpret its reported LSTM advantage as validated. Corrected training
-and held-out evaluation are required; see [known limitations](KNOWN_ISSUES.md).
+Only checkpoints trained with `observed_context_v2` preprocessing can run.
+Legacy files remain intact but are excluded from selection, with a retraining
+message. Training instructions are in the [command reference](QUICK_REFERENCE.md).
+Compatibility does not establish accuracy: the historical benchmark leaked
+hidden target information. A newly trained model needs held-out evaluation and
+downstream physics checks before use; see [known limitations](KNOWN_ISSUES.md).
 
 ## Export and layout
 

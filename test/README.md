@@ -53,9 +53,24 @@ tracking, ABP plotting, export response bytes, and persisted state reload.
 
 The composite/gap smoke additionally requires Janus run `euk2wnni`, Rod run
 `uaqqndn3`, their saved configs, the JP dataset-04 tracks CSV, and the approved
-gap checkpoint in `lstm_outputs/`. Exact fixture paths are defined in the
-script. It checks class-separated tracking, gap-only inference, raw/input
-preservation, and provenance.
+historical gap checkpoint in `lstm_outputs/`. Exact fixture paths are defined in
+the script. It verifies legacy rejection without changing that file, then uses
+a temporary synthetic v2 checkpoint to test gap-only inference, raw/input
+preservation, and provenance. This is a compatibility check, not an accuracy test.
+
+## Gap training smoke test
+
+```bash
+/opt/mona_jupyterhub_env/bin/python -B test/integration/smoke_gap_training.py
+```
+
+This trains for two epochs on a temporary subset of the dataset-04 tracks and
+benchmarks the saved test split. It checks split separation, provenance, equal
+baseline samples, and overwrite refusal. It removes its temporary artifacts and
+does not produce a deployment checkpoint or validate scientific superiority.
+
+The corrected gap batch passed 83 Python tests, all three frontend checks, the
+composite/gap compatibility smoke, and this training smoke on 2026-10-05.
 
 ## Last validated release
 
