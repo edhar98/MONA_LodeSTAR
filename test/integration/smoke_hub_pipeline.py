@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import signal
+import shutil
 import sys
 import tempfile
 import time
@@ -34,6 +35,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="mona-hub-pipeline-") as temporary:
         storage = Path(temporary)
         os.environ.update(MONA_TRACK_JUPYTER="1", MONA_TRACK_USER=SMOKE_USER,
+                          MONA_TRACK_PROXY_TOKEN="pipeline-smoke-proxy-token",
                           MONA_TRACK_HOME=str(storage / "state"),
                           MONA_TRACK_FEEDBACK_DIR=str(storage / "feedback"),
                           MPLCONFIGDIR=str(storage / "matplotlib"), CUDA_VISIBLE_DEVICES="")
@@ -47,7 +49,9 @@ def main():
         async def run():
             checks = {}
             async with api.lifespan(api.app):
-                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app), base_url="http://smoke") as client:
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app), base_url="http://smoke",
+                                            headers={"X-Mona-Proxy-Token": "pipeline-smoke-proxy-token"}) as client:
+                    assert (await client.get("/health", headers={"X-Mona-Proxy-Token": "wrong"})).status_code == 403
                     async def request(method, path, **kwargs):
                         response = await client.request(method, path, **kwargs)
                         assert response.status_code == 200, (path, response.status_code, response.text[:500])
@@ -86,9 +90,22 @@ def main():
                     checks["input"] = "multipart PNG upload, sample crop, three read-only server frames"
                     print("PASS: upload, sample and server-path input", flush=True)
 
+                    # Test-only provisioning: copy real weights/config into this
+                    # temporary user's model store; no CLI model auto-discovery.
+                    assert (await request("GET", f"/models/{SMOKE_USER}")).json()["models"] == []
+                    source_weights = ROOT / "models/5m4rtzfx/JP_Fe_wf_2_40_weights.pth"
+                    fixture_dir = api.get_user_dir(SMOKE_USER) / "models"
+                    weights = fixture_dir / source_weights.name
+                    shutil.copyfile(source_weights, weights)
+                    shutil.copyfile(source_weights.parent / "config.yaml", fixture_dir / "config.yaml")
+                    config = api.utils.load_yaml(str(fixture_dir / "config.yaml"))
+                    api.sessions[SMOKE_USER]["models"].append(dict(id="smoke-web-model", particle_name="JP_Fe_wf_2_40",
+                        path=str(weights), config=config, source="web", config_source="temporary_user_fixture"))
+                    api.save_user_session(SMOKE_USER)
                     models = (await request("GET", f"/models/{SMOKE_USER}")).json()["models"]
-                    model = next(m for m in models if m.get("run_id") == "5m4rtzfx" and m["particle_name"] == "JP_Fe_wf_2_40")
-                    assert model["config_source"] == "saved_run"
+                    assert len(models) == 1 and all(m["source"] == "web" and not m["id"].startswith("cli:") for m in models)
+                    model = models[0]
+                    assert model["config"] == config
                     job = (await request("POST", "/detect/batch", json=dict(username=SMOKE_USER, model_id=model["id"],
                                           file_ids=loaded_ids, output_name="smoke", cutoff=.8))).json()
                     detection = await wait_job(job)

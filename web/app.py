@@ -6,6 +6,7 @@ import time
 import shutil
 import asyncio
 import threading
+import tempfile
 import hashlib
 from pathlib import Path
 from datetime import datetime
@@ -25,7 +26,6 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from pydantic import BaseModel
 
@@ -41,6 +41,7 @@ sys.path.insert(0, str(JANUS_CRESCENT_SRC))
 
 from services.tdms_cache import get_images
 from services.composite_detection import CompositeDetector
+from services.output_files import new_output
 import utils
 
 try:
@@ -131,12 +132,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MONA Track", lifespan=lifespan)
 
+from services.access import BackendAccessMiddleware
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    BackendAccessMiddleware,
+    hub_mode=JUPYTER_MODE,
+    proxy_token=os.environ.get("MONA_TRACK_PROXY_TOKEN", ""),
 )
 
 from fastapi.exceptions import RequestValidationError
@@ -855,6 +855,7 @@ async def start_training(request: TrainRequest):
 async def cancel_training(job_id: str):
     if job_id not in training_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
+    require_user(training_jobs[job_id]["username"])
     with _jobs_lock:
         training_jobs[job_id]["cancel_requested"] = True
     return {"status": "cancel_requested", "job_id": job_id}
@@ -862,6 +863,7 @@ async def cancel_training(job_id: str):
 
 @app.get("/train/active/{username}")
 async def get_active_jobs(username: str):
+    require_user(username)
     active = [j for j in training_jobs.values()
               if j.get("username") == username and j.get("status") in ("queued", "running")]
     return {"jobs": active}
@@ -871,11 +873,20 @@ async def get_active_jobs(username: str):
 async def get_training_status(job_id: str):
     if job_id not in training_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
+    require_user(training_jobs[job_id]["username"])
     return training_jobs[job_id]
 
 
 @app.websocket("/ws/train/{job_id}")
 async def ws_training(websocket: WebSocket, job_id: str):
+    try:
+        job = training_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        require_user(job["username"])
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     queue: asyncio.Queue = asyncio.Queue()
     _ws_queues[job_id] = queue
@@ -907,81 +918,19 @@ async def ws_training(websocket: WebSocket, job_id: str):
 # Models
 # ---------------------------------------------------------------------------
 
-def _src_config() -> Dict[str, Any]:
-    config_path = SRC_DIR / "config.yaml"
-    if not config_path.exists():
-        return {}
-    try:
-        return utils.load_yaml(str(config_path)) or {}
-    except Exception:
-        return {}
-
-
-def _model_run_id(model_path: Path) -> str:
-    try:
-        return model_path.parent.name
-    except Exception:
-        return model_path.stem
-
-
-def _cli_model_entry(particle_name: str, info: Dict[str, Any], suffix: str = "") -> Optional[Dict[str, Any]]:
-    model_path_raw = info.get("model_path")
-    if not model_path_raw:
-        return None
-    model_path = Path(model_path_raw)
-    if not model_path.is_absolute():
-        model_path = WEB_DIR.parent / model_path
-    run_id = _model_run_id(model_path)
-    model_id = f"cli:{particle_name}:{run_id}{suffix}"
-    saved_config = model_path.parent / "config.yaml"
-    config = _src_config()
-    if saved_config.is_file():
-        config = utils.load_yaml(str(saved_config)) or {}
-    config.setdefault("lodestar_version", "default")
-    return {
-        "id": model_id,
-        "particle_name": particle_name,
-        "path": str(model_path),
-        "config": config,
-        "created_at": "",
-        "summary": {"runtime_formatted": "CLI", "device": "shared", "final_loss": None},
-        "source": "cli",
-        "read_only": True,
-        "run_id": run_id,
-        "config_source": "saved_run" if saved_config.is_file() else "global_fallback",
-        "config_warning": None if saved_config.is_file() else "Saved run configuration missing; verify architecture before use.",
-    }
-
-
-def _discover_cli_models() -> List[Dict[str, Any]]:
-    summary_path = WEB_DIR.parent / "trained_models_summary.yaml"
-    if not summary_path.exists():
-        return []
-    try:
-        summary = utils.load_yaml(str(summary_path)) or {}
-    except Exception:
-        return []
-    models: List[Dict[str, Any]] = []
-    for particle_name, info in summary.items():
-        if not isinstance(info, dict):
-            continue
-        entry = _cli_model_entry(str(particle_name), info)
-        if entry is not None:
-            models.append(entry)
-        for index, extra in enumerate(info.get("additional_models", []) or [], start=1):
-            if isinstance(extra, dict):
-                extra_entry = _cli_model_entry(str(particle_name), extra, suffix=f":{index}")
-                if extra_entry is not None:
-                    models.append(extra_entry)
-    return models
+def _is_web_model(model: Dict[str, Any]) -> bool:
+    # Older sessions may contain copied CLI catalog entries. Keep their files
+    # intact, but do not expose or resolve them through the web interface.
+    return model.get("source", "web") == "web" and not str(model.get("id", "")).startswith("cli:")
 
 
 def _get_model_info(username: str, model_id: str) -> Dict[str, Any]:
+    if JUPYTER_MODE:
+        ensure_jupyter_user(username)
     if username not in sessions:
         load_user_session(username)
-    model_info = next((m for m in sessions[username].get("models", []) if m["id"] == model_id), None)
-    if not model_info:
-        model_info = next((m for m in _discover_cli_models() if m["id"] == model_id), None)
+    model_info = next((m for m in sessions[username].get("models", [])
+                       if m["id"] == model_id and _is_web_model(m)), None)
     if not model_info:
         raise HTTPException(status_code=404, detail="Model not found")
     return model_info
@@ -990,7 +939,7 @@ def _get_model_info(username: str, model_id: str) -> Dict[str, Any]:
 def load_model(username: str, model_id: str) -> Any:
     model_info = _get_model_info(username, model_id)
     if model_info.get("config_source") == "global_fallback":
-        raise HTTPException(status_code=400, detail="Saved model run config.yaml is missing; restore it before loading this CLI model")
+        raise HTTPException(status_code=400, detail="Saved model configuration is missing")
     model_path = Path(model_info["path"])
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="Model file not found")
@@ -1055,31 +1004,35 @@ def _load_detector(username, model_id, params):
 
 @app.get("/models/{username}")
 async def get_models(username: str):
+    if JUPYTER_MODE:
+        ensure_jupyter_user(username)
     if username not in sessions:
         load_user_session(username)
     web_models = []
     for model in sessions[username].get("models", []):
+        if not _is_web_model(model):
+            continue
         item = dict(model)
         item.setdefault("source", "web")
         item.setdefault("read_only", False)
         item.setdefault("config", {})
         item["config"].setdefault("lodestar_version", "default")
         web_models.append(item)
-    return {"models": web_models + _discover_cli_models()}
+    return {"models": web_models}
 
 
 @app.delete("/models/{username}/{model_id}")
 async def delete_model(username: str, model_id: str):
+    if JUPYTER_MODE:
+        ensure_jupyter_user(username)
     if username not in sessions:
         load_user_session(username)
     models = sessions[username].get("models", [])
     model_info = next((m for m in models if m["id"] == model_id), None)
-    if not model_info:
-        if any(m["id"] == model_id for m in _discover_cli_models()):
-            raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
+    if not model_info or not _is_web_model(model_info):
         raise HTTPException(status_code=404, detail="Model not found")
-    if model_info.get("source") == "cli" or model_info.get("read_only"):
-        raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
+    if model_info.get("read_only"):
+        raise HTTPException(status_code=403, detail="Model is read-only")
     mp = Path(model_info["path"])
     shared = any(m["id"] != model_id and Path(m["path"]).resolve() == mp.resolve() for m in models)
     if mp.exists() and not shared:
@@ -1091,16 +1044,16 @@ async def delete_model(username: str, model_id: str):
 
 @app.put("/models/{username}/{model_id}/rename")
 async def rename_model(username: str, model_id: str, request: RenameModelRequest):
+    if JUPYTER_MODE:
+        ensure_jupyter_user(username)
     if username not in sessions:
         load_user_session(username)
     models = sessions[username].get("models", [])
     model_info = next((m for m in models if m["id"] == model_id), None)
-    if not model_info:
-        if any(m["id"] == model_id for m in _discover_cli_models()):
-            raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
+    if not model_info or not _is_web_model(model_info):
         raise HTTPException(status_code=404, detail="Model not found")
-    if model_info.get("source") == "cli" or model_info.get("read_only"):
-        raise HTTPException(status_code=403, detail="CLI models are shared and read-only")
+    if model_info.get("read_only"):
+        raise HTTPException(status_code=403, detail="Model is read-only")
     old = Path(model_info["path"])
     if any(m["id"] != model_id and Path(m["path"]).resolve() == old.resolve() for m in models):
         raise HTTPException(status_code=409, detail="Legacy model weights are shared; retrain before renaming")
@@ -1412,9 +1365,9 @@ async def get_detect_frame(
     file_info = detect_files.get(file_id) or sessions[username].get("files", {}).get(file_id)
     if not file_info:
         raise HTTPException(status_code=404, detail="File not found")
+    previous_info = dict(file_info)
     img, frame_count = extract_frame(Path(file_info["path"]), file_info, index)
-    if file_info.get("frame_count", 1) != frame_count:
-        file_info["frame_count"] = frame_count
+    if file_info != previous_info:
         save_user_session(username)
     params = _validate_detection_params(username, {
         "composite_distance": composite_distance,
@@ -1566,6 +1519,10 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
         background_jobs[job_id]["frames_total"] = global_frame
         background_jobs[job_id]["progress"] = 100
 
+        background_jobs[job_id]["input_versions"] = [
+            {"file_id": info.get("id"), "source_version": info.get("source_version")}
+            for info in file_infos
+        ]
         cols = ["x", "y", "phi", "orientation_ncc", "frame", "frame_local", "stack", "source_file"]
         if len(params.get("model_ids", [])) > 1:
             cols += ["particle_type", "confidence", "model_id"]
@@ -1574,7 +1531,8 @@ def run_batch_detection(job_id: str, username: str, file_infos: List[dict],
             if col not in df.columns:
                 df[col] = np.nan if col in ("phi", "orientation_ncc") else ""
         df = df[cols]
-        df.to_csv(output_csv)
+        with new_output(output_csv) as temporary:
+            df.to_csv(temporary)
 
         background_jobs[job_id]["status"] = "completed"
         background_jobs[job_id]["output_csv"] = output_csv.name
@@ -1617,7 +1575,7 @@ async def detect_batch(request: BatchDetectRequest):
     base_name = state.safe_name(request.output_name or Path(file_infos[0]["filename"]).stem)
     if len(file_infos) > 1 and not request.output_name:
         base_name = f"{base_name}_plus{len(file_infos) - 1}"
-    output_csv = state.contained_path(get_user_dir(request.username) / "results", f"{base_name}_detections.csv")
+    output_csv = state.contained_path(get_user_dir(request.username) / "results", f"{base_name}_{uuid.uuid4().hex}_detections.csv")
 
     job_id = str(uuid.uuid4())[:8]
     background_jobs[job_id] = {
@@ -1693,7 +1651,10 @@ def run_tracking_job(job_id: str, username: str, csv_path: Path, params: dict, o
             raise RuntimeError("Tracking module not available")
         background_jobs[job_id]["status"] = "running"
 
-        df = pd.read_csv(csv_path, index_col=0)
+        input_bytes = csv_path.read_bytes()
+        background_jobs[job_id]["input_sha256"] = hashlib.sha256(input_bytes).hexdigest()
+        df = pd.read_csv(BytesIO(input_bytes))
+        df = df.drop(columns=[c for c in df if c.startswith("Unnamed:")])
         if "orientation_ncc" in df.columns and "ncc" not in df.columns:
             df = df.rename(columns={"orientation_ncc": "ncc"})
         if "ncc" not in df.columns:
@@ -1709,7 +1670,8 @@ def run_tracking_job(job_id: str, username: str, csv_path: Path, params: dict, o
         background_jobs[job_id]["n_after_nms"] = count
 
         output_csv.parent.mkdir(parents=True, exist_ok=True)
-        tracks.to_csv(output_csv, index=False)
+        with new_output(output_csv) as temporary:
+            tracks.to_csv(temporary, index=False)
 
         background_jobs[job_id]["status"] = "completed"
         background_jobs[job_id]["output_csv"] = output_csv.name
@@ -1726,6 +1688,7 @@ def run_tracking_job(job_id: str, username: str, csv_path: Path, params: dict, o
 
 @app.post("/track")
 async def run_tracking(request: TrackRequest):
+    require_user(request.username)
     if not _tracking_available:
         raise HTTPException(status_code=503, detail="Tracking module unavailable")
     user_dir = get_user_dir(request.username)
@@ -1735,7 +1698,7 @@ async def run_tracking(request: TrackRequest):
 
     stem = Path(request.csv_name).stem.replace("_detections", "")
     output_name = request.output_name or stem
-    output_csv = state.contained_path(user_dir / "results", f"{state.safe_name(output_name)}_tracks.csv")
+    output_csv = state.contained_path(user_dir / "results", f"{state.safe_name(output_name)}_{uuid.uuid4().hex}_tracks.csv")
 
     job_id = str(uuid.uuid4())[:8]
     background_jobs[job_id] = {
@@ -1820,10 +1783,11 @@ def visualize_tracks_overview(request: TrackVisualizeRequest):
 
     mid_frame = int(df["frame"].median())
     images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed={mid_frame})
-    base = tracks_path.stem
+    base = tracks_path.stem + "_" + uuid.uuid4().hex
     output_path = state.contained_path(results_dir, f"{base}_overview.png")
     try:
-        make_overview(df, images_dir or "", str(output_path), get_frame=get_frame)
+        with new_output(output_path) as temporary:
+            make_overview(df, images_dir or "", str(temporary), get_frame=get_frame)
     finally:
         if tmpdir:
             import shutil as _shutil
@@ -1848,13 +1812,14 @@ def _run_visualize_video(job_id: str, request: TrackVisualizeRequest, results_di
 
         needed = set(int(f) for f in df["frame"].unique())
         images_dir, tmpdir, get_frame = _resolve_viz_source(request, frames_needed=needed)
-        base = tracks_path.stem
+        base = tracks_path.stem + "_" + uuid.uuid4().hex
         output_path = state.contained_path(results_dir, f"{base}_video.mp4")
         try:
-            _viz_make_video(
-                df, images_dir or "", str(output_path),
-                fps=request.fps, trail_frames=request.trail, get_frame=get_frame,
-            )
+            with new_output(output_path) as temporary:
+                _viz_make_video(
+                    df, images_dir or "", str(temporary),
+                    fps=request.fps, trail_frames=request.trail, get_frame=get_frame,
+                )
         finally:
             if tmpdir:
                 import shutil as _shutil
@@ -1931,7 +1896,9 @@ async def analyze_abp(request: AbpRequest):
     msd_df["msd_um2"] = msd_df["msd"] * px ** 2
 
     stem = Path(request.csv_name).stem
-    plot_base = stem + "_abp"
+    # Retain the existing managed-path safety check for legacy output names.
+    state.contained_path(user_dir / "results", f"{stem}_abp_msd.png")
+    plot_base = stem + "_" + uuid.uuid4().hex + "_abp"
     state.contained_path(user_dir / "results", f"{plot_base}_msd.png")
     output_dir = str(user_dir / "results")
 
@@ -1963,7 +1930,12 @@ async def analyze_abp(request: AbpRequest):
         result["D_r_msd"] = D_r_msd_f
 
     try:
-        plot_msd(msd_df, amsd_df, request.dt, fit_params_phys, D_r_angular, output_dir, plot_base, px_um=px)
+        with tempfile.TemporaryDirectory(prefix=".abp-", dir=output_dir) as staging:
+            plot_msd(msd_df, amsd_df, request.dt, fit_params_phys, D_r_angular, staging, plot_base, px_um=px)
+            for generated in Path(staging).iterdir():
+                target = state.contained_path(Path(output_dir), generated.name)
+                with new_output(target) as temporary:
+                    shutil.copyfile(generated, temporary)
         plot_path = state.contained_path(user_dir / "results", f"{plot_base}_msd.png")
         if plot_path.exists():
             result["plot_b64"] = f"data:image/png;base64,{base64.b64encode(plot_path.read_bytes()).decode()}"
@@ -2149,23 +2121,25 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
         data["overlay_b64"] = f"data:image/png;base64,{base64.b64encode(overlay_buffer.getvalue()).decode()}"
         return _sanitize_crescent_response(data=data)
 
-    base = "janus_crescent_ratio_" + _crescent_output_base(request, file_info)
+    base = "janus_crescent_ratio_" + _crescent_output_base(request, file_info) + "_" + uuid.uuid4().hex
     out_dir = get_user_dir(username) / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = state.contained_path(out_dir, f"{base}_measurement.csv")
     overlay_path = state.contained_path(out_dir, f"{base}_overlay.png")
-    pd.DataFrame([data]).to_csv(csv_path, index=False)
-    save_crescent_overlay(
-        overlay_path,
-        debug["source_gray"],
-        debug["disk"],
-        debug["interior"],
-        debug["crescent"],
-        debug["detection"],
-        debug["crop_region"],
-        title=overlay_title,
-        normalize=request.normalize,
-    )
+    with new_output(csv_path) as temporary:
+        pd.DataFrame([data]).to_csv(temporary, index=False)
+    with new_output(overlay_path) as temporary:
+        save_crescent_overlay(
+            temporary,
+            debug["source_gray"],
+            debug["disk"],
+            debug["interior"],
+            debug["crescent"],
+            debug["detection"],
+            debug["crop_region"],
+            title=overlay_title,
+            normalize=request.normalize,
+        )
     data["csv_name"] = csv_path.name
     data["overlay_name"] = overlay_path.name
     data["overlay_b64"] = f"data:image/png;base64,{base64.b64encode(overlay_path.read_bytes()).decode()}"
@@ -2179,14 +2153,17 @@ async def analyze_janus_crescent_ratio(request: CrescentRatioRequest):
 @app.get("/jobs/{job_id}")
 async def get_job_status(job_id: str):
     if job_id in background_jobs:
+        require_user(background_jobs[job_id]["username"])
         return background_jobs[job_id]
     if job_id in training_jobs:
+        require_user(training_jobs[job_id]["username"])
         return training_jobs[job_id]
     raise HTTPException(status_code=404, detail="Job not found")
 
 
 @app.get("/jobs/user/{username}")
 async def list_user_jobs(username: str):
+    require_user(username)
     bg = [j for j in background_jobs.values() if j.get("username") == username]
     tr = [j for j in training_jobs.values() if j.get("username") == username]
     return {"background_jobs": bg, "training_jobs": tr}
@@ -2328,8 +2305,9 @@ async def merge_videos(request: VideoMergeRequest):
             for frame in reader:
                 all_frames.append(frame)
             reader.close()
-        output_path = state.contained_path(results_dir, f"{state.safe_name(request.output_name)}.mp4")
-        imageio.mimwrite(str(output_path), all_frames, fps=request.fps, codec="libx264", quality=8, macro_block_size=1)
+        output_path = state.contained_path(results_dir, f"{state.safe_name(request.output_name)}_{uuid.uuid4().hex}.mp4")
+        with new_output(output_path) as temporary:
+            imageio.mimwrite(str(temporary), all_frames, fps=request.fps, codec="libx264", quality=8, macro_block_size=1)
         return {"status": "merged", "path": str(output_path),
                 "total_frames": len(all_frames), "source_files": len(mp4_files)}
     except Exception as e:
@@ -2343,6 +2321,7 @@ async def merge_from_files(request: MergeFromFilesRequest):
         raise HTTPException(status_code=400, detail="No files selected")
 
     out_name = _safe_merged_name(request.output_name or "merged")
+    out_name = f"{Path(out_name).stem}_{uuid.uuid4().hex}.mp4"
     output_path = state.contained_path(_merged_dir(request.username), out_name)
 
     job_id = str(uuid.uuid4())[:8]
@@ -2368,7 +2347,12 @@ async def merge_from_files(request: MergeFromFilesRequest):
 
 def _run_merge_job(job_id: str, username: str, file_ids: List[str],
                    output_path: Path, fps: float, normalize: bool):
+    destination = output_path
+    publication = new_output(destination)
+    writer = None
+    output_path = None
     try:
+        output_path = publication.__enter__()
         import imageio
         background_jobs[job_id]["status"] = "running"
         save_background_jobs()
@@ -2385,14 +2369,12 @@ def _run_merge_job(job_id: str, username: str, file_ids: List[str],
             file_info = (sessions[username].get("files", {}).get(fid) or
                          sessions[username].get("detect_files", {}).get(fid))
             if not file_info:
-                skipped.append(fid)
-                continue
+                raise ValueError(f"Source file missing from session: {fid}")
             try:
                 if file_info["type"] == "tdms":
                     images = get_images(str(file_info["path"]))
                     if images is None:
-                        skipped.append(fid)
-                        continue
+                        raise ValueError(f"No image data in source: {fid}")
                     for raw in images:
                         frame = raw.astype(np.float32)
                         if normalize:
@@ -2422,7 +2404,7 @@ def _run_merge_job(job_id: str, username: str, file_ids: List[str],
                     writer.append_data(rgb)
                     total_frames += 1
             except Exception as e:
-                skipped.append(f"{fid}:{e}")
+                raise RuntimeError(f"Could not read complete source {fid}: {e}") from e
 
             background_jobs[job_id]["files_done"] = fi + 1
             background_jobs[job_id]["progress"] = int((fi + 1) / n_files * 100)
@@ -2434,6 +2416,9 @@ def _run_merge_job(job_id: str, username: str, file_ids: List[str],
 
         if total_frames == 0 or not output_path.exists():
             raise RuntimeError(f"No frames written. Skipped: {skipped}")
+
+        publication.__exit__(None, None, None)
+        output_path = destination
 
         background_jobs[job_id]["status"] = "completed"
         background_jobs[job_id]["progress"] = 100
@@ -2449,8 +2434,11 @@ def _run_merge_job(job_id: str, username: str, file_ids: List[str],
         background_jobs[job_id]["error"] = str(e)
         save_background_jobs()
         try:
-            if output_path.exists():
-                output_path.unlink()
+            try:
+                if writer is not None:
+                    writer.close()
+            finally:
+                publication.__exit__(type(e), e, e.__traceback__)
         except Exception:
             pass
 
@@ -2477,6 +2465,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
     try:
-        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
     except Exception:
-        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

@@ -53,8 +53,7 @@ async def start_inference(request: TrajectoryRequest):
     if source.suffix.lower() != ".csv" or not source.is_file():
         raise HTTPException(404, "Managed tracks CSV not found")
     job_id = uuid.uuid4().hex
-    suffix = "predictions" if item["method"] == "causal_prediction" else "tracks"
-    output = state.contained_path(results, f"trajectory_{job_id}_{suffix}.csv")
+    output = state.contained_path(results, f"trajectory_{job_id}_tracks.csv")
     manifest = state.contained_path(results, f"trajectory_{job_id}_manifest.json")
     state.background_jobs[job_id] = dict(id=job_id, type="trajectory_model", username=request.username,
         status="queued", progress=0, input_csv=source.name, method=item["method"], created_at=datetime.now().isoformat())

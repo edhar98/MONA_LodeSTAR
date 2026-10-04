@@ -4,6 +4,7 @@ import unittest
 import tempfile
 import json
 import asyncio
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,8 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 for directory in (ROOT / "web", ROOT / "src", ROOT / "src/tracking"):
     sys.path.insert(0, str(directory))
 from services.trajectory_models import infer, validate_tracks, run_inference, catalog, resolve_model
-from lstm_track_predictor import LSTMTrackPredictor, STATE_COLUMNS
-from train_supervised_correction_lstm import ResidualCorrectionLSTM
 from lstm_gap_filler import BiLSTMGapFiller, INPUT_COLUMNS, QUERY_COLUMNS, TARGET_COLUMNS
 
 
@@ -30,19 +29,12 @@ class TrajectoryModelsTests(unittest.TestCase):
             x=np.arange(n, dtype=float), y=np.zeros(n), phi=np.zeros(n), ncc=np.ones(n),
             is_interpolated=np.zeros(n, dtype=bool), particle_class=["Janus"] * n))
 
-    def checkpoint(self, method):
+    def checkpoint(self):
         ck = dict(hidden_size=4, layers=1, dropout=0.)
-        if method == "causal_prediction":
-            model = LSTMTrackPredictor(4, 4, 1, 0., 4)
-            ck.update(seq_len=2, input_columns=STATE_COLUMNS, x_normalizer=norm(4), y_normalizer=norm(4), target_mode="residual")
-        elif method == "supervised_correction":
-            model = ResidualCorrectionLSTM(2, 4, 1, 0.)
-            ck.update(seq_len=2, input_size=2, feature_cols=["lode_x", "lode_y"], input_normalizer=norm(2), target_normalizer=norm(2))
-        else:
-            model = BiLSTMGapFiller(len(INPUT_COLUMNS), len(QUERY_COLUMNS), 4, 1, 0., len(TARGET_COLUMNS))
-            ck.update(context_len=2, input_columns=INPUT_COLUMNS, query_columns=QUERY_COLUMNS,
-                target_columns=TARGET_COLUMNS, input_normalizer=norm(len(INPUT_COLUMNS)),
-                query_normalizer=norm(len(QUERY_COLUMNS)), target_normalizer=norm(len(TARGET_COLUMNS)))
+        model = BiLSTMGapFiller(len(INPUT_COLUMNS), len(QUERY_COLUMNS), 4, 1, 0., len(TARGET_COLUMNS))
+        ck.update(context_len=2, input_columns=INPUT_COLUMNS, query_columns=QUERY_COLUMNS,
+            target_columns=TARGET_COLUMNS, input_normalizer=norm(len(INPUT_COLUMNS)),
+            query_normalizer=norm(len(QUERY_COLUMNS)), target_normalizer=norm(len(TARGET_COLUMNS)))
         for parameter in model.parameters():
             torch.nn.init.zeros_(parameter)
         ck["model_state"] = model.state_dict()
@@ -59,71 +51,92 @@ class TrajectoryModelsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_tracks(self.frame().assign(x_raw=0), "bilstm_gap")
 
-    def test_all_methods_preserve_baseline_and_labels(self):
-        for method in ("causal_prediction", "bilstm_gap", "supervised_correction"):
-            with self.subTest(method=method):
-                df = self.frame()
-                df.loc[3, "is_interpolated"] = True
-                original = df.copy(deep=True)
-                out, counts = infer(validate_tracks(df, method), method, self.checkpoint(method))
-                pd.testing.assert_frame_equal(df, original)
-                self.assertEqual(len(out), len(df))
-                self.assertEqual(out.particle_class.tolist(), df.particle_class.tolist())
-                self.assertGreater(counts["eligible_rows"], 0)
-                if method != "causal_prediction":
-                    np.testing.assert_array_equal(out.x_raw, df.x)
-                    np.testing.assert_allclose(out.refinement_shift_px, np.hypot(out.x - out.x_raw, out.y - out.y_raw))
-                    self.assertTrue(np.isfinite(counts["p95_shift_px"]))
-                else:
-                    np.testing.assert_array_equal(out.x, df.x)
-                    self.assertFalse(out.loc[3, "has_prediction"])
-                    self.assertFalse(out.loc[4, "has_prediction"])
-
-    def test_short_and_sparse_are_noop(self):
-        for method in ("causal_prediction", "bilstm_gap", "supervised_correction"):
-            for df in (self.frame(1), self.frame(0), self.frame(3).assign(frame=[0, 3, 6])):
-                out, counts = infer(validate_tracks(df, method), method, self.checkpoint(method))
-                self.assertEqual(counts["eligible_rows"], 0)
-                self.assertEqual(len(out), len(df))
-
-    def test_supervised_preserves_interpolated_rows(self):
+    def test_gap_refinement_preserves_measured_rows_and_labels(self):
         df = self.frame()
         df.loc[3, "is_interpolated"] = True
-        df.loc[3, "ncc"] = np.nan
-        out, _ = infer(validate_tracks(df, "supervised_correction"), "supervised_correction", self.checkpoint("supervised_correction"))
-        self.assertFalse(out.loc[3, "is_model_refined"])
-        self.assertFalse(out.loc[4, "is_model_refined"])
-        self.assertTrue(out.loc[5, "is_model_refined"])
+        original = df.copy(deep=True)
+        ck = self.checkpoint()
+        ck["model_state"]["head.4.bias"][0] = 2.
+        out, counts = infer(validate_tracks(df, "bilstm_gap"), "bilstm_gap", ck)
+        pd.testing.assert_frame_equal(df, original)
+        self.assertEqual(len(out), len(df))
+        self.assertEqual(out.particle_class.tolist(), df.particle_class.tolist())
+        self.assertEqual(counts["eligible_rows"], 1)
+        self.assertEqual(counts["interpolated_rows"], 1)
+        np.testing.assert_array_equal(out.x_raw, df.x)
+        np.testing.assert_allclose(out.refinement_shift_px, np.hypot(out.x - out.x_raw, out.y - out.y_raw))
+        real = ~df.is_interpolated
+        np.testing.assert_array_equal(out.loc[real, ["x", "y", "phi"]], df.loc[real, ["x", "y", "phi"]])
+        self.assertFalse(out.loc[real, "is_model_refined"].any())
+        self.assertGreater(out.loc[3, "refinement_shift_px"], 0.)
 
-    def test_multiple_tracks_preserve_prediction_mapping(self):
-        df = pd.concat([self.frame(4), self.frame(4).assign(track_id=1, x=100.)], ignore_index=True)
-        out, counts = infer(df, "causal_prediction", self.checkpoint("causal_prediction"))
-        self.assertEqual(counts["prediction_rows"], 4)
-        self.assertEqual(out.loc[6, "pred_x"], 100.)
-        self.assertFalse(out.loc[4, "has_prediction"])
+    def test_removed_methods_rejected_before_checkpoint_loading(self):
+        for method in ("causal_prediction", "supervised_correction", "unknown"):
+            with self.assertRaisesRegex(ValueError, "Unsupported trajectory method"):
+                infer(self.frame(), method, {})
+            with self.assertRaisesRegex(ValueError, "Unsupported trajectory method"):
+                validate_tracks(self.frame(), method)
+
+    def test_short_and_sparse_are_noop(self):
+        for df in (self.frame(1), self.frame(0), self.frame(3).assign(frame=[0, 3, 6])):
+            out, counts = infer(validate_tracks(df, "bilstm_gap"), "bilstm_gap", self.checkpoint())
+            self.assertEqual(counts["eligible_rows"], 0)
+            self.assertEqual(len(out), len(df))
+
+    def test_gaps_without_clean_context_remain_linear(self):
+        df = self.frame()
+        df.loc[[0, 2, 3, 4, 7], "is_interpolated"] = True
+        out, counts = infer(validate_tracks(df, "bilstm_gap"), "bilstm_gap", self.checkpoint())
+        self.assertEqual(counts["refined_rows"], 0)
+        np.testing.assert_array_equal(out[["x", "y", "phi"]], df[["x", "y", "phi"]])
+
+    def test_multiple_tracks_preserve_gap_mapping(self):
+        df = pd.concat([self.frame(), self.frame().assign(track_id=1, x=100.)], ignore_index=True)
+        df.loc[[3, 11], "is_interpolated"] = True
+        out, counts = infer(df, "bilstm_gap", self.checkpoint())
+        self.assertEqual(counts["refined_rows"], 2)
+        self.assertEqual(out.index[out.is_model_refined].tolist(), [3, 11])
+        self.assertEqual(out.loc[11, "x"], 100.)
 
     def test_nonfinite_model_rejected(self):
-        ck = self.checkpoint("causal_prediction")
-        ck["model_state"]["head.2.bias"].fill_(float("nan"))
+        ck = self.checkpoint()
+        ck["model_state"]["head.4.bias"].fill_(float("nan"))
+        df = self.frame()
+        df.loc[3, "is_interpolated"] = True
         with self.assertRaises(ValueError):
-            infer(self.frame(), "causal_prediction", ck)
+            infer(df, "bilstm_gap", ck)
 
     def test_safe_checkpoint_artifacts_and_catalog(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "lstm_outputs").mkdir()
-            model = root / "lstm_outputs/lstm_track_predictor_tiny.pt"
-            torch.save(self.checkpoint("causal_prediction"), model)
+            model = root / "lstm_outputs/lstm_gap_filler_tiny.pt"
+            torch.save(self.checkpoint(), model)
+            # Old checkpoints remain on disk but are not exposed or executable.
+            old_paths = ["lstm_outputs/lstm_track_predictor_old.pt",
+                         "supervised_correction_outputs/run/supervised_lodestar_to_reference_lstm.pt"]
+            for relative in old_paths:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save({}, path)
             source = root / "baseline.csv"
             self.frame().to_csv(source, index=False)
             original = source.read_bytes()
             with patch("services.trajectory_models.ROOT", root):
                 items = catalog()
                 self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]["method"], "bilstm_gap")
+                for relative in old_paths:
+                    stale_id = hashlib.sha256(relative.encode()).hexdigest()[:24]
+                    with self.assertRaises(ValueError):
+                        resolve_model(stale_id)
+                    with self.assertRaises(ValueError):
+                        run_inference(source, stale_id, root / "stale.csv", root / "stale.json")
+                    self.assertTrue((root / relative).is_file())
                 with self.assertRaises(ValueError):
                     resolve_model("../../unsafe.pt")
                 info = run_inference(source, items[0]["id"], root / "result.csv", root / "manifest.json")
-                self.assertIsNone(info["output_tracks_csv"])
+                self.assertEqual(info["output_tracks_csv"], "result.csv")
                 self.assertEqual(info, json.loads((root / "manifest.json").read_text()))
                 self.assertEqual(len(info["checkpoint_sha256"]), 64)
                 self.assertEqual(source.read_bytes(), original)

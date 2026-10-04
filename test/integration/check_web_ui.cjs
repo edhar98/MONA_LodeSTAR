@@ -7,6 +7,9 @@ const vm = require('node:vm');
 const html = fs.readFileSync(path.join(__dirname, '../../web/templates/index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script); // Parse the complete frontend, not just selected helpers.
+assert.match(html, /<details class="card" id="tracker-gap-extra">/); // collapsed by default
+assert(!html.includes('id="trajectory-method"'));
+assert.match(html, /Linear gap interpolation remains the tracker default/);
 function section(start, end) {
   assert(script.includes(start) && script.includes(end));
   return script.slice(script.indexOf(start), script.indexOf(end, script.indexOf(start)));
@@ -93,8 +96,18 @@ vm.runInContext(section('function clearAbpPlot(', 'function optionalFloat('), co
   context.Option = function(text, value) { return {text, value}; };
   vm.runInContext('let username = "tester"; let lastTrackCsv = "original_tracks.csv";', context);
   vm.runInContext(section('let trajectoryModels = [];', 'function refreshVizFileList('), context);
+  context.updateSelectOptions = (sel, options) => { sel.options = options; };
+  vm.runInContext('trajectoryModels = [{method:"causal_prediction",id:"old"},{method:"bilstm_gap",id:"gap",label:"Gap",checkpoint:"gap.pt"}]; updateTrajectoryModelOptions();', context);
+  assert.deepEqual(Array.from(get('trajectory-model').options, o => o.value), ['', 'gap']);
+  assert.equal(vm.runInContext('trajectoryStorageKey()', context), 'mona_gap_refinement_job:tester');
   await vm.runInContext('showTrajectoryResult({method:"causal_prediction",output_kind:"predictions",output_csv:"sample_predictions.csv",counts:{prediction_rows:0},warnings:["<unsafe>"]})', context);
   assert.equal(get('trajectory-use').classList.contains('hidden'), true);
+  assert.equal(get('trajectory-result').innerHTML, '');
+  assert.match(statuses.at(-1)[1], /not a gap-refinement result/);
+  await vm.runInContext('showTrajectoryResult({method:"supervised_correction",output_kind:"tracks",output_tracks_csv:"legacy_tracks.csv",counts:{refined_rows:10}})', context);
+  assert.equal(get('trajectory-use').onclick, null);
+  assert.equal(get('trajectory-result').innerHTML, '');
+  await vm.runInContext('showTrajectoryResult({method:"bilstm_gap",output_kind:"tracks",counts:{refined_rows:0},warnings:["<unsafe>"]})', context);
   assert.match(get('trajectory-result').innerHTML, /&lt;unsafe&gt;/);
   assert.equal(statuses.at(-1)[2], 'warn');
   assert.equal(vm.runInContext('lastTrackCsv', context), 'original_tracks.csv');
@@ -124,5 +137,5 @@ vm.runInContext(section('function clearAbpPlot(', 'function optionalFloat('), co
   await vm.runInContext('runTrajectoryModel()', context);
   assert.equal(get('trajectory-run').disabled, false);
   assert.equal(get('trajectory-use').classList.contains('hidden'), true);
-  console.log('PASS: JS syntax, proxy prefixes, training/ABP recovery, composite validation, trajectory no-op/escaping/opt-in/failure/recovery');
+  console.log('PASS: JS syntax, proxy prefixes, training/ABP recovery, composite validation, gap-only catalog/legacy exclusion/no-op/escaping/opt-in/failure/recovery');
 })().catch(error => { console.error(error); process.exitCode = 1; });

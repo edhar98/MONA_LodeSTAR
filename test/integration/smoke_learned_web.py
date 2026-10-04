@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import sys
 import tempfile
 import time
@@ -24,6 +25,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="mona-learned-smoke-") as directory:
         storage = Path(directory)
         os.environ.update(MONA_TRACK_JUPYTER="1", MONA_TRACK_USER=USER,
+                          MONA_TRACK_PROXY_TOKEN="learned-smoke-proxy-token",
                           MONA_TRACK_HOME=str(storage / "state"),
                           MONA_TRACK_FEEDBACK_DIR=str(storage / "feedback"),
                           MPLCONFIGDIR=str(storage / "matplotlib"), CUDA_VISIBLE_DEVICES="")
@@ -39,7 +41,9 @@ def main():
         async def run():
             checks = {}
             async with api.lifespan(api.app):
-                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app), base_url="http://smoke") as client:
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api.app), base_url="http://smoke",
+                                            headers={"X-Mona-Proxy-Token": "learned-smoke-proxy-token"}) as client:
+                    assert (await client.get("/health", headers={"X-Mona-Proxy-Token": "wrong"})).status_code == 403
                     async def request(method, path, **kwargs):
                         response = await client.request(method, path, **kwargs)
                         assert response.status_code == 200, (path, response.status_code, response.text[:1000])
@@ -55,7 +59,22 @@ def main():
                             await asyncio.sleep(.1)
                         raise AssertionError(f"job timed out: {job}")
 
+                    assert (await request("GET", f"/models/{USER}"))["models"] == []
+                    # These exact real-model fixtures replace former CLI
+                    # discovery; only temporary per-user copies are exposed.
+                    for name, run in (("Janus", "euk2wnni"), ("Rod", "uaqqndn3")):
+                        source = ROOT / "models" / run
+                        fixture = api.get_user_dir(USER) / "models" / run
+                        fixture.mkdir()
+                        weights = fixture / f"{name}_weights.pth"
+                        shutil.copyfile(source / weights.name, weights)
+                        shutil.copyfile(source / "config.yaml", fixture / "config.yaml")
+                        config = api.utils.load_yaml(str(fixture / "config.yaml"))
+                        api.sessions[USER]["models"].append(dict(id=f"smoke-web-{name}", particle_name=name,
+                            path=str(weights), config=config, source="web"))
+                    api.save_user_session(USER)
                     models = (await request("GET", f"/models/{USER}"))["models"]
+                    assert len(models) == 2 and all(m["source"] == "web" and not m["id"].startswith("cli:") for m in models)
                     selected = []
                     for name in ("Janus", "Rod"):
                         selected.append(next(m for m in models if m["particle_name"] == name
@@ -92,7 +111,9 @@ def main():
                     original_hash = hashlib.sha256(input_path.read_bytes()).hexdigest()
                     catalog = await request("GET", f"/trajectory-models/{USER}")
                     assert (await client.get("/trajectory-models/someone-else")).status_code == 403
-                    for method in ("causal_prediction", "bilstm_gap", "supervised_correction"):
+                    assert set(catalog["methods"]) == {"bilstm_gap"}
+                    assert {m["method"] for m in catalog["models"]} == {"bilstm_gap"}
+                    for method in ("bilstm_gap",):
                         model = next(m for m in catalog["models"] if m["method"] == method)
                         job = await request("POST", "/trajectory-models/run", json={"username": USER,
                             "tracks_csv": input_path.name, "model_id": model["id"]})
@@ -103,14 +124,15 @@ def main():
                         assert (results / result["manifest_file"]).is_file()
                         assert result["counts"]["eligible_rows"] > 0, result
                         assert result["source_sha256"] == original_hash
-                        if method != "causal_prediction":
-                            assert len(output) == len(raw)
-                            assert {"x_raw", "y_raw"} <= set(output)
-                            assert np.isfinite(output[["x", "y"]]).all().all()
-                            baseline = raw.sort_values(["track_id", "frame"])
-                            np.testing.assert_allclose(output[["x_raw", "y_raw"]], baseline[["x", "y"]])
-                        else:
-                            assert np.isfinite(output.loc[output.has_prediction, ["pred_x", "pred_y", "pred_phi"]]).all().all()
+                        assert len(output) == len(raw)
+                        assert {"x_raw", "y_raw"} <= set(output)
+                        assert np.isfinite(output[["x", "y"]]).all().all()
+                        baseline = raw.sort_values(["track_id", "frame"]).reset_index(drop=True)
+                        np.testing.assert_allclose(output[["x_raw", "y_raw"]], baseline[["x", "y"]])
+                        measured = ~baseline.is_interpolated
+                        np.testing.assert_allclose(output.loc[measured, ["x", "y", "phi"]],
+                                                   baseline.loc[measured, ["x", "y", "phi"]])
+                        assert not output.loc[measured, "is_model_refined"].any()
                         assert hashlib.sha256(input_path.read_bytes()).hexdigest() == original_hash
                         checks[method] = result
                         print(f"PASS: real checkpoint {method}", flush=True)

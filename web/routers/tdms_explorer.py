@@ -1,5 +1,8 @@
 import base64
 import zipfile
+import tempfile
+import uuid
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -165,7 +168,16 @@ def _export_frame(raw: np.ndarray, normalize: bool, dtype: np.dtype) -> np.ndarr
 @router.post("/export")
 async def export_tdms(request: TdmsExportRequest):
     info = _tdms_file(request.username, request.file_id)
-    images = get_images(str(info["path"]))
+    if request.output_format not in {"png", "mp4"}:
+        raise HTTPException(status_code=400, detail="Unsupported export format")
+    if request.dtype not in {"uint8", "uint16"}:
+        raise HTTPException(status_code=400, detail="Unsupported export dtype")
+    if not math.isfinite(request.fps) or request.fps <= 0:
+        raise HTTPException(status_code=400, detail="FPS must be finite and positive")
+    try:
+        images = get_images(str(info["path"]))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if images is None:
         raise HTTPException(status_code=400, detail="Could not extract images from TDMS file")
 
@@ -178,38 +190,41 @@ async def export_tdms(request: TdmsExportRequest):
     base_name = state.safe_name(request.output_name or Path(info["filename"]).stem)
     frame_count = end - start
 
-    if request.output_format == "mp4":
-        output_path = state.contained_path(user_dir / "results", f"{base_name}.mp4")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        frames = [normalize_tdms_frame(images[i], request.normalize) for i in range(start, end)]
-        imageio.mimwrite(
-            str(output_path), frames, fps=request.fps,
-            codec="libx264", quality=8, macro_block_size=1,
-        )
-        if request.save_to_server:
-            return {"status": "saved", "path": str(output_path), "frames": frame_count}
-        return {
-            "status": "ready",
-            "data": base64.b64encode(output_path.read_bytes()).decode(),
-            "filename": f"{base_name}.mp4",
-            "frames": frame_count,
-        }
-
-    export_dir = state.contained_path(user_dir / "results", base_name)
-    export_dir.mkdir(parents=True, exist_ok=True)
-    for i in range(start, end):
-        frame = _export_frame(images[i], request.normalize, dtype)
-        mode = "I;16" if frame.dtype == np.uint16 else "L"
-        Image.fromarray(frame, mode=mode).save(state.contained_path(export_dir, f"{base_name}_{i + 1:03d}.png"))
+    results_dir = state.contained_path(user_dir, "results")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    published_dir = state.contained_path(results_dir, f"{base_name}-{uuid.uuid4().hex}")
+    # A completed export is published in one rename. Failure removes only this
+    # request's private staging, never an older same-name export.
+    with tempfile.TemporaryDirectory(prefix=".tdms-export-", dir=results_dir) as tmp:
+        staging = Path(tmp)
+        if request.output_format == "mp4":
+            filename = f"{base_name}.mp4"
+            with imageio.get_writer(
+                str(staging / filename), fps=request.fps,
+                codec="libx264", quality=8, macro_block_size=1,
+            ) as writer:
+                for i in range(start, end):
+                    writer.append_data(normalize_tdms_frame(images[i], request.normalize))
+        else:
+            generated = []
+            for i in range(start, end):
+                frame = _export_frame(images[i], request.normalize, dtype)
+                mode = "I;16" if frame.dtype == np.uint16 else "L"
+                frame_path = staging / f"{base_name}_{i + 1:03d}.png"
+                Image.fromarray(frame, mode=mode).save(frame_path)
+                generated.append(frame_path)
+            filename = f"{base_name}.zip"
+            if not request.save_to_server:
+                with zipfile.ZipFile(staging / filename, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for frame_path in generated:
+                        zf.write(frame_path, frame_path.name)
+        staging.rename(published_dir)
     if request.save_to_server:
-        return {"status": "saved", "path": str(export_dir), "frames": frame_count}
-    zip_path = state.contained_path(user_dir / "results", f"{base_name}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for img_file in export_dir.glob("*.png"):
-            zf.write(img_file, img_file.name)
+        output_path = published_dir / filename if request.output_format == "mp4" else published_dir
+        return {"status": "saved", "path": str(output_path), "frames": frame_count}
     return {
         "status": "ready",
-        "data": base64.b64encode(zip_path.read_bytes()).decode(),
-        "filename": f"{base_name}.zip",
+        "data": base64.b64encode((published_dir / filename).read_bytes()).decode(),
+        "filename": filename,
         "frames": frame_count,
     }

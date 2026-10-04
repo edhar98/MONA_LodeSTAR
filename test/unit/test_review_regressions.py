@@ -122,26 +122,63 @@ class ReviewRegressions(unittest.TestCase):
                 self.assertEqual(module.main([selector, "--help"]), 0)
                 dispatch.assert_called_once_with(["--help"])
 
-    def test_saved_model_config_and_legacy_shared_deletion(self):
+    def test_web_models_only_and_legacy_shared_deletion(self):
         import web.app as app
+        from fastapi import HTTPException
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             weights = root / "weights.pth"
             weights.touch()
-            (root / "config.yaml").write_text("lodestar_version: custom\n")
-            with patch.object(app, "_src_config", return_value={"lodestar_version": "default"}):
-                entry = app._cli_model_entry("particle", {"model_path": str(weights)})
-            self.assertEqual(entry["config"]["lodestar_version"], "custom")
-            self.assertEqual(entry["config_source"], "saved_run")
-            with patch.object(app, "_get_model_info", return_value={"config_source": "global_fallback"}):
-                from fastapi import HTTPException
-                with self.assertRaises(HTTPException):
-                    app.load_model("review-user", "missing")
-            models = [{"id": key, "path": str(weights)} for key in ("a", "b")]
-            with patch.dict(app.sessions, {"review-user": {"models": models}}), patch.object(app, "save_user_session"):
+            models = [{"id": key, "path": str(weights), "config": {"lodestar_version": "custom"}}
+                      for key in ("a", "b")]
+            legacy = [dict(id="cli:particle:run", path=str(weights)),
+                      dict(id="old-shared", path=str(weights), source="cli")]
+            with patch.dict(app.sessions, {"review-user": {"models": models + legacy}}), \
+                    patch.object(app, "save_user_session"), \
+                    patch.object(app, "require_user", side_effect=lambda user: user), \
+                    patch.object(app.utils, "load_yaml", side_effect=AssertionError("Web must not read CLI summary/config")):
+                listed = asyncio.run(app.get_models("review-user"))["models"]
+                self.assertEqual([model["id"] for model in listed], ["a", "b"])
+                self.assertEqual(app._get_model_info("review-user", "a")["config"]["lodestar_version"], "custom")
+                for model_id in ["cli:not-in-session:run", *[model["id"] for model in legacy]]:
+                    with self.assertRaises(HTTPException) as rejected:
+                        app.load_model("review-user", model_id)
+                    self.assertIn(rejected.exception.status_code, (403, 404))
+                    with self.assertRaises(HTTPException):
+                        asyncio.run(app.delete_model("review-user", model_id))
+                    with self.assertRaises(HTTPException):
+                        asyncio.run(app.rename_model("review-user", model_id, app.RenameModelRequest(new_name="changed")))
                 asyncio.run(app.delete_model("review-user", "a"))
                 self.assertTrue(weights.exists())
-                self.assertEqual([m["id"] for m in app.sessions["review-user"]["models"]], ["b"])
+                self.assertEqual([m["id"] for m in app.sessions["review-user"]["models"]],
+                                 ["b", "cli:particle:run", "old-shared"])
+
+    def test_hub_model_ownership_checked_even_for_cached_foreign_session(self):
+        import web.app as app
+        from fastapi import HTTPException
+        with tempfile.TemporaryDirectory() as directory:
+            weights = Path(directory) / "foreign.pth"
+            weights.touch()
+            foreign = {"models": [{"id": "foreign-model", "path": str(weights), "source": "web"}]}
+            with patch.dict(app.sessions, {"foreign": foreign}), \
+                    patch.object(app, "JUPYTER_MODE", True), \
+                    patch.object(state, "JUPYTER_MODE", True), \
+                    patch.object(state, "resolve_identity", return_value="owner"), \
+                    patch.object(app, "save_user_session") as save:
+                calls = [
+                    lambda: app._get_model_info("foreign", "foreign-model"),
+                    lambda: app.load_model("foreign", "foreign-model"),
+                    lambda: asyncio.run(app.get_models("foreign")),
+                    lambda: asyncio.run(app.delete_model("foreign", "foreign-model")),
+                    lambda: asyncio.run(app.rename_model("foreign", "foreign-model", app.RenameModelRequest(new_name="changed"))),
+                ]
+                for call in calls:
+                    with self.assertRaises(HTTPException) as caught:
+                        call()
+                    self.assertEqual(caught.exception.status_code, 403)
+                save.assert_not_called()
+                self.assertTrue(weights.exists())
+                self.assertEqual(foreign["models"][0]["path"], str(weights))
 
     def test_route_paths_block_before_plot_or_job(self):
         import web.app as app
