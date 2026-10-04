@@ -3,6 +3,7 @@ import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,23 @@ METHODS = {
 }
 
 
+@lru_cache(maxsize=64)
+def _checkpoint_compatibility(path, fingerprint):
+    """Cache only compatibility metadata, never resident model tensors."""
+    from lstm_gap_filler import validate_checkpoint
+    try:
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        validate_checkpoint(checkpoint)
+        stat = Path(path).stat()
+        if fingerprint != (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns):
+            return False, "Checkpoint changed while reading; refresh and retry."
+    except ValueError as exc:
+        return False, str(exc)
+    except Exception:
+        return False, "Checkpoint cannot be read safely; provision a retrained observed_context_v2 checkpoint."
+    return True, None
+
+
 def catalog():
     entries = []
     for directory, pattern, method in [
@@ -23,14 +41,20 @@ def catalog():
             if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(directory.resolve()):
                 continue
             relative = str(path.relative_to(ROOT))
+            stat = path.stat()
+            compatible, error = _checkpoint_compatibility(str(path),
+                (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
             entries.append(dict(id=hashlib.sha256(relative.encode()).hexdigest()[:24],
-                                method=method, label=f"{METHODS[method]} — {path.stem}", checkpoint=relative))
+                                method=method, label=f"{METHODS[method]} — {path.stem}", checkpoint=relative,
+                                compatible=compatible, compatibility_error=error))
     return entries
 
 
 def resolve_model(model_id):
     for item in catalog():
         if item["id"] == model_id:
+            if not item["compatible"]:
+                raise ValueError(item["compatibility_error"])
             return item, ROOT / item["checkpoint"]
     raise ValueError("Unknown or unavailable trajectory checkpoint")
 
@@ -77,9 +101,10 @@ def infer(df, method, ck):
     if method not in METHODS:
         raise ValueError("Unsupported trajectory method; only optional bilstm_gap refinement is available")
     from lstm_track_predictor import Normalizer
-    from lstm_gap_filler import BiLSTMGapFiller, predict_gap
+    from lstm_gap_filler import BiLSTMGapFiller, predict_gap, validate_checkpoint
     from build_track_variants import _iter_usable_gaps
 
+    validate_checkpoint(ck)
     out = df.copy()
     for col in ("x", "y", "phi"):
         out[f"{col}_raw"] = out[col]
@@ -91,10 +116,13 @@ def infer(df, method, ck):
                            int(ck["hidden_size"]), int(ck["layers"]), float(ck["dropout"]), len(ck["target_columns"]))
     model.load_state_dict(ck["model_state"])
     model.eval()
+    input_normalizer = Normalizer(**ck["input_normalizer"])
+    query_normalizer = Normalizer(**ck["query_normalizer"])
+    target_normalizer = Normalizer(**ck["target_normalizer"])
     if len(df):
         for past, gap, future, indices in _iter_usable_gaps(df, context_len):
-            predictions = np.asarray(predict_gap(model, ck, Normalizer(**ck["input_normalizer"]),
-                Normalizer(**ck["query_normalizer"]), Normalizer(**ck["target_normalizer"]),
+            predictions = np.asarray(predict_gap(model, ck, input_normalizer,
+                query_normalizer, target_normalizer,
                 past, future, gap, past.iloc[-1], future.iloc[0], torch.device("cpu")))
             if not np.isfinite(predictions).all():
                 raise ValueError("Model produced nonfinite predictions")
@@ -123,7 +151,7 @@ def run_inference(source, model_id, output, manifest):
     df = validate_tracks(pd.read_csv(BytesIO(source_bytes)), item["method"])
     ck = torch.load(BytesIO(checkpoint_bytes), map_location="cpu", weights_only=True)
     result, counts = infer(df, item["method"], ck)
-    warnings = ["Experimental inference; compare with the unchanged linear baseline before physics interpretation."]
+    warnings = ["Experimental inference; superiority over linear interpolation is not established after the leakage correction. Retrain and evaluate on held-out data before physics interpretation."]
     if not counts["eligible_rows"]:
         warnings.append("No eligible context: output preserves the input without model predictions or refinement.")
     info = dict(method=item["method"], output_kind="tracks",
@@ -131,6 +159,7 @@ def run_inference(source, model_id, output, manifest):
                 manifest_file=manifest.name, counts=counts, warnings=warnings,
                 source_csv=source.name, source_sha256=source_hash, checkpoint=item["checkpoint"],
                 checkpoint_sha256=checkpoint_hash, device="cpu", baseline_preserved=True,
+                preprocessing_version=ck["preprocessing_version"],
                 snapshot_semantics="input and checkpoint bytes captured at job execution")
     # Jobs advertise files only after both artifacts exist. Remove only this
     # unique job's newly created files if either write fails.

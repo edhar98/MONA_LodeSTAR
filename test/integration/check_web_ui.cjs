@@ -97,7 +97,8 @@ vm.runInContext(section('function clearAbpPlot(', 'function optionalFloat('), co
   vm.runInContext('let username = "tester"; let lastTrackCsv = "original_tracks.csv";', context);
   vm.runInContext(section('let trajectoryModels = [];', 'function refreshVizFileList('), context);
   context.updateSelectOptions = (sel, options) => { sel.options = options; };
-  vm.runInContext('trajectoryModels = [{method:"causal_prediction",id:"old"},{method:"bilstm_gap",id:"gap",label:"Gap",checkpoint:"gap.pt"}]; updateTrajectoryModelOptions();', context);
+  vm.runInContext('trajectoryModels = [{method:"causal_prediction",id:"old"},{method:"bilstm_gap",id:"legacy",compatible:false,checkpoint:"legacy.pt",compatibility_error:"Retrain <old>"},{method:"bilstm_gap",id:"gap",label:"Gap",checkpoint:"gap.pt",compatible:true}]; updateTrajectoryModelOptions();', context);
+  assert.match(get('trajectory-model-note').textContent, /Retrain <old>/);
   assert.deepEqual(Array.from(get('trajectory-model').options, o => o.value), ['', 'gap']);
   assert.equal(vm.runInContext('trajectoryStorageKey()', context), 'mona_gap_refinement_job:tester');
   await vm.runInContext('showTrajectoryResult({method:"causal_prediction",output_kind:"predictions",output_csv:"sample_predictions.csv",counts:{prediction_rows:0},warnings:["<unsafe>"]})', context);

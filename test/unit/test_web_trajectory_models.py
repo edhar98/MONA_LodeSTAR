@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 for directory in (ROOT / "web", ROOT / "src", ROOT / "src/tracking"):
     sys.path.insert(0, str(directory))
 from services.trajectory_models import infer, validate_tracks, run_inference, catalog, resolve_model
-from lstm_gap_filler import BiLSTMGapFiller, INPUT_COLUMNS, QUERY_COLUMNS, TARGET_COLUMNS
+from lstm_gap_filler import BiLSTMGapFiller, INPUT_COLUMNS, QUERY_COLUMNS, TARGET_COLUMNS, PREPROCESSING_VERSION
 
 
 def norm(size):
@@ -30,7 +30,7 @@ class TrajectoryModelsTests(unittest.TestCase):
             is_interpolated=np.zeros(n, dtype=bool), particle_class=["Janus"] * n))
 
     def checkpoint(self):
-        ck = dict(hidden_size=4, layers=1, dropout=0.)
+        ck = dict(hidden_size=4, layers=1, dropout=0., preprocessing_version=PREPROCESSING_VERSION)
         model = BiLSTMGapFiller(len(INPUT_COLUMNS), len(QUERY_COLUMNS), 4, 1, 0., len(TARGET_COLUMNS))
         ck.update(context_len=2, input_columns=INPUT_COLUMNS, query_columns=QUERY_COLUMNS,
             target_columns=TARGET_COLUMNS, input_normalizer=norm(len(INPUT_COLUMNS)),
@@ -77,6 +77,13 @@ class TrajectoryModelsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsupported trajectory method"):
                 validate_tracks(self.frame(), method)
 
+    def test_unversioned_checkpoint_rejected_even_without_eligible_rows(self):
+        checkpoint = self.checkpoint()
+        del checkpoint["preprocessing_version"]
+        for df in (self.frame(), self.frame(0)):
+            with self.assertRaisesRegex(ValueError, "[Rr]etrain"):
+                infer(df, "bilstm_gap", checkpoint)
+
     def test_short_and_sparse_are_noop(self):
         for df in (self.frame(1), self.frame(0), self.frame(3).assign(frame=[0, 3, 6])):
             out, counts = infer(validate_tracks(df, "bilstm_gap"), "bilstm_gap", self.checkpoint())
@@ -112,6 +119,11 @@ class TrajectoryModelsTests(unittest.TestCase):
             (root / "lstm_outputs").mkdir()
             model = root / "lstm_outputs/lstm_gap_filler_tiny.pt"
             torch.save(self.checkpoint(), model)
+            legacy_gap = root / "lstm_outputs/lstm_gap_filler_legacy.pt"
+            legacy_ck = self.checkpoint()
+            del legacy_ck["preprocessing_version"]
+            torch.save(legacy_ck, legacy_gap)
+            legacy_bytes = legacy_gap.read_bytes()
             # Old checkpoints remain on disk but are not exposed or executable.
             old_paths = ["lstm_outputs/lstm_track_predictor_old.pt",
                          "supervised_correction_outputs/run/supervised_lodestar_to_reference_lstm.pt"]
@@ -124,8 +136,17 @@ class TrajectoryModelsTests(unittest.TestCase):
             original = source.read_bytes()
             with patch("services.trajectory_models.ROOT", root):
                 items = catalog()
-                self.assertEqual(len(items), 1)
-                self.assertEqual(items[0]["method"], "bilstm_gap")
+                self.assertEqual(len(items), 2)
+                legacy_item = next(item for item in items if not item["compatible"])
+                available = next(item for item in items if item["compatible"])
+                self.assertRegex(legacy_item["compatibility_error"], "[Rr]etrain")
+                with self.assertRaisesRegex(ValueError, "[Rr]etrain"):
+                    resolve_model(legacy_item["id"])
+                with self.assertRaisesRegex(ValueError, "[Rr]etrain"):
+                    run_inference(source, legacy_item["id"], root / "legacy.csv", root / "legacy.json")
+                self.assertFalse((root / "legacy.csv").exists())
+                self.assertEqual(legacy_gap.read_bytes(), legacy_bytes)
+                self.assertEqual(available["method"], "bilstm_gap")
                 for relative in old_paths:
                     stale_id = hashlib.sha256(relative.encode()).hexdigest()[:24]
                     with self.assertRaises(ValueError):
@@ -135,14 +156,15 @@ class TrajectoryModelsTests(unittest.TestCase):
                     self.assertTrue((root / relative).is_file())
                 with self.assertRaises(ValueError):
                     resolve_model("../../unsafe.pt")
-                info = run_inference(source, items[0]["id"], root / "result.csv", root / "manifest.json")
+                info = run_inference(source, available["id"], root / "result.csv", root / "manifest.json")
+                self.assertEqual(info["preprocessing_version"], PREPROCESSING_VERSION)
                 self.assertEqual(info["output_tracks_csv"], "result.csv")
                 self.assertEqual(info, json.loads((root / "manifest.json").read_text()))
                 self.assertEqual(len(info["checkpoint_sha256"]), 64)
                 self.assertEqual(source.read_bytes(), original)
                 # Exclusive publication must not delete a preexisting artifact.
                 with self.assertRaises(FileExistsError):
-                    run_inference(source, items[0]["id"], source, root / "unused.json")
+                    run_inference(source, available["id"], source, root / "unused.json")
                 self.assertEqual(source.read_bytes(), original)
 
     def test_api_paths_and_owner(self):
@@ -156,6 +178,30 @@ class TrajectoryModelsTests(unittest.TestCase):
                 with self.assertRaises(HTTPException) as caught:
                     asyncio.run(job_status("owner", "job"))
                 self.assertEqual(caught.exception.status_code, 404)
+
+    def test_compatibility_cache_refresh_and_execution_revalidation(self):
+        from services import trajectory_models as service
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lstm_outputs").mkdir()
+            checkpoint = root / "lstm_outputs/lstm_gap_filler_changing.pt"
+            legacy = self.checkpoint()
+            del legacy["preprocessing_version"]
+            torch.save(legacy, checkpoint)
+            source = root / "tracks.csv"
+            self.frame().to_csv(source, index=False)
+            with patch.object(service, "ROOT", root):
+                self.assertFalse(catalog()[0]["compatible"])
+                torch.save(self.checkpoint(), checkpoint)
+                entry = catalog()[0]
+                self.assertTrue(entry["compatible"])
+                # A checkpoint replaced after catalog/resolve still cannot run.
+                torch.save(legacy, checkpoint)
+                with patch.object(service, "resolve_model", return_value=(entry, checkpoint)):
+                    with self.assertRaisesRegex(ValueError, "[Rr]etrain"):
+                        run_inference(source, entry["id"], root / "out.csv", root / "out.json")
+                self.assertFalse((root / "out.csv").exists())
+                self.assertFalse((root / "out.json").exists())
 
 
 if __name__ == "__main__":

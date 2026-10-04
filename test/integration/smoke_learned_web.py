@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 USER = "learned-smoke"
@@ -113,17 +114,47 @@ def main():
                     assert (await client.get("/trajectory-models/someone-else")).status_code == 403
                     assert set(catalog["methods"]) == {"bilstm_gap"}
                     assert {m["method"] for m in catalog["models"]} == {"bilstm_gap"}
+                    legacy = next(m for m in catalog["models"] if m["checkpoint"] == "lstm_outputs/lstm_gap_filler_jp_fe_wf_2_40_slm075.pt")
+                    assert not legacy["compatible"] and "retrain" in legacy["compatibility_error"].lower()
+                    legacy_path = ROOT / legacy["checkpoint"]
+                    legacy_hash = hashlib.sha256(legacy_path.read_bytes()).hexdigest()
+                    rejected = await client.post("/trajectory-models/run", json={"username": USER,
+                        "tracks_csv": input_path.name, "model_id": legacy["id"]})
+                    assert rejected.status_code == 400 and "retrain" in rejected.text.lower(), rejected.text
+                    assert hashlib.sha256(legacy_path.read_bytes()).hexdigest() == legacy_hash
+                    checks["legacy_checkpoint"] = "Real unversioned checkpoint explicitly rejected; retraining required; bytes preserved"
+                    print("PASS: real legacy checkpoint rejection", flush=True)
+
+                    # An explicitly synthetic, untrained v2 fixture exercises
+                    # corrected inference without relabelling legacy weights.
+                    from lstm_gap_filler import BiLSTMGapFiller, INPUT_COLUMNS, QUERY_COLUMNS, TARGET_COLUMNS, PREPROCESSING_VERSION
+                    from services import trajectory_models as service
+                    fixture_dir = storage / "lstm_outputs"
+                    fixture_dir.mkdir()
+                    tiny = BiLSTMGapFiller(len(INPUT_COLUMNS), len(QUERY_COLUMNS), 4, 1, 0., len(TARGET_COLUMNS))
+                    for parameter in tiny.parameters():
+                        torch.nn.init.zeros_(parameter)
+                    normalizer = lambda columns: dict(mean=[0.] * len(columns), std=[1.] * len(columns))
+                    torch.save(dict(preprocessing_version=PREPROCESSING_VERSION, context_len=10,
+                        hidden_size=4, layers=1, dropout=0., input_columns=INPUT_COLUMNS,
+                        query_columns=QUERY_COLUMNS, target_columns=TARGET_COLUMNS,
+                        input_normalizer=normalizer(INPUT_COLUMNS), query_normalizer=normalizer(QUERY_COLUMNS),
+                        target_normalizer=normalizer(TARGET_COLUMNS), model_state=tiny.state_dict()),
+                        fixture_dir / "lstm_gap_filler_synthetic_v2.pt")
                     for method in ("bilstm_gap",):
-                        model = next(m for m in catalog["models"] if m["method"] == method)
-                        job = await request("POST", "/trajectory-models/run", json={"username": USER,
-                            "tracks_csv": input_path.name, "model_id": model["id"]})
-                        status = await wait(job)
+                        with patch.object(service, "ROOT", storage):
+                            temporary_catalog = await request("GET", f"/trajectory-models/{USER}")
+                            model = next(m for m in temporary_catalog["models"] if m["method"] == method and m["compatible"])
+                            job = await request("POST", "/trajectory-models/run", json={"username": USER,
+                                "tracks_csv": input_path.name, "model_id": model["id"]})
+                            status = await wait(job)
                         result = status["result"]
                         output = pd.read_csv(results / result["output_csv"])
                         assert len(output), (method, result)
                         assert (results / result["manifest_file"]).is_file()
                         assert result["counts"]["eligible_rows"] > 0, result
                         assert result["source_sha256"] == original_hash
+                        assert result["preprocessing_version"] == PREPROCESSING_VERSION
                         assert len(output) == len(raw)
                         assert {"x_raw", "y_raw"} <= set(output)
                         assert np.isfinite(output[["x", "y"]]).all().all()
@@ -135,7 +166,7 @@ def main():
                         assert not output.loc[measured, "is_model_refined"].any()
                         assert hashlib.sha256(input_path.read_bytes()).hexdigest() == original_hash
                         checks[method] = result
-                        print(f"PASS: real checkpoint {method}", flush=True)
+                        print(f"PASS: synthetic v2 checkpoint {method} on real tracks (not an accuracy benchmark)", flush=True)
             return checks
 
         checks = asyncio.run(run())

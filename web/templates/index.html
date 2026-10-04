@@ -777,7 +777,7 @@ input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
       <details class="card" id="tracker-gap-extra">
         <summary class="card-title" style="cursor:pointer">Optional tracker extra · Two-sided LSTM gap refinement (experimental)</summary>
         <p style="font-size:12px;color:var(--text2)">Linear gap interpolation remains the tracker default. This optional step refines eligible interpolated gaps, not measured detections, and preserves the original tracks. A lower masked-gap pixel error does not guarantee better physics; compare coverage and downstream statistics against linear interpolation.</p>
-        <p style="font-size:12px;color:var(--text2)">Requires an existing trusted gap-filler checkpoint and finite orientation (phi), so position-only composite tracks are not compatible. Checkpoints must currently be provisioned by the administrator; training and checkpoint upload are not available here.</p>
+        <p style="font-size:12px;color:var(--text2)">Requires a trusted observed_context_v2 gap-filler checkpoint and finite orientation (phi), so position-only composite tracks are not compatible. Legacy checkpoints require retraining after a hidden-gap feature leakage correction; their reported advantage over linear interpolation is not validated for the corrected model. Ask the administrator to retrain and evaluate on held-out data. Training and checkpoint upload are not available here.</p>
         <label>Input tracks CSV</label><select id="trajectory-tracks"><option value="">Select tracks</option></select>
         <label>Checkpoint</label><select id="trajectory-model"><option value="">Load checkpoints</option></select>
         <div id="trajectory-model-note" style="font-size:12px;color:var(--text2);margin:8px 0"></div>
@@ -3318,9 +3318,10 @@ async function refreshTrajectoryModels() {
 }
 function updateTrajectoryModelOptions() {
   const sel = document.getElementById('trajectory-model');
-  const compatible = trajectoryModels.filter(m => m.method === 'bilstm_gap');
+  const compatible = trajectoryModels.filter(m => m.method === 'bilstm_gap' && m.compatible === true);
+  const unavailable = trajectoryModels.filter(m => m.method === 'bilstm_gap' && m.compatible !== true);
   updateSelectOptions(sel, [{value: '', text: 'Select gap-filler checkpoint'}, ...compatible.map(m => ({value: m.id, text: m.label + ' · ' + m.checkpoint}))]);
-  document.getElementById('trajectory-model-note').textContent = 'Refines only interpolated gaps with clean two-sided context. Uncovered rows remain unchanged; inspect coverage.' + (!compatible.length ? ' No compatible checkpoints are installed. Ask the administrator to provision an approved trained gap-filler model.' : '');
+  document.getElementById('trajectory-model-note').textContent = 'Refines only interpolated gaps with clean two-sided context. Uncovered rows remain unchanged; inspect coverage. Corrected-model superiority over linear interpolation is not established.' + (!compatible.length ? ' No compatible checkpoints are installed. Ask the administrator to retrain and evaluate an observed_context_v2 gap filler.' : '') + (unavailable.length ? ' Unavailable checkpoints: ' + unavailable.map(m => m.checkpoint + ' — ' + (m.compatibility_error || 'Retraining required.')).join('; ') : '');
 }
 function trajectoryDownloadLink(filename, label) {
   return `<a href="${esc(apiUrl('/results/' + encodeURIComponent(username) + '/download/' + encodeURIComponent(filename)))}">${esc(label)}</a>`;
