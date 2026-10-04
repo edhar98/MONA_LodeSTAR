@@ -156,4 +156,4 @@ python tools/elab_cli.py simple upload-test
 - Reference config (structure/docs): `tools/elab/config/elab_config.yaml`. Current scripts do not load it; defaults are hardcoded.
 - Reference: `elab_config.yaml` (root)
 
-See [ELAB_CLI_SIMPLE_USAGE.md](../ELAB_CLI_SIMPLE_USAGE.md), [historical duplicate-file notes](../docs/archive/2026-01-verification/DUPLICATES_DOCUMENTATION.md), and [historical tools verification](../docs/archive/2026-01-verification/TOOLS_VERIFICATION.md) for entry points and verification.
+See [ELab usage](../ELAB_CLI_SIMPLE_USAGE.md) for entry points, upload scope, resource linking, and verification.

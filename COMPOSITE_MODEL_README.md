@@ -1,227 +1,62 @@
-# Composite Model for Multi-Class Particle Detection
+# Composite particle detection
 
-## Overview
+Composite detection combines particle-specific LodeSTAR models to detect and classify different particle types in one image. Each selected model processes the image; nearby detections are clustered and assigned the class with the highest weight at the merged position. That weight is not a calibrated probability. Models are evaluated sequentially, so inference cost grows with their number.
 
-The composite model approach enables multi-class particle detection and classification by combining multiple single-particle LodeSTAR models. Each model is trained on a specific particle type, and during inference, all models analyze the same image. The classification is determined by comparing weight maps from all models at each detection location.
+## Web interface
 
-## Architecture
+In **Detection → Setup**, enable **Composite classification**, select 2–8 web-trained models with distinct particle names, and choose the clustering distance. Run a preview before batch detection.
 
-### Single Particle Models
-Each particle type (Janus, Ring, Spot, Ellipse, Rod) has its own trained LodeSTAR model:
-- **Input**: Grayscale image (H, W)
-- **Output**: 3 channels (Δx, Δy, ρ) at half resolution (H/2, W/2)
-  - Δx: X-displacement field
-  - Δy: Y-displacement field  
-  - ρ: Weight/confidence map
+- Only standard detection is supported. Composite output has no orientation; it cannot feed orientation-dependent gap refinement.
+- The selected detection settings apply to every member model.
+- Detection CSVs preserve particle labels; web tracking links particles within their class.
+- CLI models in `trained_models_summary.yaml` are not discovered by the web interface.
+- A pooled physics fit is not a class-specific estimate. Export or filter one class before interpreting its parameters.
 
-### Composite Model
-The `CompositeLodeSTAR` class orchestrates multiple models:
+## Command-line workflow
 
-1. **Load Models**: Loads trained particle models specified in `config['samples']` from `trained_models_summary.yaml`
-2. **Parallel Inference**: Runs all loaded models on the same input image
-3. **Detection Merging**: Combines detections from all models using spatial clustering
-4. **Classification**: Assigns particle type based on highest weight value at detection location
-
-**Note**: Only models for particle types listed in `config['samples']` will be loaded. This allows selective loading of specific particle models.
-
-## Algorithm
-
-### Detection and Classification Process
-
-```
-For each test image:
-  1. Run all particle models in parallel
-     - Extract weight maps (ρ) from each model
-     - Get detections from each model using detect() method
-  
-  2. Merge all detections
-     - Cluster nearby detections (distance_threshold=20 pixels)
-     - Compute cluster centroids as unified detection positions
-  
-  3. Classify each detection
-     - For each unified detection position (x, y):
-       - Extract weight value from ALL model weight maps at (x, y)
-       - Assign label of model with highest weight
-       - confidence = max(weight values)
-```
-
-### Key Parameters
-
-- `distance_threshold`: Maximum distance for clustering detections (default: 20 pixels)
-- `alpha`: Object similarity metric - **loaded from each model's config**
-- `beta`: 1 - alpha - **loaded from each model's config**
-- `cutoff`: Detection threshold - **loaded from each model's config**
-- `mode`: Detection mode - **loaded from each model's config**
-
-**Note**: Detection parameters (alpha, beta, cutoff, mode) are now **model-specific**, loaded from each model's individual config file. This allows each particle type to use its optimal detection settings.
-
-## Usage
-
-### Training Individual Models
-
-First, train individual models for each particle type:
-
-```bash
-python src/detection/train_single_particle.py --particle Janus
-python src/detection/train_single_particle.py --particle Ring
-python src/detection/train_single_particle.py --particle Spot
-python src/detection/train_single_particle.py --particle Ellipse
-python src/detection/train_single_particle.py --particle Rod
-```
-
-Or train all at once:
-
-```bash
-python src/detection/train_single_particle.py
-```
-
-### Testing with Composite Model
-
-Test all particle types simultaneously with classification:
-
-```bash
-python src/detection/test_composite_model.py --config src/config.yaml
-```
-
-Enable visualization of results:
+Run from the repository root. Train the required particle types first, then select them in `src/config.yaml`:
 
 ```yaml
+samples: [Janus, Ring]
 visualize: true
 ```
 
-### Programmatic Usage
+```bash
+python src/detection/train_single_particle.py --particle Janus --config src/config.yaml
+python src/detection/train_single_particle.py --particle Ring --config src/config.yaml
+python src/detection/test_composite_model.py --config src/config.yaml
+python src/detection/run_composite_pipeline.py
+python src/detection/compare_models.py
+```
+
+The CLI reads model paths and model directories from `trained_models_summary.yaml`, then reads each model directory's `config.yaml`. Comparison requires existing single-model and composite test results. The composite test writes `test_composite_results_summary.yaml`; visualization destinations depend on dataset configuration under `detection_results/`.
+
+## Python interface and parameters
 
 ```python
 import sys
-sys.path[:0] = ['src', 'src/detection']  # Run from repository root
+sys.path[:0] = ['src', 'src/detection']
 from composite_model import CompositeLodeSTAR
 import utils
 
-config = utils.load_yaml('src/config.yaml')
-trained_models = utils.load_yaml('trained_models_summary.yaml')
-
-composite = CompositeLodeSTAR(config, trained_models)
-
-# Uses model-specific parameters from each model's config (recommended)
-detections, labels, weight_maps, outputs = composite.detect_and_classify(image)
-
-# Override parameters for all models (if needed)
-detections, labels, weight_maps, outputs = composite.detect_and_classify(
-    image,
-    alpha=0.2,
-    beta=0.8,
-    cutoff=0.2
+model = CompositeLodeSTAR(
+    utils.load_yaml('src/config.yaml'),
+    utils.load_yaml('trained_models_summary.yaml'),
 )
+# image: a two-dimensional NumPy grayscale array
+detections, labels, weight_maps, outputs = model.detect_and_classify(image)
+# An explicit argument overrides that parameter for every member model:
+detections, labels, weight_maps, outputs = model.detect_and_classify(image, cutoff=0.3)
 ```
 
-## Output Structure
+Without overrides, the CLI uses each model's saved `alpha`, `beta`, `cutoff`, and `mode`; missing values fall back to `0.2`, `0.8`, `0.2`, and `constant`. Alpha and beta control detection weighting; cutoff controls the acceptance threshold. Increasing cutoff generally reduces detections. Tune on representative validation images rather than assuming one setting suits all particle types. The CLI currently fixes the clustering distance at 20 pixels; the web adapter exposes it as a setting.
 
-### Detection Results
+For nonempty results, `detections` has shape `(N, 3)` with `[x, y, winning_weight]`; `labels` contains the corresponding particle names. `weight_maps` maps each class to an image-sized confidence map. `outputs` contains the raw model tensors, whose spatial size depends on architecture. Check `detections.size` before indexing an empty CLI result.
 
-```python
-detections: np.ndarray  # Shape (N, 3) - [x, y, confidence]
-labels: list           # Length N - ['Janus', 'Ring', ...]
-weight_maps: dict      # {particle_type: weight_map (H, W)}
-outputs: dict          # {particle_type: model_output (1, 3, H/2, W/2)}
-```
+## Validation and troubleshooting
 
-### Evaluation Metrics
+Check that configured sample names match summary entries and that every referenced weight file and saved configuration exists. Review warnings: the CLI can skip failed detections, whereas the web adapter rejects missing/nonfinite composite outputs. Do not assume a partially loaded ensemble is equivalent to the intended one.
 
-For each dataset type:
-- **Precision**: TP / (TP + FP)
-- **Recall**: TP / (TP + FN)
-- **F1-Score**: 2 * (Precision * Recall) / (Precision + Recall)
-- **True Positives (TP)**: Correct detections with correct labels
-- **False Positives (FP)**: Incorrect detections or wrong labels
-- **False Negatives (FN)**: Missed detections
+Compare class labels, localization and precision/recall against representative annotated data. Similar particle appearances, overlapping objects and incomparable confidence scales can impair classification; an ensemble does not guarantee better accuracy. Reduce selected models or image size if memory is insufficient.
 
-## File Structure
-
-```
-src/detection/
-├── composite_model.py          # Composite model implementation
-├── test_composite_model.py     # Testing script for composite model
-├── train_single_particle.py    # Training script for individual models
-├── test_single_particle.py     # Testing script for single models
-├── custom_lodestar.py          # Custom LodeSTAR architecture
-└── ...                         # Shared configuration: src/config.yaml
-
-detection_results/
-└── Testing_snr_10-10/
-    ├── composite/              # Composite model results
-    │   ├── same_shape_same_size/
-    │   ├── same_shape_different_size/
-    │   ├── different_shape_same_size/
-    │   └── different_shape_different_size/
-    └── {particle_type}_{model_id}/  # Single model results
-```
-
-## Visualization
-
-The composite model generates visualizations with:
-
-**Top Row:**
-- Ground truth image with annotations
-- Individual weight maps for each particle type (hot colormap)
-
-**Bottom Row:**
-- Combined detection results with color-coded markers and labels
-- Ground truth markers (green circles) with colored text labels (format: "GT:ParticleType")
-- Detection markers (colored circles) with colored text labels showing particle type
-- Metrics overlay (Precision, Recall, F1, TP, FP, FN)
-
-**Color Coding:**
-Each particle type has a distinct color for easy identification:
-- **Janus**: Red
-- **Ring**: Blue
-- **Spot**: Yellow
-- **Ellipse**: Cyan
-- **Rod**: Magenta
-
-**Label Format:**
-- Ground truth labels: White box with green border, colored text "GT:ParticleType"
-- Detection labels: Black box with colored border matching particle type, colored text showing particle type
-
-## Advantages
-
-1. **Multi-Class Detection**: Simultaneously detects and classifies multiple particle types
-2. **Leverages Specialization**: Each model specializes in its particle type
-3. **Interpretable**: Weight maps show model confidence for each particle type
-4. **Flexible**: Easy to add new particle types by training additional models
-
-## Limitations
-
-1. **Computational Cost**: Runs N models for N particle types
-2. **Memory Usage**: Stores weight maps for all models
-3. **Occlusion**: May struggle with overlapping particles of different types
-
-## Configuration
-
-Key settings in `src/config.yaml`:
-
-```yaml
-# Only these particle types will be loaded by the composite model
-samples: [Janus, Ring, Spot, Ellipse, Rod]  # Can be subset: [Janus, Ring]
-
-alpha: 0.2
-beta: 0.8
-cutoff: 0.2
-mode: constant
-
-visualize: false  # Set to true for visualization output
-
-lodestar_version: custom  # or 'default', 'skip_connections'
-n_transforms: 4
-```
-
-**Important**: The `samples` field controls which models are loaded. Only particle types listed in this field will be loaded from `trained_models_summary.yaml`. This allows you to:
-- Test specific particle type combinations
-- Reduce memory usage by loading fewer models
-- Focus on specific detection tasks
-
-## Results
-
-Results are saved to:
-- `test_composite_results_summary.yaml`: Overall metrics
-- `detection_results/Testing_*/composite/*/`: Visualizations (if enabled)
-- `logs/test_composite_model_*.log`: Detailed logs
+See the [project overview](README.md) for installation and the [command reference](docs/QUICK_REFERENCE.md) for single-model detection, orientation and tracking.

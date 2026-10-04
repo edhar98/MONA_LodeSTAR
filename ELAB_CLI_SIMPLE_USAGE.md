@@ -1,152 +1,83 @@
-# Simplified elab CLI Usage Guide
+# ELab uploads and linked resources
 
-This simplified CLI focuses on the essential functionality for recording training and testing results in elab.
+The ELab tools upload existing results; they do not run training or detection. Run commands from the repository root. Uploads create or change remote records, so check the selected artifacts and destination before running them.
 
-## Prerequisites
+## Configuration
 
-Set environment variables:
 ```bash
-export ELAB_HOST_URL="your_elab_host_url"
-export ELAB_API_KEY="your_api_key"
-export ELAB_VERIFY_SSL="true"  # or "false" if needed
+export ELAB_HOST_URL="https://your-elab-instance.example"
+export ELAB_API_KEY="your-api-key"
+export ELAB_VERIFY_SSL="true"
 ```
 
-## Commands
+Keep API keys out of committed files. Install the ELab dependencies in the environment used for these commands. The YAML under `tools/elab/config/` is reference documentation, not an automatically loaded runtime configuration.
 
-### 1. Upload Training Results
-
-Uploads training artifacts (logs, checkpoints, models) to elab:
+## Upload existing results
 
 ```bash
-python tools/elab/cli/elab_cli_simple.py upload-training
+python tools/elab_cli.py simple upload-training --label "janus_training"
+python tools/elab_cli.py simple upload-test --label "janus_test"
 ```
 
-**Options:**
-- `--label`: Custom label (default: timestamp)
-- `--title-prefix`: Title prefix (default: "Training Results")
-- `--category`: Category ID (default: 5 for "Full Run")
-- `--team`: Team ID (default: 1 for "Molecular Nanophotonics Group")
-- `--experiments`: List of experiment IDs to link
-- `--items`: List of item IDs to link
+Both accept `--title-prefix`, `--category`, and `--team`. The current simple uploader uses template 24, category 5 and team 1 when category/team are omitted; confirm these installation-specific IDs are appropriate before uploading.
 
-**Example:**
+| Command | Included artifacts |
+|---|---|
+| `simple upload-training` | Existing `logs/`, `checkpoints/`, `models/` directories |
+| `simple upload-test` | Existing `logs/`, `detection_results/`, plus `test_results_summary.yaml` if present |
+
+Directories are archived as labelled `.tar.gz` files. This can include multiple runs, not just the most recent experiment. `lightning_logs/` is **not** included by the simple training uploader, and the composite summary is not automatically attached by `upload-test`. Inspect the returned artifact list and add missing material deliberately.
+
+The root convenience commands `python elab.py upload-training` and `python elab.py upload-test` are also available. For optional flags, inspect the selected CLI's help:
+
 ```bash
-python tools/elab/cli/elab_cli_simple.py upload-training \
-  --label "janus_model_training" \
-  --title-prefix "LodeSTAR Training" \
-  --category 5 \
-  --team 1
+python tools/elab_cli.py simple --help
+python tools/elab_cli.py full upload-test-run --help
 ```
 
-**What it uploads:**
-- `logs/` directory → `janus_model_training_logs.tar.gz`
-- `checkpoints/` directory → `janus_model_training_checkpoints.tar.gz`
-- `models/` directory → `janus_model_training_models.tar.gz`
+## Link experiments and database items
 
-### 2. Upload Test Results
-
-Uploads test results (logs, detection_results, test_results_summary.yaml) to elab:
+After uploading, use the returned experiment ID as the target:
 
 ```bash
-python tools/elab/cli/elab_cli_simple.py upload-test
-```
-
-**Options:**
-- `--label`: Custom label (default: timestamp)
-- `--title-prefix`: Title prefix (default: "Test Results")
-- `--category`: Category ID (default: 5 for "Full Run")
-- `--team`: Team ID (default: 1 for "Molecular Nanophotonics Group")
-- `--experiments`: List of experiment IDs to link
-- `--items`: List of item IDs to link
-
-**Example:**
-```bash
-python tools/elab/cli/elab_cli_simple.py upload-test \
-  --label "janus_particle_detection" \
-  --title-prefix "LodeSTAR Detection Test" \
-  --category 5 \
-  --team 1
-```
-
-**What it uploads:**
-- `logs/` directory → `janus_particle_detection_logs.tar.gz`
-- `detection_results/` directory → `janus_particle_detection_detection_results.tar.gz`
-- `test_results_summary.yaml` (if exists)
-
-### 3. Link Resources
-
-Link existing experiments or items to an experiment:
-
-```bash
-python tools/elab/cli/elab_cli_simple.py link-resources \
-  --experiment-id <EXPERIMENT_ID> \
-  --experiments <EXP_ID1> <EXP_ID2> \
-  --items <ITEM_ID1> <ITEM_ID2>
-```
-
-**Example:**
-```bash
-python tools/elab/cli/elab_cli_simple.py link-resources \
-  --experiment-id 179 \
-  --experiments 155 176 \
-  --items 1270
-```
-
-## Typical Workflow
-
-### After Training a Model:
-```bash
-# Upload training results
-python tools/elab/cli/elab_cli_simple.py upload-training \
-  --label "janus_model_v1" \
-  --title-prefix "LodeSTAR Janus Training"
-```
-
-### After Testing the Model:
-```bash
-# Upload test results
-python tools/elab/cli/elab_cli_simple.py upload-test \
-  --label "janus_model_v1_test" \
-  --title-prefix "LodeSTAR Janus Test"
-```
-
-### Link Related Experiments:
-```bash
-# Link training and test experiments
-python tools/elab/cli/elab_cli_simple.py link-resources \
+python tools/elab_cli.py simple link-resources \
   --experiment-id <TEST_EXPERIMENT_ID> \
-  --experiments <TRAINING_EXPERIMENT_ID>
+  --experiments <TRAINING_EXPERIMENT_ID> \
+  --items <ITEM_ID>
 ```
 
-## Directory Structure Expected
+Although the simple upload parsers accept `--experiments` and `--items`, their upload functions currently do not apply those links. Run `link-resources` separately and verify the result.
 
-### For Training:
-```
-logs/           # Training logs, metrics
-checkpoints/    # Model checkpoints
-models/         # Final model files
-```
+The full CLI also supports creating an experiment with links:
 
-### For Testing:
-```
-logs/                    # Test logs, evaluation metrics
-detection_results/       # Visualized detection results
-test_results_summary.yaml # Summary file (optional)
+```bash
+python tools/elab_cli.py full create-with-links \
+  --title "Particle analysis" --body "Analysis of the selected run" \
+  --template <TEMPLATE_ID> --experiments <EXPERIMENT_ID> --items <ITEM_ID>
 ```
 
-## Benefits of Simplified Version
+Do not interpret an absent link in an API response as proof of success. Check the target record, accessible linked resources and any per-link errors in the response.
 
-1. **Focused**: Only essential commands for training/testing workflow
-2. **Simple**: No complex update logic or unnecessary features
-3. **Reliable**: Straightforward upload without edge cases
-4. **Maintainable**: Easy to understand and modify
-5. **Consistent**: Same interface for both training and testing
+## Full test-run uploader and existing records
 
-## Migration from Original CLI
+The full CLI calls the test upload command `upload-test-run`, not `upload-test`:
 
-If you were using the original `elab_cli.py`:
+```bash
+python tools/elab_cli.py full upload-test-run --label "janus_test" --no-update
+```
 
-- `upload-test-run` → `upload-test`
-- `link-resources` → `link-resources` (same)
-- Remove complex commands like cloning, comparing, syncing
-- Simplified metadata handling (no tags, just category/team)
+Without `--no-update`, it can search for an existing record to update. `--update-experiment <ID>` explicitly selects an existing experiment. Use these modes only when updating that record is intended; inspect help for supported metadata and linking options. Template/tag behavior depends on the ELab installation; do not reuse historical tag settings blindly.
+
+For item-body edits:
+
+```bash
+python tools/elab_cli.py simple patch-item --item-id <ITEM_ID> --body-file update.html
+```
+
+Download the current body before editing, patch from that live state, then verify the title, body and attachments after submission. Do not replace an existing record from an old local copy.
+
+## Verify each operation
+
+Check the process exit status and returned experiment/item ID. Open the remote record and confirm the title, expected attachments and links. A partial failure can leave a created record or some completed uploads; inspect that state before retrying to avoid duplicates. Missing resources and permission failures require correcting IDs or access, not repeated upload attempts.
+
+See [tools/README.md](tools/README.md) for other data-processing tools.

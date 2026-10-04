@@ -1,94 +1,81 @@
-# Test Directory
+# Tests
 
-This directory contains development tests for the MONA LodeSTAR project.
+Run from the repository root using the MONA environment.
 
-## Structure
+## Automated suite
 
-- **`unit/`** - Unit tests for individual components
-- **`regression/`** - Regression tests to ensure no functionality breaks
-- **`integration/`** - Integration tests for full workflows
-
-## Running Tests
-
-### Run all tests
 ```bash
-python test/run_tests.py
-```
-
-### Run specific test types
-```bash
+/opt/mona_jupyterhub_env/bin/python -B test/run_tests.py
 python test/run_tests.py --type unit
 python test/run_tests.py --type regression
-python test/run_tests.py --type integration
-```
-
-### Verbose output
-```bash
 python test/run_tests.py --verbose
 ```
 
-## Test Categories
+The runner discovers Python tests under `unit/`, `regression/`, and
+`integration/` by their test filenames. The opt-in scripts below must be run
+separately.
 
-### Unit Tests (`unit/`)
-Test individual functions, classes, and modules in isolation:
-- `test_lodestar_models.py` - Test LodeSTAR model implementations
-- `test_utils.py` - Test utility functions
+## Frontend checks
 
-### Regression Tests (`regression/`)
-Test that existing functionality continues to work after changes:
-- `test_backwards_compatibility.py` - Test backwards compatibility
+```bash
+node test/integration/check_web_ui.cjs
+node test/integration/check_select_refresh.cjs
+node test/integration/check_tdms_layout.cjs
+```
 
-### Integration Tests (`integration/`)
+These check JavaScript syntax and UI contracts using simulated DOM elements,
+including proxy paths, job recovery, selectors, normalization, and resizing.
+They do not replace browser layout, pointer, or native-popup testing.
 
-The following checks are opt-in and are not discovered by the `test_*.py` unittest runner. Run from the repository root:
+## Real model smoke tests
 
 ```bash
 /opt/mona_jupyterhub_env/bin/python -B test/integration/smoke_hub_pipeline.py
-node test/integration/check_web_ui.cjs
+/opt/mona_jupyterhub_env/bin/python -B test/integration/smoke_learned_web.py
 ```
 
-`smoke_hub_pipeline.py` requires the MONA scientific/web environment, PyTorch, `httpx`, the local `5m4rtzfx` JP_Fe_wf_2_40 model catalogue entry, saved run configuration and weights, dataset-04 PNG frames `JP_Fe_wf_2_40_slm075_574_001.png` through `_003.png`, and orientation template `data/Samples/JP_Fe_wf_2_40/Samples/f000_d003_phi0234.0.png`. It forces CPU execution and checks isolated Hub identity, upload/crop/server input, real-model batch detection, template orientation schema, tracking, an ABP plot, export response/bytes, and a second application lifespan. State/output goes into a temporary directory; no training or external HTTP request occurs. Its POSIX alarm bounds execution to 180 seconds; forced timeout can leave that run's temporary directory behind.
+Both scripts run on CPU with isolated temporary user storage. They copy the
+required detector weights/configuration into temporary web-model fixtures;
+they do not use web CLI discovery or change real user sessions. They perform
+no training, deployment, or external ELab updates. Each has a 180-second POSIX
+timeout; a forced timeout can leave its temporary directory behind.
 
-The 2026-09-23 run reported 3 frames, 367 detections, 121 tracks and 356 track rows. Template processing returned 120 finite detections using a 10-degree angle step and 2-pixel search radius. These are smoke observations, not fixed acceptance counts or scientific validation. Three frames cannot validate physical fits; coarse template settings check schema, not orientation accuracy. The test does not cover TDMS, a real browser, or HTTP streaming of FileResponse (it checks the response and file bytes directly).
+The single-model smoke requires:
 
-`check_web_ui.cjs` needs Node.js and only built-in modules. It parses the shipped inline JavaScript and exercises proxy prefixes, interrupted-training recovery, and ABP plot/error states with mocked elements. It does not run a browser or real DOM. Native browser verification remains a separate review gate; neither check proves the installed Hub checkout is deployed or operational.
+- `models/5m4rtzfx/JP_Fe_wf_2_40_weights.pth` and its saved `config.yaml`.
+- Dataset-04 images `JP_Fe_wf_2_40_slm075_574_001.png` through `_003.png` under
+  `data/JP_FE/wf_2_40/04/images/`.
+- Orientation template
+  `data/Samples/JP_Fe_wf_2_40/Samples/f000_d003_phi0234.0.png`.
 
-## Writing Tests
+It covers Hub-mode identity, upload/crop/server input, detection, orientation,
+tracking, ABP plotting, export response bytes, and persisted state reload.
 
-For the composite and learned-trajectory integration, run the opt-in
-`/opt/mona_jupyterhub_env/bin/python -B test/integration/smoke_learned_web.py`.
-It needs local detector/LSTM checkpoints and the dataset-04 image/track-233
-fixtures, writes temporary isolated state, and has a 180-second hard timeout.
-See [scope and verification](../docs/WEB_LEARNED_MODELS.md). The default suite
-also discovers synthetic composite and trajectory-adapter unit tests.
+The composite/gap smoke additionally requires Janus run `euk2wnni`, Rod run
+`uaqqndn3`, their saved configs, the JP dataset-04 tracks CSV, and the approved
+gap checkpoint in `lstm_outputs/`. Exact fixture paths are defined in the
+script. It checks class-separated tracking, gap-only inference, raw/input
+preservation, and provenance.
 
-### Unit Test Example
-```python
-import unittest
-import sys
-import os
+## Last validated release
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+On 2026-10-04, the code released as `1fbc661` passed 74 Python tests and all three
+frontend checks. The real-model checks returned:
 
-from your_module import your_function
+- Single model: 367 detections across three frames; 121 tracks and 356 rows.
+- Template orientation: 120 finite detections.
+- Composite: 95 detections with Janus and Rod labels.
+- Gap refinement: four refined rows among 16 interpolated rows in a 1,011-row
+  fixture; measured rows and original input bytes unchanged.
 
-class TestYourModule(unittest.TestCase):
-    def test_your_function(self):
-        result = your_function(input_data)
-        self.assertEqual(result, expected_output)
+The user also reported all nine manual web acceptance checks passed. This is
+not a benchmark of scientific accuracy or proof of live Hub isolation.
+Deployment still requires actual launcher HTTP/WebSocket and user-boundary
+checks described in [deployment](../docs/DEPLOYMENT.md).
 
-if __name__ == '__main__':
-    unittest.main()
-```
+## Adding tests
 
-### Test Naming Convention
-- Test files: `test_*.py`
-- Test classes: `Test*`
-- Test methods: `test_*`
-
-## Notes
-
-- Model evaluation scripts (testing trained models) live in `src/detection/`
-- This directory is for testing the code itself, not model performance
-- Default unit/regression tests should be deterministic and not require external data; the opt-in real-model smoke has explicit local fixture requirements above.
+Keep existing regression assertions. Test security failures before filesystem
+mutation, preserve original inputs, and use temporary directories. Separate
+intentional scientific-method changes from numerical-preserving optimizations.
+See [known limitations](../docs/KNOWN_ISSUES.md) for the remaining regression work.

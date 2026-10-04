@@ -722,7 +722,7 @@ Trained weights are saved to `models/<run_id>/<ParticleType>_weights.pth`; Light
 
 ### Web Interface (`web/`)
 
-FastAPI backend (`web/app.py`) with extracted `web/routers/`, `web/services/`, `web/auth.py`, `web/config.py`, and `web/state.py`, plus a single-page HTML frontend (`web/templates/index.html`). The app includes training, detection, tracking, ABP analysis, and Janus crescent measurements. The supported deployment target is the per-user JupyterHub launcher; standalone username/login handling is not a complete authentication boundary. See `docs/WEB_INTEGRATION_AUDIT.md` and `docs/REVIEW_2026-09-23.md` for working-tree evidence and limitations.
+FastAPI backend (`web/app.py`) with extracted `web/routers/`, `web/services/`, `web/auth.py`, `web/config.py`, and `web/state.py`, plus a single-page HTML frontend (`web/templates/index.html`). The app includes training, detection, tracking, ABP analysis, and Janus crescent measurements. The supported deployment target is the per-user JupyterHub launcher; standalone username/login handling is not a complete authentication boundary. See `docs/DEPLOYMENT.md` and `docs/KNOWN_ISSUES.md` for deployment requirements and limitations.
 
 The installed Hub application is editable at `/home/mona/MONA_LodeSTAR`, distinct from this checkout. Local corrections are not deployed automatically; runtime packaging depends on adjacent `src/` and `tools/`. Shared utilities resolve from `src/`, and TDMS support comes from the installed `tdms_explorer` package.
 
