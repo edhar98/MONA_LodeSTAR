@@ -17,8 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import tempfile
+import hashlib
+import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +31,7 @@ import pandas as pd
 import torch
 
 from lstm_gap_filler import _kalman_smoother_xy, _linear_state, load_model, predict_gap
-from lstm_track_predictor import _add_angle_features, _add_motion_features, load_tracks
+from lstm_track_predictor import _add_angle_features
 
 
 DEFAULT_TRACKS = (
@@ -122,11 +124,11 @@ def _valid_context(past: pd.DataFrame, gap: pd.DataFrame, future: pd.DataFrame, 
 
 
 def _iter_usable_gaps(tracks: pd.DataFrame, context_len: int):
+    if tracks.empty:
+        return
     feature_tracks = _add_angle_features(tracks)
-    feature_tracks = pd.concat(
-        [_add_motion_features(group) for _, group in feature_tracks.groupby("track_id", sort=False)],
-        ignore_index=True,
-    )
+    # Motion features are built independently within observed contexts by
+    # predict_gap, never across the interpolated rows being refined.
     feature_tracks = feature_tracks.sort_values(["track_id", "frame"]).reset_index(drop=True)
 
     for _, group in feature_tracks.groupby("track_id", sort=False):
@@ -146,17 +148,44 @@ def _iter_usable_gaps(tracks: pd.DataFrame, context_len: int):
 
 
 def build_variants(args: argparse.Namespace) -> dict[str, Any]:
-    tracks_path = Path(args.tracks)
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    from lstm_gap_filler import load_gap_tracks, PREPROCESSING_VERSION
 
-    raw_tracks = pd.read_csv(tracks_path)
-    tracks = load_tracks(str(tracks_path))
-    tracks_for_output = raw_tracks.sort_values(["track_id", "frame"]).reset_index(drop=True)
-    if "is_interpolated" in tracks_for_output and tracks_for_output["is_interpolated"].dtype == object:
-        tracks_for_output["is_interpolated"] = (
-            tracks_for_output["is_interpolated"].astype(str).str.lower().isin(["true", "1", "yes"])
+    tracks_path = Path(args.tracks)
+    source_bytes = tracks_path.read_bytes()
+    checkpoint_bytes = Path(args.model).read_bytes()
+    # Validate both inputs before creating any output, including baselines.
+    tracks = load_gap_tracks(BytesIO(source_bytes))
+    raw_tracks = pd.read_csv(BytesIO(source_bytes))
+    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    loaded = load_model(BytesIO(checkpoint_bytes), device)
+    parent = Path(args.output_dir)
+    parent.mkdir(parents=True, exist_ok=True)
+    destination = parent / f"{tracks_path.stem}_gap_v2_{uuid.uuid4().hex}"
+    with tempfile.TemporaryDirectory(prefix=".gap-variants-", dir=parent) as directory:
+        staging = Path(directory)
+        manifest = _build_variants(args, staging, tracks, raw_tracks, source_bytes, loaded, device)
+        manifest.update(
+            preprocessing_version=PREPROCESSING_VERSION,
+            source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            checkpoint_sha256=hashlib.sha256(checkpoint_bytes).hexdigest(),
+            snapshot_semantics="input and checkpoint bytes captured before refinement",
         )
+        for item in manifest["variants"].values():
+            item["path"] = str(destination / Path(item["path"]).name)
+        manifest_name = f"{tracks_path.stem}_manifest.json"
+        manifest["manifest_path"] = str(destination / manifest_name)
+        (staging / manifest_name).write_text(json.dumps(_jsonable(manifest), indent=2) + "\n", encoding="utf-8")
+        # Unique destination, and a failed computation leaves no published run.
+        if destination.exists():
+            raise FileExistsError(destination)
+        staging.rename(destination)
+    return manifest
+
+
+def _build_variants(args, output_dir, tracks, raw_tracks, source_bytes, loaded, device):
+    tracks_path = Path(args.tracks)
+    tracks_for_output = raw_tracks.sort_values(["track_id", "frame"]).reset_index(drop=True)
+    tracks_for_output["is_interpolated"] = tracks["is_interpolated"].to_numpy()
 
     base = tracks_path.stem
     linear_path = output_dir / f"{base}_linear.csv"
@@ -165,12 +194,11 @@ def build_variants(args: argparse.Namespace) -> dict[str, Any]:
     kalman_path = output_dir / f"{base}_kalman_refined.csv"
     manifest_path = output_dir / f"{base}_manifest.json"
 
-    shutil.copyfile(tracks_path, linear_path)
+    linear_path.write_bytes(source_bytes)
     real_only = tracks_for_output[~tracks_for_output["is_interpolated"]].copy()
     real_only.to_csv(real_only_path, index=False)
 
-    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    model, checkpoint, input_norm, query_norm, target_norm = load_model(str(args.model), device)
+    model, checkpoint, input_norm, query_norm, target_norm = loaded
     context_len = int(checkpoint["context_len"])
 
     bilstm = _prepare_refined_frame(tracks_for_output)
@@ -202,6 +230,9 @@ def build_variants(args: argparse.Namespace) -> dict[str, Any]:
             after,
             device,
         )
+        predictions = np.asarray(predictions, dtype=float)
+        if predictions.shape != (len(gap), 3) or not np.isfinite(predictions).all():
+            raise ValueError("Gap model produced invalid or nonfinite predictions")
         for row_idx, (pred_x, pred_y, pred_phi) in zip(row_indices, predictions):
             bilstm.loc[row_idx, ["x", "y", "phi"]] = [pred_x, pred_y, pred_phi]
             bilstm.loc[row_idx, "variant_refined"] = True
