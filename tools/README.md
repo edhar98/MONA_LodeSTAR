@@ -154,6 +154,12 @@ python tools/elab_cli.py simple upload-test
 ### Configuration
 
 - Reference config (structure/docs): `tools/elab/config/elab_config.yaml`. Current scripts do not load it; defaults are hardcoded.
-- Reference: `elab_config.yaml` (root)
+- Print-only examples: `bash tools/elab/examples/commands.sh`.
+- Read-only experiment inspection: `python tools/elab/diagnostics/inspect_experiment.py --experiment-id ID`.
+
+The root `elab.py` remains a convenience wrapper. ELab configuration, examples,
+and diagnostics live under `tools/elab/`. The old root-level connection, upload,
+and template probes were retired: they created remote test records and some
+logged credential fragments. They were not offline regression tests.
 
 See [ELab usage](../ELAB_CLI_SIMPLE_USAGE.md) for entry points, upload scope, resource linking, and verification.

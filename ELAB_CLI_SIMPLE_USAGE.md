@@ -12,6 +12,18 @@ export ELAB_VERIFY_SSL="true"
 
 Keep API keys out of committed files. Install the ELab dependencies in the environment used for these commands. The YAML under `tools/elab/config/` is reference documentation, not an automatically loaded runtime configuration.
 
+## Inspect an existing experiment
+
+```bash
+python tools/elab/diagnostics/inspect_experiment.py --experiment-id 354
+bash tools/elab/examples/commands.sh
+```
+
+The inspector reads one experiment and prints a metadata summary without its
+body or credentials; it does not create or modify records. The examples script
+only prints commands. Old root-level upload and template diagnostic scripts
+have been retired; use the supported CLIs below for deliberate remote writes.
+
 ## Upload existing results
 
 ```bash

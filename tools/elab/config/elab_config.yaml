@@ -1,4 +1,22 @@
-# ELAB Configuration for MONA LodeSTAR Project
+# ELab configuration reference for MONA LodeSTAR.
+# Documentation only: current CLIs do not load this file. Values such as
+# max_size_mb/include_hidden below are not enforced by the upload code.
+# Confirm installation-specific IDs before using them; never put API keys here.
+
+categories:
+  5: "Full Run"
+teams:
+  1: "Molecular Nanophotonics Group"
+template:
+  id: 24
+  name: "LodeSTAR: single particle pipeline"
+  description: "Template for single-particle pipeline experiments"
+
+# Commands must be run from the repository root. Uploads change remote records.
+examples:
+  help: "python tools/elab_cli.py full upload-test-run --help"
+  basic: "python tools/elab_cli.py full upload-test-run --no-update"
+  with_metadata: "python tools/elab_cli.py full upload-test-run --label janus_test_run --category 5 --team 1 --no-update"
 
 # Default experiment settings
 experiment:
@@ -6,7 +24,7 @@ experiment:
   category: 5    # "Full Run" category
   team: 1        # "Molecular Nanophotonics Group"
 
-# Default tags for different experiment types
+# Historical example tags; verify these IDs on the target installation.
 tags:
   training: "155,156"  # LodeSTAR|ML tags
   testing: "155,156"   # LodeSTAR|ML tags
