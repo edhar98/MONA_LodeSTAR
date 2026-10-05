@@ -19,11 +19,6 @@ diff.txt
 # Archive files
 *.tar.gz
 
-# Test results
-snr_test_results.txt
-test_results_summary.yaml
-test_composite_results_summary.yaml
-
 # Runtime data
 web/sessions.json
 web/training_jobs.json
@@ -62,3 +57,24 @@ lodestar_orientation_test_out/
 /tools/tdms_to_png
 /tools/janus_crescent_ratio/outputs/
 /tools/janus_crescent_ratio/src/janus_crescent_ratio/outputs/
+
+# Local research notebooks and experiment-report artifacts
+/notebooks/
+/elab_updates/
+/tools/janus_crescent_ratio/notebooks/janus_crescent_ratio_pipeline.ipynb
+
+# Unintegrated root research experiments
+/Notes.txt
+/draft.ipynb
+/orientation_cnn.py
+/orientation_cnn_ckpt.pt
+/orientation_cnn_debug.ipynb
+/test_lodestar_orientation.py
+
+# Regenerable Python caches and editor swap files
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.swp
+*.swo

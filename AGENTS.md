@@ -1,6 +1,11 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides shared guidance to coding assistants working in this repository.
+
+Current deployment guidance is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and
+current scientific limitations and evaluated gap-filling results are in
+[docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Those documents take precedence over
+historical run notes and benchmark tables retained below.
 
 ## Common Commands
 
@@ -753,12 +758,12 @@ Known TDMSExplorer launcher behavior: the Panel page may initially show only the
 
 - TDMSExplorer is no longer vendored under `tools/TDMSExplorer/`; use the installed package.
 - Legacy `tools/tdms_to_png.py`, `tools/tdms_to_png_README.md`, and `tools/build_tdms_to_png.sh` are deleted in the current working tree.
-- The repo is on `dev` and has a dirty working tree with documentation, web, tool, and TDMS cleanup changes. Do not revert unrelated user changes.
-- `CLAUDE.md` may be untracked in this checkout but is intended as local AI-agent operating context.
+- The tested release was merged into `main`; `dev` was removed locally and remotely. Check current Git status before changes and do not revert unrelated user work.
+- `AGENTS.md` is the consolidated repository guidance for coding assistants.
 - Root-level orientation experiments (`orientation_cnn.py`, `test_lodestar_orientation.py`, `src/detection/lodestar_orientation.py`, output/checkpoint artifacts) are present but ownership is still research/experimental unless explicitly integrated.
 
 ### Git Conventions
 
-- Two long-lived branches: `dev` (active development) and `main` (stable)
+- `main` is the retained long-lived branch; do not assume `dev` exists.
 - Commit messages start with a dash (`-`), short, one logical change per commit
-- Web branch only integrates committed Core code (never uncommitted imports)
+- Commit core changes before web integration that depends on them.
